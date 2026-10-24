@@ -445,29 +445,85 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const marketSession = getCurrentMarketSession();
 
     try {
-      const response = await fetch('/api/gemini/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newHistory.map((m) => ({ role: m.role, text: m.text })),
-          marketContext: {
-            asset: asset.symbol,
-            assetName: asset.name,
-            currentPrice: asset.currentPrice,
-            spread: asset.spread,
-            timeframe,
-            marketAnalysis,
-            confluences,
-            upcomingHighImpact,
-            relevantEvents: relevantEvents.slice(0, 6),
-            marketSession,
-          },
-        }),
-      });
+      let replyText = '';
 
-      const data = await response.json();
-      if (data && data.success && data.reply) {
-        const replyText = data.reply;
+      // 1. Chamada Direta no Cliente via SDK @google/genai (Compatível com Vercel)
+      let clientApiKey = '';
+      try {
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+          clientApiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
+        }
+      } catch {}
+      if (!clientApiKey && typeof window !== 'undefined') {
+        clientApiKey = localStorage.getItem('clandex_gemini_api_key') || '';
+      }
+
+      if (clientApiKey && clientApiKey.length > 15) {
+        try {
+          const { GoogleGenAI } = await import('@google/genai');
+          const ai = new GoogleGenAI({ apiKey: clientApiKey });
+          const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+          const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+
+          const prompt = `
+Você é a ClandeX-IA, mentora institucional e analista quantitativa de Opções Binárias e Forex para a corretora Hiove.
+Mercado em Tempo Real:
+- Ativo: ${asset.symbol} (${asset.name})
+- Preço Atual: ${asset.currentPrice} | Timeframe: ${timeframe}
+- Tendência: ${marketAnalysis.trend} (Força Compra: ${marketAnalysis.buyerStrength}, Venda: ${marketAnalysis.sellerStrength})
+- Suportes: ${supList.join(', ') || 'dinâmicos'}
+- Resistências: ${resList.join(', ') || 'dinâmicos'}
+- Confluência: ${confluences.totalScore}% para ${confluences.direction}
+- Notícias: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas'}
+
+Pergunta do Trader: "${textToSend}"
+
+Responda em português brasileiro de forma direta, clara, profissional e motivadora. Seja concisa e objetiva.
+          `;
+
+          const resp = await ai.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt,
+          });
+
+          if (resp && resp.text) {
+            replyText = resp.text;
+          }
+        } catch (directClientErr) {
+          console.warn('[ClandeX-IA Chat] Tentativa direta falhou, tentando fallback:', directClientErr);
+        }
+      }
+
+      // 2. Se não obteve via SDK direto, tenta backend local (se existir)
+      if (!replyText) {
+        try {
+          const response = await fetch('/api/gemini/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: newHistory.map((m) => ({ role: m.role, text: m.text })),
+              marketContext: {
+                asset: asset.symbol,
+                assetName: asset.name,
+                currentPrice: asset.currentPrice,
+                spread: asset.spread,
+                timeframe,
+                marketAnalysis,
+                confluences,
+                upcomingHighImpact,
+                relevantEvents: relevantEvents.slice(0, 6),
+                marketSession,
+              },
+            }),
+          });
+          const data = await response.json();
+          if (data && data.success && data.reply) {
+            replyText = data.reply;
+          }
+        } catch {}
+      }
+
+      if (replyText) {
         setChatMessages((prev) => [
           ...prev,
           {

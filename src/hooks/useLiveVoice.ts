@@ -437,12 +437,12 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
         // Se Gemini Live estiver conectado, envia PCM direto
         if (geminiLiveSessionRef.current) {
           try {
-            geminiLiveSessionRef.current.send({
-              realtimeInput: {
-                mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64Pcm }],
-              },
+            geminiLiveSessionRef.current.sendRealtimeInput({
+              mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64Pcm }],
             });
-          } catch {}
+          } catch (liveSendErr) {
+            console.warn('[Gemini Live] Falha no envio de áudio do microfone:', liveSendErr);
+          }
         } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
         }
@@ -547,10 +547,12 @@ Regras de fala:
                 },
                 callbacks: {
                   onmessage: (message: LiveServerMessage) => {
-                    const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                    if (audio) {
-                      setStatus('speaking');
-                      scheduleAudioChunk(audio);
+                    const parts = message.serverContent?.modelTurn?.parts || [];
+                    for (const part of parts) {
+                      if (part.inlineData?.data) {
+                        setStatus('speaking');
+                        scheduleAudioChunk(part.inlineData.data);
+                      }
                     }
                     if (message.serverContent?.interrupted) {
                       setStatus('listening');
@@ -583,8 +585,28 @@ Regras de fala:
             }
           }
 
-          if (directConnected) {
+          if (directConnected && geminiLiveSessionRef.current) {
             await requestMicrophoneAccess();
+
+            // Dispara início da conversa para a IA cumprimentar o trader na hora
+            try {
+              const currentCtx = contextRef.current;
+              geminiLiveSessionRef.current.sendClientContent({
+                turns: [
+                  {
+                    role: 'user',
+                    parts: [
+                      {
+                        text: `Olá! Eu sou o trader. Apresente-se agora por voz como a ClandeX-IA em português do Brasil, diga que está ao vivo analisando o ativo ${currentCtx.asset.symbol} e pergunte em que pode me ajudar agora nas operações. Seja concisa.`,
+                      },
+                    ],
+                  },
+                ],
+                turnComplete: true,
+              });
+            } catch (greetErr) {
+              console.warn('[Gemini Live] Aviso saudação inicial:', greetErr);
+            }
             return;
           }
         } catch (directErr: any) {
