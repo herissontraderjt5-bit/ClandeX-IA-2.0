@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/trading';
 import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews } from '../services/economicCalendar';
 import { isForexMarketOpen } from '../services/marketData';
@@ -74,210 +74,27 @@ export function useLiveVoice({
   const lastAiSpokenPhraseRef = useRef<string>('');
   const lastProcessedQuestionRef = useRef<string>('');
   const lastProcessedTimeRef = useRef<number>(0);
-  const currentAiTurnTextRef = useRef<string>('');
 
-  // Ref de motor ativo para evitar closures desatualizadas
-  const activeEngineRef = useRef<VoiceEngine>('browser_speech');
-
-  // Direct Client-Side Gemini Live Session Ref
-  const geminiLiveSessionRef = useRef<any>(null);
-
-  // Audio & WebSocket Refs
-  const wsRef = useRef<WebSocket | null>(null);
+  // Audio Refs
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputAudioCtxRef = useRef<AudioContext | null>(null);
   const outputAudioCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioPlaybackStateRef = useRef<{ nextStartTime: number; activeSources: AudioBufferSourceNode[] }>({
-    nextStartTime: 0,
-    activeSources: [],
-  });
 
-  // Browser Fallback Recognition & TTS Refs
+  // Recognition & TTS Refs
   const recognitionRef = useRef<any>(null);
   const speechAnimIntervalRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   isMutedRef.current = isMuted;
 
-  // Desativa fisicamente os tracks do microfone e cancela o reconhecimento para que a IA nunca capture sua própria voz
-  const muteMicrophoneHardware = useCallback(() => {
-    isAiSpeakingRef.current = true;
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (micStreamRef.current) {
-      micStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = false;
-      });
-    }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-    }
-  }, []);
-
-  // Reativa o microfone apenas após a fala da IA ter terminado completamente e os ecos se dissiparem
-  const unmuteMicrophoneHardware = useCallback(() => {
-    if (speechCooldownTimeoutRef.current) {
-      clearTimeout(speechCooldownTimeoutRef.current);
-      speechCooldownTimeoutRef.current = null;
-    }
-    isAiSpeakingRef.current = false;
-    accumulatedTranscriptRef.current = '';
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-
-    if (isMutedRef.current) return;
-
-    if (micStreamRef.current) {
-      micStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = true;
-      });
-    }
-
-    if (statusRef.current !== 'idle') {
-      setStatus('listening');
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch {}
-      }
-    }
-  }, []);
-
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
   contextRef.current = { asset, timeframe, marketAnalysis, confluences };
 
-  // Resampler for Gemini Live (16kHz PCM)
-  const resampleTo16k = (inputData: Float32Array, inputSampleRate: number): Float32Array => {
-    if (inputSampleRate === 16000) return inputData;
-    const ratio = inputSampleRate / 16000;
-    const newLength = Math.round(inputData.length / ratio);
-    const result = new Float32Array(newLength);
-    for (let i = 0; i < newLength; i++) {
-      const originalIndex = i * ratio;
-      const indexFloor = Math.floor(originalIndex);
-      const indexCeil = Math.min(inputData.length - 1, Math.ceil(originalIndex));
-      const fraction = originalIndex - indexFloor;
-      result[i] = inputData[indexFloor] * (1 - fraction) + inputData[indexCeil] * fraction;
-    }
-    return result;
-  };
-
-  const pcmToBase64 = (float32Array: Float32Array): string => {
-    const int16 = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    const bytes = new Uint8Array(int16.buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  };
-
-  const base64ToPcm = (base64: string): Float32Array => {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const int16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-      float32[i] = int16[i] / 32768;
-    }
-    return float32;
-  };
-
-  const stopAudioPlayback = useCallback(() => {
-    const state = audioPlaybackStateRef.current;
-    state.activeSources.forEach((src) => {
-      try {
-        src.stop();
-        src.disconnect();
-      } catch {}
-    });
-    state.activeSources = [];
-    state.nextStartTime = 0;
-    setAiSpeechLevel(0);
-
-    if (speechAnimIntervalRef.current) {
-      clearInterval(speechAnimIntervalRef.current);
-      speechAnimIntervalRef.current = null;
-    }
-    if (speechCooldownTimeoutRef.current) {
-      clearTimeout(speechCooldownTimeoutRef.current);
-      speechCooldownTimeoutRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    isAiSpeakingRef.current = false;
-  }, []);
-
-  const scheduleAudioChunk = useCallback((base64Audio: string) => {
-    try {
-      const pcmData = base64ToPcm(base64Audio);
-      const ctx = outputAudioCtxRef.current;
-      if (!ctx) return;
-
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
-      let sum = 0;
-      for (let i = 0; i < pcmData.length; i += 16) {
-        sum += Math.abs(pcmData[i]);
-      }
-      const avg = sum / (pcmData.length / 16);
-      const level = Math.min(100, Math.round(avg * 320));
-      setAiSpeechLevel(Math.max(15, level));
-
-      const audioBuffer = ctx.createBuffer(1, pcmData.length, 24000);
-      audioBuffer.getChannelData(0).set(pcmData);
-
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-
-      const state = audioPlaybackStateRef.current;
-      const now = ctx.currentTime;
-      const startTime = Math.max(now, state.nextStartTime);
-      source.start(startTime);
-      state.nextStartTime = startTime + audioBuffer.duration;
-      state.activeSources.push(source);
-
-      // Desliga fisicamente o microfone e cancela reconhecimento enquanto a IA reproduz voz
-      muteMicrophoneHardware();
-      setStatus('speaking');
-
-      source.onended = () => {
-        state.activeSources = state.activeSources.filter((s) => s !== source);
-        if (state.activeSources.length === 0) {
-          setAiSpeechLevel(0);
-          // Cooldown de 1200ms para dispersar reverberação acústica antes de reabrir o microfone
-          speechCooldownTimeoutRef.current = setTimeout(() => {
-            unmuteMicrophoneHardware();
-          }, 1200);
-        }
-      };
-    } catch (err) {
-      console.error('Error playing audio chunk:', err);
-    }
-  }, [muteMicrophoneHardware, unmuteMicrophoneHardware]);
-
   /**
    * Resposta local especializada em Opções Binárias e SMC (Português do Brasil)
    */
-  const answerQuestionLocally = (questionText: string): string => {
+  const answerQuestionLocally = useCallback((questionText: string): string => {
     const q = questionText.toLowerCase();
     const ctx = contextRef.current;
     const isClosedWeekendForex = ctx.asset.category === 'FOREX' && !isForexMarketOpen();
@@ -348,21 +165,152 @@ export function useLiveVoice({
     }
 
     return `Ativo ${ctx.asset.symbol} operando a ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. Tendência ${ctx.marketAnalysis.trend} com confluência ${ctx.confluences.direction} de ${ctx.confluences.totalScore}%. Pode perguntar sobre suporte, tendência ou confluências.`;
-  };
+  }, []);
 
   /**
-   * Fala a resposta em português do Brasil e anima o avatar com supressão de eco
+   * Encerra a escuta do microfone de forma limpa sem deixar instâncias presas
+   */
+  const stopListeningCleanly = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  // Forward declarations via ref
+  const handleUserSpokenInputRef = useRef<any>(null);
+
+  /**
+   * Inicia o receptor de fala com uma NOVA instância limpa a cada ciclo
+   */
+  const startListeningCleanly = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      console.warn('[ClandeX-IA] SpeechRecognition não suportado neste navegador.');
+      return;
+    }
+
+    // Limpa qualquer sessão anterior
+    stopListeningCleanly();
+
+    // Se estiver mutado pelo usuário ou a IA estiver falando, não abre o microfone
+    if (isMutedRef.current || isAiSpeakingRef.current) {
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event: any) => {
+        if (isAiSpeakingRef.current || isMutedRef.current) return;
+
+        let interim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const res = event.results[i];
+          const text = res[0]?.transcript || '';
+          if (res.isFinal) {
+            finalChunk += text + ' ';
+          } else {
+            interim += text;
+          }
+        }
+
+        if (finalChunk.trim()) {
+          accumulatedTranscriptRef.current += (accumulatedTranscriptRef.current ? ' ' : '') + finalChunk.trim();
+        }
+
+        const currentLive = (accumulatedTranscriptRef.current + ' ' + interim).trim();
+        if (!currentLive) return;
+
+        // Anti-echo acústico: se o microfone captar a própria fala da IA do alto-falante
+        if (lastAiSpokenPhraseRef.current) {
+          const normAi = lastAiSpokenPhraseRef.current.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normUser = currentLive.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normAi.length > 5 && normUser.length > 5 && (normAi.includes(normUser) || normUser.includes(normAi))) {
+            return;
+          }
+        }
+
+        setUserTranscript(currentLive);
+
+        // Reinicia debounce de silêncio: 900ms para aguardar término da fala do trader
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+
+        silenceTimerRef.current = setTimeout(() => {
+          const fullSentence = (accumulatedTranscriptRef.current + ' ' + interim).trim();
+          accumulatedTranscriptRef.current = '';
+          silenceTimerRef.current = null;
+
+          if (fullSentence.length >= 2 && !isAiSpeakingRef.current && statusRef.current === 'listening') {
+            console.log('[ClandeX-IA Voz] Pergunta do usuário identificada:', fullSentence);
+            stopListeningCleanly();
+            if (handleUserSpokenInputRef.current) {
+              handleUserSpokenInputRef.current(fullSentence);
+            }
+          }
+        }, 900);
+      };
+
+      recognition.onerror = (err: any) => {
+        if (err.error !== 'no-speech' && err.error !== 'aborted') {
+          console.warn('[ClandeX-IA Voz] Reconhecimento evento:', err.error);
+        }
+      };
+
+      recognition.onend = () => {
+        // Se ainda estiver no modo de escuta e a IA não estiver falando, reinicia uma nova sessão
+        if (statusRef.current === 'listening' && !isAiSpeakingRef.current && !isMutedRef.current) {
+          setTimeout(() => {
+            if (statusRef.current === 'listening' && !isAiSpeakingRef.current && !isMutedRef.current) {
+              startListeningCleanly();
+            }
+          }, 150);
+        }
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+      setStatus('listening');
+      console.log('[ClandeX-IA Voz] Microfone ativo e escutando continuamente...');
+    } catch (e) {
+      console.warn('[ClandeX-IA] Falha ao instanciar SpeechRecognition:', e);
+    }
+  }, [stopListeningCleanly]);
+
+  /**
+   * Fala a resposta em português do Brasil e anima o avatar com supressão total de eco
    */
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-    stopAudioPlayback();
-    // Muta fisicamente o microfone e aborta reconhecimento enquanto a IA fala
-    muteMicrophoneHardware();
+    // Fecha a escuta imediatamente para nunca captar o som do alto-falante
+    stopListeningCleanly();
+    isAiSpeakingRef.current = true;
     setStatus('speaking');
 
     const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
     lastAiSpokenPhraseRef.current = clean;
+
+    window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'pt-BR';
@@ -378,6 +326,30 @@ export function useLiveVoice({
 
     if (ptVoice) utterance.voice = ptVoice;
 
+    let hasEnded = false;
+    const finishPlayback = () => {
+      if (hasEnded) return;
+      hasEnded = true;
+
+      if (speechAnimIntervalRef.current) {
+        clearInterval(speechAnimIntervalRef.current);
+        speechAnimIntervalRef.current = null;
+      }
+      setAiSpeechLevel(0);
+
+      // Cooldown de 600ms após o som cessar para dissipar ecos do ambiente antes de reabrir o microfone
+      if (speechCooldownTimeoutRef.current) {
+        clearTimeout(speechCooldownTimeoutRef.current);
+      }
+      speechCooldownTimeoutRef.current = setTimeout(() => {
+        isAiSpeakingRef.current = false;
+        if (statusRef.current !== 'idle') {
+          setStatus('listening');
+          startListeningCleanly();
+        }
+      }, 600);
+    };
+
     utterance.onstart = () => {
       let phase = 0;
       speechAnimIntervalRef.current = setInterval(() => {
@@ -387,55 +359,47 @@ export function useLiveVoice({
       }, 70);
     };
 
-    utterance.onend = () => {
-      stopAudioPlayback();
-      // Espera 1200ms de cooldown após a fala terminar para que a reverberação do som ambiente dissipe totalmente
-      speechCooldownTimeoutRef.current = setTimeout(() => {
-        unmuteMicrophoneHardware();
-      }, 1200);
-    };
+    utterance.onend = () => finishPlayback();
+    utterance.onerror = () => finishPlayback();
 
-    utterance.onerror = () => {
-      stopAudioPlayback();
-      speechCooldownTimeoutRef.current = setTimeout(() => {
-        unmuteMicrophoneHardware();
-      }, 500);
-    };
+    // Proteção contra travamento nativo do SpeechSynthesis no Chromium:
+    const maxSafetyMs = Math.max(2500, Math.ceil((clean.length / 10) * 1000) + 1500);
+    setTimeout(() => {
+      if (!hasEnded && isAiSpeakingRef.current) {
+        finishPlayback();
+      }
+    }, maxSafetyMs);
 
     if (window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
     }
     window.speechSynthesis.speak(utterance);
-  }, [stopAudioPlayback, muteMicrophoneHardware, unmuteMicrophoneHardware]);
+  }, [stopListeningCleanly, startListeningCleanly]);
 
   /**
-   * Processa a pergunta do microfone do trader de forma natural (Turn-Taking estrito)
+   * Processa a pergunta do microfone do trader de forma natural
    */
   const handleUserSpokenInput = useCallback(async (transcript: string) => {
     const clean = transcript.trim();
     if (!clean || clean.length < 2) return;
 
-    // Supressão acústica: se a IA estiver falando ou em cooldown pós-fala, descarta completamente
-    if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-      console.log('[ClandeX-IA Voz] Áudio descartado: microfone fechado enquanto a IA fala.');
+    if (isAiSpeakingRef.current) {
       return;
     }
 
-    // Previne repetições acidentais captadas em menos de 3.5 segundos
     const now = Date.now();
     if (
       clean.toLowerCase() === lastProcessedQuestionRef.current.toLowerCase() &&
-      now - lastProcessedTimeRef.current < 3500
+      now - lastProcessedTimeRef.current < 3000
     ) {
       return;
     }
     lastProcessedQuestionRef.current = clean;
     lastProcessedTimeRef.current = now;
 
-    console.log('[ClandeX-IA Voz] Pergunta do usuário capturada:', clean);
+    console.log('[ClandeX-IA Voz] Pergunta do usuário:', clean);
     setUserTranscript(clean);
 
-    // Registra a pergunta do usuário no chat (1 única vez)
     setLastTurnMessage({
       id: `user-voice-${now}`,
       role: 'user',
@@ -476,54 +440,37 @@ Diretrizes obrigatórias:
 5. Responda exatamente o que o trader perguntou. Ao terminar, pare de falar e aguarde em silêncio.
     `;
 
-    // 1. Se Gemini Live estiver conectado, envia via sendClientContent com turnComplete
-    if (geminiLiveSessionRef.current) {
-      try {
-        currentAiTurnTextRef.current = '';
-        geminiLiveSessionRef.current.sendClientContent({
-          turns: [
-            {
-              role: 'user',
-              parts: [{ text: marketPrompt }],
-            },
-          ],
-          turnComplete: true,
-        });
-        return;
-      } catch (liveErr) {
-        console.warn('[ClandeX-IA] Falha ao enviar pergunta no Gemini Live:', liveErr);
-      }
-    }
-
-    // 2. Se Gemini Live não estiver ativo, consulta Gemini 3.7 Flash REST e fala com voz de alta qualidade
+    // 1. Tenta Gemini REST com os modelos mais rápidos e compatíveis
     const geminiKey = getEffectiveGeminiKey();
-
     if (geminiKey && geminiKey.length > 15) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const resp = await ai.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: marketPrompt,
-        });
-
-        if (resp && resp.text) {
-          const cleanAnswer = resp.text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
-          setAiResponseText(cleanAnswer);
-          setLastTurnMessage({
-            id: `model-voice-${Date.now()}`,
-            role: 'model',
-            text: cleanAnswer,
-            timestamp: Date.now(),
+      const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-3.7-flash'];
+      for (const m of modelsToTry) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: geminiKey });
+          const resp = await ai.models.generateContent({
+            model: m,
+            contents: marketPrompt,
           });
-          speakBrowserText(cleanAnswer);
-          return;
+
+          if (resp && resp.text) {
+            const cleanAnswer = resp.text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+            setAiResponseText(cleanAnswer);
+            setLastTurnMessage({
+              id: `model-voice-${Date.now()}`,
+              role: 'model',
+              text: cleanAnswer,
+              timestamp: Date.now(),
+            });
+            speakBrowserText(cleanAnswer);
+            return;
+          }
+        } catch (e: any) {
+          console.warn(`[ClandeX-IA] Modelo ${m} falhou:`, e?.message || e);
         }
-      } catch (e: any) {
-        console.warn('[ClandeX-IA] Gemini REST falhou, respondendo com motor técnico local:', e?.message || e);
       }
     }
 
-    // 3. Fallback: Motor local instantâneo
+    // 2. Fallback imediato e garantido: Motor institucional local ClandeX-IA
     const localAnswer = answerQuestionLocally(clean);
     setAiResponseText(localAnswer);
     setLastTurnMessage({
@@ -533,156 +480,11 @@ Diretrizes obrigatórias:
       timestamp: Date.now(),
     });
     speakBrowserText(localAnswer);
-  }, [speakBrowserText]);
+  }, [answerQuestionLocally, speakBrowserText]);
 
-  /**
-   * Inicia o receptor contínuo de reconhecimento de fala (PT-BR) com supressão de eco e janela de silêncio de 1.8s
-   */
-  const startSpeechRecognitionListener = useCallback(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  handleUserSpokenInputRef.current = handleUserSpokenInput;
 
-    if (!SpeechRecognition) {
-      console.warn('[ClandeX-IA] SpeechRecognition não suportado neste navegador.');
-      return;
-    }
-
-    try {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {}
-      }
-
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'pt-BR';
-      recognition.continuous = true;
-      recognition.interimResults = true;
-
-      recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, mutada ou em cooldown acústico, descarta sem processar
-        if (
-          isMutedRef.current ||
-          isAiSpeakingRef.current ||
-          statusRef.current === 'speaking' ||
-          statusRef.current === 'connecting'
-        ) {
-          return;
-        }
-
-        let interimTranscript = '';
-        let finalChunk = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i];
-          const text = res[0].transcript;
-          if (res.isFinal) {
-            finalChunk += text + ' ';
-          } else {
-            interimTranscript += text;
-          }
-        }
-
-        if (finalChunk.trim()) {
-          accumulatedTranscriptRef.current += (accumulatedTranscriptRef.current ? ' ' : '') + finalChunk.trim();
-        }
-
-        const currentSpokenText = (accumulatedTranscriptRef.current + ' ' + interimTranscript).trim();
-        if (!currentSpokenText) return;
-
-        // Anti-echo acústico: se o áudio captado for a própria frase falada pela IA (eco de alto-falante)
-        if (lastAiSpokenPhraseRef.current) {
-          const normAi = lastAiSpokenPhraseRef.current.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const normUser = currentSpokenText.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (normAi.length > 5 && normUser.length > 5 && (normAi.includes(normUser) || normUser.includes(normAi))) {
-            console.log('[ClandeX-IA Voz] Eco de áudio captado e suprimido:', currentSpokenText);
-            return;
-          }
-        }
-
-        // Mostra na tela em tempo real o que o usuário está falando
-        setUserTranscript(currentSpokenText);
-
-        // Reinicia o timer de silêncio: aguarda 1.8 segundos de silêncio contínuo após o trader terminar de falar antes de enviar
-        if (silenceTimerRef.current) {
-          clearTimeout(silenceTimerRef.current);
-        }
-
-        silenceTimerRef.current = setTimeout(() => {
-          const completeSentence = (accumulatedTranscriptRef.current + ' ' + interimTranscript).trim();
-          accumulatedTranscriptRef.current = '';
-          silenceTimerRef.current = null;
-
-          if (
-            completeSentence.length >= 3 &&
-            !isAiSpeakingRef.current &&
-            statusRef.current === 'listening'
-          ) {
-            console.log('[ClandeX-IA Voz] Frase completa concluída pelo usuário:', completeSentence);
-            muteMicrophoneHardware(); // Muta imediatamente o microfone antes da IA responder
-            handleUserSpokenInput(completeSentence);
-          }
-        }, 1800);
-      };
-
-      recognition.onerror = (err: any) => {
-        if (err.error !== 'no-speech' && err.error !== 'aborted') {
-          console.warn('[ClandeX-IA Voz] Reconhecimento aviso:', err.error);
-        }
-      };
-
-      recognition.onend = () => {
-        // Só reinicia se o usuário não se mutou, a IA não estiver falando e o status for listening
-        if (
-          recognitionRef.current &&
-          !isMutedRef.current &&
-          !isAiSpeakingRef.current &&
-          statusRef.current === 'listening'
-        ) {
-          try {
-            recognition.start();
-          } catch {}
-        }
-      };
-
-      recognitionRef.current = recognition;
-
-      // Inicia a escuta se a IA não estiver falando e o microfone não estiver mutado
-      if (!isAiSpeakingRef.current && !isMutedRef.current && statusRef.current === 'listening') {
-        try {
-          recognition.start();
-        } catch {}
-      }
-    } catch (e) {
-      console.warn('[ClandeX-IA] Reconhecimento contínuo não pôde iniciar imediatamente:', e);
-    }
-  }, [handleUserSpokenInput, muteMicrophoneHardware]);
-
-  /**
-   * Ativa modo de voz inteligente com reconhecimento de fala nativo (PT-BR)
-   */
-  const startBrowserSpeechFallback = useCallback(() => {
-    activeEngineRef.current = 'browser_speech';
-    setActiveEngine('browser_speech');
-    setHasMicPermission(true);
-
-    // Muta microfone e prepara a escuta com antecedência
-    muteMicrophoneHardware();
-    startSpeechRecognitionListener();
-
-    const assetSym = contextRef.current.asset.symbol;
-    const greeting = `ClandeX-IA conectada por voz. Monitorando ${assetSym}. Pode falar comigo!`;
-    setLastTurnMessage({
-      id: `model-voice-${Date.now()}`,
-      role: 'model',
-      text: greeting,
-      timestamp: Date.now(),
-    });
-    // Fala saudação. utterance.onend aguardará 1.2s de cooldown e chamará unmuteMicrophoneHardware()
-    speakBrowserText(greeting);
-  }, [muteMicrophoneHardware, speakBrowserText, startSpeechRecognitionListener]);
-
-  // Request Microphone Permissions & Audio Processing
+  // Request Microphone Permissions & Audio Processing para Visualização do Nível do Microfone
   const requestMicrophoneAccess = useCallback(async () => {
     try {
       setIsActivatingMic(true);
@@ -714,7 +516,6 @@ Diretrizes obrigatórias:
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        // Se mutado, ou IA falando, ou em transição: ZERA e NÃO PROCESSA
         if (isMutedRef.current || isAiSpeakingRef.current || statusRef.current === 'speaking' || statusRef.current === 'connecting') {
           setMicLevel(0);
           return;
@@ -727,11 +528,8 @@ Diretrizes obrigatórias:
         }
         const rms = Math.sqrt(sum / (inputData.length / 8));
         setMicLevel(Math.min(100, Math.round(rms * 280)));
-
-        // Não enviamos PCM cru contínuo para evitar que Gemini Live escute eco dos alto-falantes
       };
 
-      // Mute gain node para evitar microfonia/eco nos alto-falantes
       const muteNode = inputCtx.createGain();
       muteNode.gain.value = 0;
 
@@ -747,289 +545,57 @@ Diretrizes obrigatórias:
     }
   }, []);
 
-  // Connect to Live Voice: Tenta Gemini Live se chave disponível, senão ativa voz inteligente imediatamente
+  // Connect to Live Voice: Inicia conversa com saudação e escuta ativa
   const startLiveConversation = useCallback(async () => {
     try {
       setErrorMessage(null);
       setStatus('connecting');
+      setActiveEngine('browser_speech');
 
+      // 1. Inicia AudioContext para saídas sonoras
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!outputAudioCtxRef.current) {
         outputAudioCtxRef.current = new AudioCtx({ sampleRate: 24000 });
       } else if (outputAudioCtxRef.current.state === 'suspended') {
         await outputAudioCtxRef.current.resume();
       }
-      const outputCtx = outputAudioCtxRef.current;
-      audioPlaybackStateRef.current = { nextStartTime: outputCtx.currentTime, activeSources: [] };
 
-      // Chave do Gemini
-      let geminiKey = '';
-      try {
-        if (typeof import.meta !== 'undefined' && import.meta.env) {
-          geminiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
-        }
-      } catch {}
-      if (!geminiKey && typeof window !== 'undefined') {
-        geminiKey = localStorage.getItem('clandex_gemini_api_key') || '';
-      }
-
-      const isKnownLeakedKey = geminiKey.trim() === 'AIzaSyDlckr22NxUjJXWVp9ENtPFxuDoBy2LFZ4';
-      const isLocalhost =
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-      let directConnected = false;
-
-      // 1. TENTATIVA GEMINI LIVE (apenas com chave válida não bloqueada)
-      if (geminiKey && geminiKey.length > 15 && !isKnownLeakedKey) {
-        try {
-          console.log('[ClandeX-IA] Conectando diretamente ao Gemini Live...');
-          const ai = new GoogleGenAI({
-            apiKey: geminiKey,
-            httpOptions: { apiVersion: 'v1alpha' },
-          });
-
-          const currentCtx = contextRef.current;
-          const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
-          const marketSession = getCurrentMarketSession();
-
-          const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
-          const supports = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price);
-          const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price);
-
-          const systemInstruction = `
-Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, mentora institucional e robô de trading de Opções Binárias e Forex para a corretora Hiove.
-Mercado atual em tempo real:
-- Ativo: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
-- Preço Atual: ${currentCtx.asset.currentPrice}
-- Tendência: ${currentCtx.marketAnalysis?.trend || 'LATERAL'}
-- Confluência Técnica: ${currentCtx.confluences?.totalScore ?? 0}% (${currentCtx.confluences?.direction ?? 'NEUTRO'})
-- Suportes Técnicos: ${supports.join(', ') || 'dinâmicos'}
-- Resistências Técnicas: ${resistances.join(', ') || 'dinâmicas'}
-- Sessão: ${marketSession?.currentSession || 'Aberto'}
-- Notícias: ${upcomingHighImpact ? `${upcomingHighImpact.event} às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}
-
-Diretrizes de Conversação:
-1. Responda em Português do Brasil com tom natural, firme, confiante e amigável.
-2. Seja rápida e concisa (máximo 1 a 2 frases faladas por resposta), pois o trader está operando.
-3. Não use formatações de texto ou asteriscos, fale de forma limpa.
-          `;
-
-          const liveModels = [
-            'gemini-3.8-live',
-            'gemini-3.1-flash-live-preview',
-            'gemini-2.5-flash-native-audio-latest',
-          ];
-          for (const m of liveModels) {
-            try {
-              const liveSession = await ai.live.connect({
-                model: m,
-                config: {
-                  responseModalities: [Modality.AUDIO],
-                  speechConfig: {
-                    voiceConfig: {
-                      prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-                    },
-                  },
-                  systemInstruction,
-                  outputAudioTranscription: {},
-                  inputAudioTranscription: {},
-                },
-                callbacks: {
-                  onmessage: (message: LiveServerMessage) => {
-                    const parts = message.serverContent?.modelTurn?.parts || [];
-                    for (const part of parts) {
-                      if (part.inlineData?.data) {
-                        scheduleAudioChunk(part.inlineData.data);
-                      }
-                    }
-                    const aiTxt = (message.serverContent as any)?.outputTranscription?.text;
-                    if (aiTxt) {
-                      currentAiTurnTextRef.current += (currentAiTurnTextRef.current ? ' ' : '') + aiTxt.trim();
-                      setAiResponseText(currentAiTurnTextRef.current);
-                    }
-                    if (message.serverContent?.turnComplete) {
-                      // Turno encerrado: registra no chat 1 única vez a resposta completa
-                      if (currentAiTurnTextRef.current.trim()) {
-                        const fullAnswer = currentAiTurnTextRef.current.trim();
-                        setLastTurnMessage({
-                          id: `model-voice-${Date.now()}`,
-                          role: 'model',
-                          text: fullAnswer,
-                          timestamp: Date.now(),
-                        });
-                        currentAiTurnTextRef.current = '';
-                      }
-                    }
-                    if (message.serverContent?.interrupted) {
-                      setStatus('listening');
-                      stopAudioPlayback();
-                      currentAiTurnTextRef.current = '';
-                    }
-                  },
-                  onclose: () => {
-                    if (activeEngineRef.current === 'gemini_live') {
-                      startBrowserSpeechFallback();
-                    }
-                  },
-                  onerror: (err: any) => {
-                    console.warn(`[Gemini Live] Erro:`, err);
-                    if (err?.message?.includes('leaked') || err?.status === 403) {
-                      setErrorMessage('Sua chave do Gemini precisa ser atualizada no Google AI Studio.');
-                    }
-                  },
-                },
-              });
-
-              geminiLiveSessionRef.current = liveSession;
-              directConnected = true;
-              activeEngineRef.current = 'gemini_live';
-              setActiveEngine('gemini_live');
-              setStatus('listening');
-              console.log(`[ClandeX-IA] Gemini Live conectado no modelo ${m}!`);
-              break;
-            } catch (liveErr) {
-              console.warn(`[Gemini Live] Falha com ${m}:`, liveErr);
-            }
-          }
-
-          if (directConnected && geminiLiveSessionRef.current) {
-            muteMicrophoneHardware();
-            startSpeechRecognitionListener();
-            await requestMicrophoneAccess();
-
-            // Dispara saudação inicial curta e direta com microfone mutado: 1 frase falada, depois silêncio absoluto aguardando o usuário
-            try {
-              const currentCtx = contextRef.current;
-              const greetingText = `ClandeX-IA conectada ao vivo. Estou monitorando ${currentCtx.asset.symbol}. Como posso ajudar suas operações agora?`;
-              lastAiSpokenPhraseRef.current = greetingText;
-              currentAiTurnTextRef.current = '';
-              geminiLiveSessionRef.current.sendClientContent({
-                turns: [
-                  {
-                    role: 'user',
-                    parts: [
-                      {
-                        text: `Diga exatamente por voz: "${greetingText}". Encerre sua fala logo em seguida e aguarde em silêncio.`,
-                      },
-                    ],
-                  },
-                ],
-                turnComplete: true,
-              });
-            } catch (greetErr) {
-              console.warn('[Gemini Live] Aviso saudação inicial:', greetErr);
-              unmuteMicrophoneHardware();
-            }
-            return;
-          }
-        } catch (directErr: any) {
-          console.warn('[ClandeX-IA] Conexão Gemini Live não pôde ser estabelecida:', directErr);
-          if (directErr?.message?.includes('leaked') || directErr?.status === 403) {
-            setErrorMessage('Chave Gemini bloqueada pela Google (leaked). Usando Voz Local Inteligente.');
-          }
-        }
-      } else if (isKnownLeakedKey) {
-        setErrorMessage('Aviso: Sua chave anterior foi revogada pela Google. Conectando com Voz Local Inteligente (PT-BR). Adicione uma nova chave nas Configurações.');
-      }
-
-      // 2. TENTATIVA WEBSOCKET LOCAL (APENAS SE ESTIVER NO LOCALHOST)
-      if (isLocalhost) {
-        try {
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          let hostToUse = window.location.host;
-          if (window.location.port !== '3000' && window.location.port !== '') {
-            hostToUse = `${window.location.hostname}:3000`;
-          }
-          const wsUrl = `${protocol}//${hostToUse}/api/live`;
-          const ws = new WebSocket(wsUrl);
-          wsRef.current = ws;
-
-          ws.onopen = () => {
-            activeEngineRef.current = 'gemini_live';
-            setActiveEngine('gemini_live');
-            ws.send(JSON.stringify({ type: 'start', voiceName: 'Kore' }));
-          };
-
-          ws.onmessage = (event) => {
-            try {
-              const msg = JSON.parse(event.data);
-              if (msg.type === 'ready') setStatus('listening');
-              else if (msg.type === 'audio') {
-                setStatus('speaking');
-                scheduleAudioChunk(msg.audio);
-              } else if (msg.type === 'interrupted') {
-                setStatus('listening');
-                stopAudioPlayback();
-              } else if (msg.type === 'error') {
-                startBrowserSpeechFallback();
-              }
-            } catch {}
-          };
-
-          ws.onerror = () => {
-            startBrowserSpeechFallback();
-          };
-
-          ws.onclose = () => {
-            if (activeEngineRef.current === 'gemini_live') {
-              startBrowserSpeechFallback();
-            }
-          };
-
-          startSpeechRecognitionListener();
-          await requestMicrophoneAccess();
-          return;
-        } catch {}
-      }
-
-      // 3. FALLBACK SEGURO E GARANTIDO: Voz Inteligente Nativa do Navegador (PT-BR)
-      startBrowserSpeechFallback();
+      // 2. Solicita acesso ao microfone (para medição visual e permissões)
       await requestMicrophoneAccess();
+
+      // 3. Dispara saudação inicial falada com microfone pausado
+      const assetSym = contextRef.current.asset.symbol;
+      const greeting = `ClandeX-IA conectada por voz. Monitorando ${assetSym}. Pode falar comigo!`;
+      setLastTurnMessage({
+        id: `model-voice-${Date.now()}`,
+        role: 'model',
+        text: greeting,
+        timestamp: Date.now(),
+      });
+
+      // Fala saudação. Quando terminar (+ 600ms cooldown), startListeningCleanly() abre o microfone automaticamente!
+      speakBrowserText(greeting);
     } catch (err: any) {
-      console.warn('[ClandeX-IA Voz] Ativando modo de segurança:', err);
-      startBrowserSpeechFallback();
+      console.warn('[ClandeX-IA Voz] Ativando modo de escuta direta:', err);
+      setStatus('listening');
+      startListeningCleanly();
     }
-  }, [
-    scheduleAudioChunk,
-    stopAudioPlayback,
-    requestMicrophoneAccess,
-    startBrowserSpeechFallback,
-    startSpeechRecognitionListener,
-    muteMicrophoneHardware,
-    unmuteMicrophoneHardware,
-  ]);
+  }, [requestMicrophoneAccess, speakBrowserText, startListeningCleanly]);
 
-  // Disconnect WebSocket, Direct Session and media streams
+  // Disconnect session and release media streams
   const disconnectSession = useCallback(() => {
-    stopAudioPlayback();
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    accumulatedTranscriptRef.current = '';
+    stopListeningCleanly();
 
     if (speechCooldownTimeoutRef.current) {
       clearTimeout(speechCooldownTimeoutRef.current);
       speechCooldownTimeoutRef.current = null;
     }
     isAiSpeakingRef.current = false;
-    currentAiTurnTextRef.current = '';
     lastProcessedQuestionRef.current = '';
+    accumulatedTranscriptRef.current = '';
 
-    if (geminiLiveSessionRef.current) {
-      try {
-        geminiLiveSessionRef.current.close();
-      } catch {}
-      geminiLiveSessionRef.current = null;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {}
-      recognitionRef.current = null;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
 
     if (processorRef.current) {
@@ -1047,28 +613,21 @@ Diretrizes de Conversação:
       micStreamRef.current = null;
     }
 
-    if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'stop' }));
-      }
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    activeEngineRef.current = 'browser_speech';
     setStatus('idle');
     setMicLevel(0);
     setAiSpeechLevel(0);
     setErrorMessage(null);
-  }, [stopAudioPlayback]);
+  }, [stopListeningCleanly]);
 
   const toggleMute = () => {
     setIsMuted((prev) => {
       const next = !prev;
-      if (micStreamRef.current) {
-        micStreamRef.current.getAudioTracks().forEach((track) => {
-          track.enabled = !next;
-        });
+      if (next) {
+        stopListeningCleanly();
+      } else {
+        if (!isAiSpeakingRef.current && statusRef.current === 'listening') {
+          startListeningCleanly();
+        }
       }
       return next;
     });
