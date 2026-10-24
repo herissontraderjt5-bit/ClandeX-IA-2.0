@@ -27,6 +27,11 @@ export function useLiveVoice({
   const [aiSpeechLevel, setAiSpeechLevel] = useState<number>(0);
   const [isActivatingMic, setIsActivatingMic] = useState(false);
   const [activeEngine, setActiveEngine] = useState<VoiceEngine>('browser_speech');
+  const [userTranscript, setUserTranscript] = useState<string>('');
+  const [aiResponseText, setAiResponseText] = useState<string>('');
+
+  const statusRef = useRef<LiveVoiceStatus>('idle');
+  statusRef.current = status;
 
   // Ref de motor ativo para evitar closures desatualizadas
   const activeEngineRef = useRef<VoiceEngine>('browser_speech');
@@ -125,6 +130,10 @@ export function useLiveVoice({
       const pcmData = base64ToPcm(base64Audio);
       const ctx = outputAudioCtxRef.current;
       if (!ctx) return;
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
 
       let sum = 0;
       for (let i = 0; i < pcmData.length; i += 16) {
@@ -270,6 +279,9 @@ export function useLiveVoice({
       setStatus('listening');
     };
 
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
     window.speechSynthesis.speak(utterance);
   }, [stopAudioPlayback]);
 
@@ -278,7 +290,27 @@ export function useLiveVoice({
    */
   const handleUserSpokenInput = useCallback(async (transcript: string) => {
     console.log('[ClandeX-IA Voz] Pergunta capturada pelo microfone:', transcript);
+    setUserTranscript(transcript);
 
+    // 1. Se Gemini Live estiver conectado, envia via sendClientContent com turnComplete
+    if (geminiLiveSessionRef.current) {
+      try {
+        geminiLiveSessionRef.current.sendClientContent({
+          turns: [
+            {
+              role: 'user',
+              parts: [{ text: transcript }],
+            },
+          ],
+          turnComplete: true,
+        });
+        return;
+      } catch (liveErr) {
+        console.warn('[ClandeX-IA] Falha ao enviar texto no Gemini Live:', liveErr);
+      }
+    }
+
+    // 2. Se Gemini Live não estiver ativo, consulta Gemini 3.7 Flash REST e fala com voz nativa
     let geminiKey = '';
     try {
       if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -305,7 +337,7 @@ Contexto do mercado atual:
 
 Pergunta do trader por voz: "${transcript}"
 
-Responda em português brasileiro de forma direta, clara e concisa (máximo de 1 a 3 frases faladas). Nunca use formatação markdown ou asteriscos, fale de forma natural e fluida.
+Responda em português brasileiro de forma direta, clara e concisa (máximo de 1 a 2 frases faladas). Nunca use formatação markdown ou asteriscos, fale de forma natural e fluida.
         `;
 
         const resp = await ai.models.generateContent({
@@ -314,6 +346,7 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
         });
 
         if (resp && resp.text) {
+          setAiResponseText(resp.text);
           speakBrowserText(resp.text);
           return;
         }
@@ -324,8 +357,64 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
 
     // Fallback para o motor local instantâneo
     const localAnswer = answerQuestionLocally(transcript);
+    setAiResponseText(localAnswer);
     speakBrowserText(localAnswer);
   }, [speakBrowserText]);
+
+  /**
+   * Inicia o receptor contínuo de reconhecimento de fala (PT-BR)
+   */
+  const startSpeechRecognitionListener = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      console.warn('[ClandeX-IA] SpeechRecognition não suportado neste navegador.');
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onresult = (event: any) => {
+        if (isMutedRef.current) return;
+        const lastIdx = event.results.length - 1;
+        const transcript = event.results[lastIdx]?.[0]?.transcript?.trim();
+        if (transcript) {
+          console.log('[ClandeX-IA Voz] Fala capturada:', transcript);
+          handleUserSpokenInput(transcript);
+        }
+      };
+
+      recognition.onerror = (err: any) => {
+        if (err.error !== 'no-speech' && err.error !== 'aborted') {
+          console.warn('[ClandeX-IA Voz] Reconhecimento aviso:', err.error);
+        }
+      };
+
+      recognition.onend = () => {
+        if (recognitionRef.current && !isMutedRef.current && statusRef.current !== 'idle') {
+          try {
+            recognition.start();
+          } catch {}
+        }
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.warn('[ClandeX-IA] Reconhecimento contínuo não pôde iniciar imediatamente:', e);
+    }
+  }, [handleUserSpokenInput]);
 
   /**
    * Ativa modo de voz inteligente com reconhecimento de fala nativo (PT-BR)
@@ -336,55 +425,11 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
     setStatus('listening');
     setHasMicPermission(true);
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      try {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.stop();
-          } catch {}
-        }
-
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'pt-BR';
-        recognition.continuous = true;
-        recognition.interimResults = false;
-
-        recognition.onresult = (event: any) => {
-          if (isMutedRef.current) return;
-          const lastIdx = event.results.length - 1;
-          const transcript = event.results[lastIdx]?.[0]?.transcript?.trim();
-          if (transcript) {
-            handleUserSpokenInput(transcript);
-          }
-        };
-
-        recognition.onerror = (err: any) => {
-          if (err.error !== 'no-speech' && err.error !== 'aborted') {
-            console.warn('[ClandeX-IA Voz] Reconhecimento aviso:', err.error);
-          }
-        };
-
-        recognition.onend = () => {
-          if (recognitionRef.current && !isMutedRef.current && activeEngineRef.current === 'browser_speech') {
-            try {
-              recognition.start();
-            } catch {}
-          }
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-      } catch (e) {
-        console.warn('[ClandeX-IA] Reconhecimento contínuo não pôde iniciar imediatamente:', e);
-      }
-    }
+    startSpeechRecognitionListener();
 
     const assetSym = contextRef.current.asset.symbol;
     speakBrowserText(`ClandeX-IA conectada por voz. Monitorando ${assetSym}. Pode falar comigo!`);
-  }, [speakBrowserText, handleUserSpokenInput]);
+  }, [speakBrowserText, startSpeechRecognitionListener]);
 
   // Request Microphone Permissions & Audio Processing
   const requestMicrophoneAccess = useCallback(async () => {
@@ -448,8 +493,13 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
         }
       };
 
+      // Mute gain node para evitar microfonia/eco nos alto-falantes
+      const muteNode = inputCtx.createGain();
+      muteNode.gain.value = 0;
+
       source.connect(processor);
-      processor.connect(inputCtx.destination);
+      processor.connect(muteNode);
+      muteNode.connect(inputCtx.destination);
     } catch (err: any) {
       console.warn('Microphone activation notice:', err?.name, err?.message);
       setHasMicPermission(false);
@@ -502,7 +552,7 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
           });
 
           const currentCtx = contextRef.current;
-          const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(currentCtx.asset.symbol);
+          const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
           const marketSession = getCurrentMarketSession();
 
           const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
@@ -510,19 +560,21 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
           const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price);
 
           const systemInstruction = `
-Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, especialista em trading de Opções Binárias e Forex para a corretora Hiove.
-Mercado atual:
+Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, mentora institucional e robô de trading de Opções Binárias e Forex para a corretora Hiove.
+Mercado atual em tempo real:
 - Ativo: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
 - Preço Atual: ${currentCtx.asset.currentPrice}
 - Tendência: ${currentCtx.marketAnalysis?.trend || 'LATERAL'}
-- Confluência: ${currentCtx.confluences?.totalScore ?? 0}% (${currentCtx.confluences?.direction ?? 'NEUTRO'})
-- Suportes: ${supports.join(', ') || 'dinâmicos'}
-- Resistências: ${resistances.join(', ') || 'dinâmicas'}
+- Confluência Técnica: ${currentCtx.confluences?.totalScore ?? 0}% (${currentCtx.confluences?.direction ?? 'NEUTRO'})
+- Suportes Técnicos: ${supports.join(', ') || 'dinâmicos'}
+- Resistências Técnicas: ${resistances.join(', ') || 'dinâmicas'}
+- Sessão: ${marketSession?.currentSession || 'Aberto'}
+- Notícias: ${upcomingHighImpact ? `${upcomingHighImpact.event} às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}
 
-Regras de fala:
-1. Responda em Português do Brasil com tom natural e profissional.
-2. Seja objetivo e conciso (máximo 1 a 2 frases faladas).
-3. Sem formatações de texto ou asteriscos.
+Diretrizes de Conversação:
+1. Responda em Português do Brasil com tom natural, firme, confiante e amigável.
+2. Seja rápida e concisa (máximo 1 a 2 frases faladas por resposta), pois o trader está operando.
+3. Não use formatações de texto ou asteriscos, fale de forma limpa.
           `;
 
           const liveModels = [
@@ -553,6 +605,10 @@ Regras de fala:
                         setStatus('speaking');
                         scheduleAudioChunk(part.inlineData.data);
                       }
+                    }
+                    const aiTxt = (message.serverContent as any)?.outputTranscription?.text;
+                    if (aiTxt) {
+                      setAiResponseText((prev) => prev ? prev + ' ' + aiTxt : aiTxt);
                     }
                     if (message.serverContent?.interrupted) {
                       setStatus('listening');
@@ -586,6 +642,7 @@ Regras de fala:
           }
 
           if (directConnected && geminiLiveSessionRef.current) {
+            startSpeechRecognitionListener();
             await requestMicrophoneAccess();
 
             // Dispara início da conversa para a IA cumprimentar o trader na hora
@@ -663,6 +720,7 @@ Regras de fala:
             }
           };
 
+          startSpeechRecognitionListener();
           await requestMicrophoneAccess();
           return;
         } catch {}
@@ -680,6 +738,7 @@ Regras de fala:
     stopAudioPlayback,
     requestMicrophoneAccess,
     startBrowserSpeechFallback,
+    startSpeechRecognitionListener,
   ]);
 
   // Disconnect WebSocket, Direct Session and media streams
@@ -757,6 +816,8 @@ Regras de fala:
     aiSpeechLevel,
     isActivatingMic,
     activeEngine,
+    userTranscript,
+    aiResponseText,
     startLiveConversation,
     disconnectSession,
     toggleMute,

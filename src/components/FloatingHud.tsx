@@ -89,6 +89,8 @@ interface FloatingHudProps {
     aiSpeechLevel: number;
     isActivatingMic: boolean;
     activeEngine?: VoiceEngine;
+    userTranscript?: string;
+    aiResponseText?: string;
     startLiveConversation: () => Promise<void>;
     disconnectSession: () => void;
     toggleMute: () => void;
@@ -423,6 +425,44 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, activeTab, isChatLoading]);
+
+  // Sincroniza perguntas faladas pelo trader no chat
+  useEffect(() => {
+    if (liveVoice?.userTranscript) {
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'user' && last.text === liveVoice.userTranscript) return prev;
+        return [
+          ...prev,
+          {
+            id: `user-voice-${Date.now()}`,
+            role: 'user',
+            text: liveVoice.userTranscript,
+            timestamp: Date.now(),
+          },
+        ];
+      });
+    }
+  }, [liveVoice?.userTranscript]);
+
+  // Sincroniza respostas de voz da IA no chat
+  useEffect(() => {
+    if (liveVoice?.aiResponseText) {
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'model' && last.text === liveVoice.aiResponseText) return prev;
+        return [
+          ...prev,
+          {
+            id: `model-voice-${Date.now()}`,
+            role: 'model',
+            text: liveVoice.aiResponseText,
+            timestamp: Date.now(),
+          },
+        ];
+      });
+    }
+  }, [liveVoice?.aiResponseText]);
 
   const handleSendChatMessage = async (customPrompt?: string) => {
     const textToSend = (customPrompt || chatInput).trim();
