@@ -54,7 +54,7 @@ import {
   AppSettings,
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
-import { LiveVoiceStatus, VoiceEngine } from '../hooks/useLiveVoice';
+import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage } from '../hooks/useLiveVoice';
 import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
 import { marketDataManager } from '../services/marketData';
@@ -91,6 +91,7 @@ interface FloatingHudProps {
     activeEngine?: VoiceEngine;
     userTranscript?: string;
     aiResponseText?: string;
+    lastTurnMessage?: LiveTurnMessage | null;
     startLiveConversation: () => Promise<void>;
     disconnectSession: () => void;
     toggleMute: () => void;
@@ -426,43 +427,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }
   }, [chatMessages, activeTab, isChatLoading]);
 
-  // Sincroniza perguntas faladas pelo trader no chat
+  // Sincroniza perguntas e respostas da conversa por voz no chat (apenas 1 vez por turno concluído, sem repetição de fragmentos)
   useEffect(() => {
-    if (liveVoice?.userTranscript) {
+    if (liveVoice?.lastTurnMessage) {
+      const turnMsg = liveVoice.lastTurnMessage;
       setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'user' && last.text === liveVoice.userTranscript) return prev;
-        return [
-          ...prev,
-          {
-            id: `user-voice-${Date.now()}`,
-            role: 'user',
-            text: liveVoice.userTranscript,
-            timestamp: Date.now(),
-          },
-        ];
+        if (prev.some((m) => m.id === turnMsg.id)) return prev;
+        return [...prev, turnMsg];
       });
     }
-  }, [liveVoice?.userTranscript]);
-
-  // Sincroniza respostas de voz da IA no chat
-  useEffect(() => {
-    if (liveVoice?.aiResponseText) {
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'model' && last.text === liveVoice.aiResponseText) return prev;
-        return [
-          ...prev,
-          {
-            id: `model-voice-${Date.now()}`,
-            role: 'model',
-            text: liveVoice.aiResponseText,
-            timestamp: Date.now(),
-          },
-        ];
-      });
-    }
-  }, [liveVoice?.aiResponseText]);
+  }, [liveVoice?.lastTurnMessage]);
 
   const handleSendChatMessage = async (customPrompt?: string) => {
     const textToSend = (customPrompt || chatInput).trim();
@@ -496,6 +470,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       } catch {}
       if (!clientApiKey && typeof window !== 'undefined') {
         clientApiKey = localStorage.getItem('clandex_gemini_api_key') || '';
+      }
+      if (clientApiKey && clientApiKey.includes('AIzaSyDlckr22NxUjJXWVp9ENtPFxuDoBy2LFZ4')) {
+        try {
+          localStorage.removeItem('clandex_gemini_api_key');
+        } catch {}
+        clientApiKey = '';
       }
 
       if (clientApiKey && clientApiKey.length > 15) {
