@@ -1,4 +1,8 @@
 import { SignalRecord, WebhookConfig, WebhookLog } from '../types/trading';
+import {
+  insertWebhookLogToSupabase,
+  fetchWebhookLogsFromSupabase,
+} from './supabaseClient';
 
 class WebhookDispatcherService {
   private logs: WebhookLog[] = [];
@@ -6,6 +10,7 @@ class WebhookDispatcherService {
 
   constructor() {
     this.loadLogs();
+    this.syncFromSupabase();
   }
 
   public setCallback(cb: (logs: WebhookLog[]) => void) {
@@ -139,6 +144,7 @@ class WebhookDispatcherService {
     this.logs.unshift(log);
     if (this.logs.length > 50) this.logs.pop();
     this.saveLogs();
+    insertWebhookLogToSupabase(log);
     if (this.onLogsUpdated) {
       this.onLogsUpdated(this.logs);
     }
@@ -148,6 +154,17 @@ class WebhookDispatcherService {
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem('clandex_webhook_logs', JSON.stringify(this.logs));
+      }
+    } catch {}
+  }
+
+  private async syncFromSupabase() {
+    try {
+      const remote = await fetchWebhookLogsFromSupabase(50);
+      if (remote && remote.length > 0) {
+        this.logs = remote;
+        this.saveLogs();
+        if (this.onLogsUpdated) this.onLogsUpdated(this.logs);
       }
     } catch {}
   }

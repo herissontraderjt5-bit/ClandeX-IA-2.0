@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types/trading';
-import { X, Sliders, Volume2, Shield, RefreshCw } from 'lucide-react';
+import { X, Sliders, Volume2, Shield, RefreshCw, Database, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  getSupabaseConfig,
+  setSupabaseCredentials,
+  testSupabaseConnection,
+  isSupabaseConfigured,
+} from '../services/supabaseClient';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,13 +21,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   onSaveSettings,
 }) => {
-  const [localSettings, setLocalSettings] = React.useState<AppSettings>(settings);
+  const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+  const [supabaseUrl, setSupabaseUrl] = useState(() => getSupabaseConfig().url);
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => getSupabaseConfig().key);
+  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setLocalSettings(settings);
+    const cfg = getSupabaseConfig();
+    setSupabaseUrl(cfg.url);
+    setSupabaseAnonKey(cfg.key);
   }, [settings, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleTestSupabase = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    setSupabaseCredentials(supabaseUrl, supabaseAnonKey);
+    const res = await testSupabaseConnection();
+    setTestResult(res);
+    setIsTesting(false);
+  };
 
   const handleResetDefaults = () => {
     const defaults: AppSettings = {
@@ -48,6 +70,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSave = () => {
+    setSupabaseCredentials(supabaseUrl, supabaseAnonKey);
     onSaveSettings(localSettings);
     onClose();
   };
@@ -315,6 +338,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <span>Som de Sinal Confirmado (Harmonia CALL/PUT)</span>
               </label>
+            </div>
+          </div>
+
+          {/* Supabase Cloud Database Section */}
+          <div className="p-3.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-400" />
+                <span className="font-semibold text-white block text-xs tracking-wide">
+                  BANCO DE DADOS SUPABASE (Tempo Real)
+                </span>
+              </div>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold uppercase ${
+                  isSupabaseConfigured()
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}
+              >
+                {isSupabaseConfigured() ? 'Chave Configurada' : 'Aguardando Anon Key'}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">URL do Projeto Supabase:</label>
+                <input
+                  type="text"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  placeholder="https://qxojtaqselrgitdmmora.supabase.co"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 font-mono focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">
+                  Chave Pública Anon (Project Settings &gt; API &gt; anon public):
+                </label>
+                <input
+                  type="password"
+                  value={supabaseAnonKey}
+                  onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 font-mono focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isTesting}
+                  onClick={handleTestSupabase}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 font-semibold rounded-lg text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isTesting ? 'animate-spin' : ''}`} />
+                  {isTesting ? 'Testando...' : 'Testar Conexão Supabase'}
+                </button>
+
+                {testResult && (
+                  <div
+                    className={`flex items-center gap-1.5 text-[11px] ${
+                      testResult.success ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {testResult.success ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>{testResult.message}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

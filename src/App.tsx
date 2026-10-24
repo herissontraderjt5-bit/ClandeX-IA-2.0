@@ -22,6 +22,11 @@ import { ExtensionModal } from './components/ExtensionModal';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { WebhookModal } from './components/WebhookModal';
 import { useLiveVoice } from './hooks/useLiveVoice';
+import {
+  fetchSettingsFromSupabase,
+  saveSettingsToSupabase,
+  isSupabaseConfigured,
+} from './services/supabaseClient';
 
 const DEFAULT_SETTINGS: AppSettings = {
   weights: {
@@ -112,6 +117,21 @@ export default function App() {
   // AI Commentary State (Gemini)
   const [aiInsightText, setAiInsightText] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Sync settings with Supabase Cloud
+  useEffect(() => {
+    fetchSettingsFromSupabase().then((remoteSettings) => {
+      if (remoteSettings) {
+        setSettings((prev) => ({
+          ...prev,
+          ...remoteSettings,
+          weights: { ...prev.weights, ...(remoteSettings.weights || {}) },
+          thresholds: { ...prev.thresholds, ...(remoteSettings.thresholds || {}) },
+          webhook: { ...prev.webhook, ...(remoteSettings.webhook || {}) },
+        }));
+      }
+    });
+  }, []);
 
   // Sync sound settings with audio manager
   useEffect(() => {
@@ -219,6 +239,7 @@ export default function App() {
       try {
         localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
       } catch {}
+      saveSettingsToSupabase(newSettings);
     },
     [settings]
   );
@@ -243,6 +264,7 @@ export default function App() {
     try {
       localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
     } catch {}
+    saveSettingsToSupabase(newSettings);
   }, [settings]);
 
   // Save Settings
@@ -252,6 +274,7 @@ export default function App() {
     try {
       localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
     } catch {}
+    saveSettingsToSupabase(newSettings);
   }, []);
 
   // Clear Signals History

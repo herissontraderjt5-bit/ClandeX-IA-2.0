@@ -10,6 +10,13 @@ import {
   ExpirationTime,
 } from '../types/trading';
 import { audioAlerts } from './audioAlerts';
+import {
+  fetchSignalsFromSupabase,
+  upsertSignalToSupabase,
+  clearSignalsFromSupabase,
+  getSupabase,
+  mapRowToSignal,
+} from './supabaseClient';
 
 export interface ActiveSignalState {
   currentStage: SignalStage | null;
@@ -41,6 +48,8 @@ export class SignalEngine {
 
   constructor() {
     this.loadHistory();
+    this.syncFromSupabase();
+    this.initRealtimeSubscription();
   }
 
   public setCallback(
@@ -101,6 +110,7 @@ export class SignalEngine {
     this.activePreAlert = null;
     this.latestConfirmedSignal = null;
     this.saveHistory();
+    clearSignalsFromSupabase();
     this.notify();
   }
 
@@ -241,7 +251,7 @@ export class SignalEngine {
 
           this.pendingTrades.push(confirmed);
           this.signalHistory.unshift(confirmed);
-          this.saveHistory();
+          this.saveHistory(confirmed);
           this.notify();
           return;
         }
@@ -288,7 +298,7 @@ export class SignalEngine {
 
         this.pendingTrades.push(confirmed);
         this.signalHistory.unshift(confirmed);
-        this.saveHistory();
+        this.saveHistory(confirmed);
         this.notify();
         return;
       }
@@ -441,7 +451,7 @@ export class SignalEngine {
     });
 
     if (updated) {
-      this.saveHistory();
+      this.saveHistory(this.lastResolvedTrade || undefined);
       this.notify();
     }
   }
@@ -653,11 +663,73 @@ export class SignalEngine {
     }
   }
 
-  private saveHistory() {
+  private saveHistory(signalToUpsert?: SignalRecord) {
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem('clandex_signal_history', JSON.stringify(this.signalHistory.slice(0, 150)));
       }
+    } catch {}
+
+    if (signalToUpsert) {
+      upsertSignalToSupabase(signalToUpsert);
+    }
+  }
+
+  private async syncFromSupabase() {
+    try {
+      const remote = await fetchSignalsFromSupabase(150);
+      if (remote && remote.length > 0) {
+        this.signalHistory = remote;
+        const nowSec = Math.floor(Date.now() / 1000);
+        this.pendingTrades = this.signalHistory.filter(
+          (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec
+        );
+        this.saveHistory();
+        this.notify();
+      }
+    } catch (e) {
+      console.warn('[SignalEngine] Sync error:', e);
+    }
+  }
+
+  private initRealtimeSubscription() {
+    const sb = getSupabase();
+    if (!sb) return;
+    try {
+      sb.channel('clandex-signals-live')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'signals' },
+          (payload: any) => {
+            if (payload.eventType === 'INSERT') {
+              const newSig = mapRowToSignal(payload.new);
+              if (!this.signalHistory.some((s) => s.id === newSig.id)) {
+                this.signalHistory.unshift(newSig);
+                if (newSig.result === 'PENDING') {
+                  this.pendingTrades.push(newSig);
+                }
+                this.saveHistory();
+                this.notify();
+              }
+            } else if (payload.eventType === 'UPDATE') {
+              const updatedSig = mapRowToSignal(payload.new);
+              const idx = this.signalHistory.findIndex((s) => s.id === updatedSig.id);
+              if (idx !== -1) {
+                this.signalHistory[idx] = updatedSig;
+                this.saveHistory();
+                this.notify();
+              }
+            } else if (payload.eventType === 'DELETE') {
+              const deletedId = (payload.old as any)?.id;
+              if (deletedId) {
+                this.signalHistory = this.signalHistory.filter((s) => s.id !== deletedId);
+                this.saveHistory();
+                this.notify();
+              }
+            }
+          }
+        )
+        .subscribe();
     } catch {}
   }
 
