@@ -97,6 +97,7 @@ interface FloatingHudProps {
     toggleMute: () => void;
     requestMicrophoneAccess: () => Promise<void>;
     sendTextMessage?: (text: string) => void;
+    interruptSpeech?: () => void;
   };
   onSelectAsset: (symbol: string) => void;
   onSelectTimeframe: (tf: TimeFrame) => void;
@@ -1931,15 +1932,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                   {/* Top Right Controls & Status */}
                   <div className="absolute top-2 right-2.5 z-10 flex items-center gap-1.5">
-                    {/* Parar Fala Button when TTS is reading */}
-                    {isSpeakingText && (
+                    {/* Interromper Fala em Tempo Real (Gemini Live ou TTS) */}
+                    {(liveVoice?.status === 'speaking' || isSpeakingText) && (
                       <button
-                        onClick={stopSpeaking}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/60 text-[9px] font-mono text-rose-300 hover:bg-rose-900 transition-all cursor-pointer shadow-md shadow-rose-900/40 animate-pulse"
-                        title="Interromper fala da IA"
+                        onClick={() => {
+                          if (liveVoice?.interruptSpeech) liveVoice.interruptSpeech();
+                          if (isSpeakingText) stopSpeaking();
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-600/90 hover:bg-rose-500 border border-rose-400 text-[9px] font-mono font-bold text-white transition-all cursor-pointer shadow-md shadow-rose-900/50 animate-pulse"
+                        title="Interromper fala da IA em tempo real"
                       >
-                        <Square className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
-                        <span>PARAR FALA</span>
+                        <Square className="w-2.5 h-2.5 fill-white text-white" />
+                        <span>INTERROMPER</span>
                       </button>
                     )}
 
@@ -2159,6 +2163,27 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   )}
 
                   <div ref={chatBottomRef} />
+                </div>
+
+                {/* Perguntas Rápidas (Chips de Consulta Imediata por Voz ou Texto) */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-mono">
+                  {[
+                    { icon: '📈', label: 'Tendência Maior', query: `Como está a tendência maior do ativo ${asset.symbol}?` },
+                    { icon: '🎯', label: 'Suportes & Resistências', query: `Quais são as taxas de suporte e resistência do ${asset.symbol}?` },
+                    { icon: '📢', label: 'Próxima Notícia', query: `Qual é a próxima notícia de alto impacto no calendário econômico?` },
+                    { icon: '⚡', label: 'Entrar Agora?', query: `Vale a pena entrar em uma operação agora no ${asset.symbol}?` },
+                    { icon: '🔍', label: 'Confluência', query: `Qual é o score e direção das confluências do robô agora?` },
+                  ].map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => handleSendChatMessage(chip.query)}
+                      className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-[#111728] hover:bg-cyan-950/80 border border-[#1d2740] hover:border-cyan-500/50 text-neutral-300 hover:text-cyan-300 transition-all cursor-pointer flex items-center gap-1 shadow-sm shrink-0 active:scale-95"
+                    >
+                      <span>{chip.icon}</span>
+                      <span>{chip.label}</span>
+                    </button>
+                  ))}
                 </div>
 
                 {/* Input Form */}
