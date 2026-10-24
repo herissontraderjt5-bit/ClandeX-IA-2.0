@@ -139,23 +139,32 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
               },
               callbacks: {
                 onmessage: (message: LiveServerMessage) => {
-                  const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                  if (audio && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: 'audio', audio }));
+                  const parts = message.serverContent?.modelTurn?.parts || [];
+                  for (const part of parts) {
+                    if (part.inlineData?.data && clientWs.readyState === WebSocket.OPEN) {
+                      clientWs.send(JSON.stringify({ type: 'audio', audio: part.inlineData.data }));
+                    }
+                    if (part.text && clientWs.readyState === WebSocket.OPEN) {
+                      clientWs.send(JSON.stringify({ type: 'text', text: part.text }));
+                    }
+                  }
+
+                  const outputText = (message.serverContent as any)?.outputAudioTranscription?.text;
+                  if (outputText && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'text', text: outputText }));
+                  }
+
+                  const userText = (message.serverContent as any)?.inputAudioTranscription?.text;
+                  if (userText && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'user_text', userText }));
                   }
 
                   if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: 'interrupted' }));
                   }
 
-                  const text = message.serverContent?.modelTurn?.parts?.[0]?.text;
-                  if (text && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: 'text', text }));
-                  }
-
-                  const userText = (message.serverContent as any)?.inputAudioTranscription?.text;
-                  if (userText && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: 'user_text', userText }));
+                  if (message.serverContent?.turnComplete && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'turn_complete' }));
                   }
                 },
                 onclose: () => {
@@ -191,16 +200,22 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
 
       // Audio from client microphone (16kHz PCM little-endian base64)
       if (msg.audio && session) {
-        session.sendRealtimeInput({
-          audio: { data: msg.audio, mimeType: 'audio/pcm;rate=16000' },
-        });
+        try {
+          session.sendRealtimeInput({
+            media: [{ data: msg.audio, mimeType: 'audio/pcm;rate=16000' }],
+          });
+        } catch (audioErr) {
+          console.error('[Gemini Live] Erro ao enviar chunk de áudio:', audioErr);
+        }
       }
 
       // Text prompt over live session
       if (msg.text && session) {
-        session.sendRealtimeInput({
-          text: msg.text,
-        });
+        try {
+          session.sendRealtimeInput({
+            text: msg.text,
+          });
+        } catch {}
       }
 
       // Stop session
