@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/trading';
 import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
 
@@ -26,6 +27,9 @@ export function useLiveVoice({
   const [aiSpeechLevel, setAiSpeechLevel] = useState<number>(0);
   const [isActivatingMic, setIsActivatingMic] = useState(false);
   const [activeEngine, setActiveEngine] = useState<VoiceEngine>('gemini_live');
+
+  // Direct Client-Side Gemini Live Session Ref (Funciona 100% na Vercel e Web)
+  const geminiLiveSessionRef = useRef<any>(null);
 
   // Audio & WebSocket Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -273,7 +277,6 @@ export function useLiveVoice({
         };
 
         recognition.onend = () => {
-          // Mantém ouvindo enquanto estiver ativo
           if (recognitionRef.current && !isMutedRef.current) {
             try {
               recognition.start();
@@ -288,14 +291,20 @@ export function useLiveVoice({
       }
     }
 
-    // Saudação inicial imediata
     const assetSym = contextRef.current.asset.symbol;
     speakBrowserText(`ClandeX-IA conectada por voz. Monitorando ${assetSym}. Pode falar comigo!`);
   }, [speakBrowserText]);
 
-  // Disconnect WebSocket and media streams
+  // Disconnect WebSocket, Direct Session and media streams
   const disconnectSession = useCallback(() => {
     stopAudioPlayback();
+
+    if (geminiLiveSessionRef.current) {
+      try {
+        geminiLiveSessionRef.current.close();
+      } catch {}
+      geminiLiveSessionRef.current = null;
+    }
 
     if (recognitionRef.current) {
       try {
@@ -378,9 +387,17 @@ export function useLiveVoice({
         const rms = Math.sqrt(sum / (inputData.length / 8));
         setMicLevel(Math.min(100, Math.round(rms * 280)));
 
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
-          const base64Pcm = pcmToBase64(resampled);
+        const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
+        const base64Pcm = pcmToBase64(resampled);
+
+        // Envio direto para o Gemini Live na nuvem (Vercel ou Local)
+        if (geminiLiveSessionRef.current) {
+          try {
+            geminiLiveSessionRef.current.sendRealtimeInput({
+              audio: { data: base64Pcm, mimeType: 'audio/pcm;rate=16000' },
+            });
+          } catch {}
+        } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
         }
       };
@@ -396,7 +413,7 @@ export function useLiveVoice({
     }
   }, []);
 
-  // Connect to Gemini Live API or fallback seamlessly to Browser Voice Assistant
+  // Connect to Gemini Live: Funciona na Vercel (Direto via SDK) ou via WebSocket local
   const startLiveConversation = useCallback(async () => {
     try {
       setErrorMessage(null);
@@ -407,9 +424,117 @@ export function useLiveVoice({
       outputAudioCtxRef.current = outputCtx;
       audioPlaybackStateRef.current = { nextStartTime: outputCtx.currentTime, activeSources: [] };
 
+      // Chave do Gemini (Lê do .env / Vercel Environment Variables / LocalStorage)
+      let geminiKey = '';
+      try {
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+          geminiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
+        }
+      } catch {}
+      if (!geminiKey && typeof window !== 'undefined') {
+        geminiKey = localStorage.getItem('clandex_gemini_api_key') || 'AIzaSyDlckr22NxUjJXWVp9ENtPFxuDoBy2LFZ4';
+      }
+
+      const currentCtx = contextRef.current;
+      const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(currentCtx.asset.symbol);
+      const marketSession = getCurrentMarketSession();
+
+      const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
+      const supports = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price);
+      const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price);
+
+      const systemInstruction = `
+Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, especialista e mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove.
+Você está conversando por voz em tempo real diretamente com o trader humano.
+
+DADOS EM TEMPO REAL DO MERCADO ATUAL:
+- Ativo: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
+- Timeframe: ${currentCtx.timeframe}
+- Preço Atual: ${currentCtx.asset.currentPrice}
+- Tendência Principal: ${currentCtx.marketAnalysis?.trend || 'LATERAL'}
+- Força Compradora: ${currentCtx.marketAnalysis?.buyerStrength || 'MODERADA'} | Força Vendedora: ${currentCtx.marketAnalysis?.sellerStrength || 'MODERADA'}
+- Suportes Técnicos: ${supports.length > 0 ? supports.join(', ') : 'Zonas dinâmicas de fundo'}
+- Resistências Técnicas: ${resistances.length > 0 ? resistances.join(', ') : 'Zonas dinâmicas de topo'}
+- TradingView Recomendação: ${currentCtx.marketAnalysis?.tradingView?.recommendation || 'NEUTRO'}
+- Confluência do Robô: ${currentCtx.confluences?.totalScore ?? 0}/100 (${currentCtx.confluences?.direction ?? 'NEUTRO'})
+- Sessão do Mercado: ${marketSession?.currentSession || 'Mercado Aberto'} (Brasília: ${marketSession?.currentTimeBrasilia || 'N/A'})
+
+DIRETRIZES PARA A CONVERSA POR VOZ:
+1. Fale sempre em Português do Brasil com tom natural, firme, confiante e amigável.
+2. Seja objetivo e conciso (máximo de 1 a 3 frases faladas por resposta), pois o trader está operando.
+3. Não use markdown, asteriscos ou formatações no áudio, fale fluidamente.
+4. Ao falar de suporte e resistência, mencione os valores das taxas.
+5. Se perguntar se vale a pena entrar agora, oriente com base na confluência e gerenciamento.
+6. Nunca garanta lucros certos.
+      `;
+
+      // 1. TENTATIVA DIRETA CLIENTE -> GEMINI LIVE (IDEAL PARA VERCEL)
+      if (geminiKey && geminiKey.length > 10) {
+        try {
+          console.log('[ClandeX-IA] Conectando diretamente ao Gemini Live (Vercel/Web)...');
+          const ai = new GoogleGenAI({ apiKey: geminiKey });
+
+          const liveModels = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+          let directConnected = false;
+
+          for (const m of liveModels) {
+            try {
+              const liveSession = await ai.live.connect({
+                model: m,
+                config: {
+                  responseModalities: [Modality.AUDIO],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+                    },
+                  },
+                  systemInstruction,
+                  outputAudioTranscription: {},
+                  inputAudioTranscription: {},
+                },
+                callbacks: {
+                  onmessage: (message: LiveServerMessage) => {
+                    const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                    if (audio) {
+                      setStatus('speaking');
+                      scheduleAudioChunk(audio);
+                    }
+                    if (message.serverContent?.interrupted) {
+                      setStatus('listening');
+                      stopAudioPlayback();
+                    }
+                  },
+                  onclose: () => {
+                    setStatus('idle');
+                  },
+                  onerror: (err: any) => {
+                    console.warn(`[Gemini Live Client] Erro com ${m}:`, err);
+                  },
+                },
+              });
+
+              geminiLiveSessionRef.current = liveSession;
+              directConnected = true;
+              setActiveEngine('gemini_live');
+              setStatus('listening');
+              console.log(`[ClandeX-IA] Gemini Live direto conectado com sucesso no modelo ${m}!`);
+              break;
+            } catch (liveErr) {
+              console.warn(`[Gemini Live Client] Tentativa ${m} falhou:`, liveErr);
+            }
+          }
+
+          if (directConnected) {
+            await requestMicrophoneAccess();
+            return;
+          }
+        } catch (directErr) {
+          console.warn('[ClandeX-IA] Conexão direta falhou, tentando fallback...', directErr);
+        }
+      }
+
+      // 2. TENTATIVA VIA WEBSOCKET LOCAL (Se estiver rodando server.ts local)
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      
-      // Inteligência de resolução de porta: tenta primeiro a porta atual, ou fallback para :3000
       let hostToUse = window.location.host;
       if (
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
@@ -420,86 +545,71 @@ export function useLiveVoice({
       }
 
       const wsUrl = `${protocol}//${hostToUse}/api/live`;
-      console.log('[ClandeX-IA Voz] Conectando WebSocket ao vivo em:', wsUrl);
-
-      let ws: WebSocket;
+      let ws: WebSocket | null = null;
       try {
         ws = new WebSocket(wsUrl);
-      } catch (wsErr) {
-        console.warn('[ClandeX-IA Voz] Falha imediata ao criar WebSocket:', wsErr);
-        startBrowserSpeechFallback();
+      } catch {}
+
+      if (ws) {
+        wsRef.current = ws;
+        let didOpen = false;
+
+        ws.onopen = () => {
+          didOpen = true;
+          setActiveEngine('gemini_live');
+          ws?.send(
+            JSON.stringify({
+              type: 'start',
+              voiceName: 'Kore',
+              marketContext: {
+                asset: currentCtx.asset.symbol,
+                assetName: currentCtx.asset.name,
+                currentPrice: currentCtx.asset.currentPrice,
+                spread: currentCtx.asset.spread,
+                timeframe: currentCtx.timeframe,
+                marketAnalysis: currentCtx.marketAnalysis,
+                confluences: currentCtx.confluences,
+                upcomingHighImpact,
+                relevantEvents: relevantEvents.slice(0, 5),
+                marketSession,
+              },
+            })
+          );
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'ready') {
+              setStatus('listening');
+            } else if (msg.type === 'audio') {
+              setStatus('speaking');
+              scheduleAudioChunk(msg.audio);
+            } else if (msg.type === 'interrupted') {
+              setStatus('listening');
+              stopAudioPlayback();
+            } else if (msg.type === 'error') {
+              startBrowserSpeechFallback();
+            }
+          } catch {}
+        };
+
+        ws.onerror = () => {
+          if (!didOpen) startBrowserSpeechFallback();
+        };
+
+        ws.onclose = () => {
+          if (activeEngine === 'gemini_live') setStatus('idle');
+        };
+
+        await requestMicrophoneAccess();
         return;
       }
-      wsRef.current = ws;
 
-      const currentCtx = contextRef.current;
-      const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(currentCtx.asset.symbol);
-      const marketSession = getCurrentMarketSession();
-
-      let didOpen = false;
-
-      ws.onopen = () => {
-        didOpen = true;
-        setActiveEngine('gemini_live');
-        ws.send(
-          JSON.stringify({
-            type: 'start',
-            voiceName: 'Kore',
-            marketContext: {
-              asset: currentCtx.asset.symbol,
-              assetName: currentCtx.asset.name,
-              currentPrice: currentCtx.asset.currentPrice,
-              spread: currentCtx.asset.spread,
-              timeframe: currentCtx.timeframe,
-              marketAnalysis: currentCtx.marketAnalysis,
-              confluences: currentCtx.confluences,
-              upcomingHighImpact,
-              relevantEvents: relevantEvents.slice(0, 5),
-              marketSession,
-            },
-          })
-        );
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-
-          if (msg.type === 'ready') {
-            setStatus('listening');
-          } else if (msg.type === 'audio') {
-            setStatus('speaking');
-            scheduleAudioChunk(msg.audio);
-          } else if (msg.type === 'interrupted') {
-            setStatus('listening');
-            stopAudioPlayback();
-          } else if (msg.type === 'error') {
-            console.warn('[Gemini Live] Mensagem de erro do servidor:', msg.error);
-            // Se o servidor Gemini retornar erro (ex: sem API key), ativa voz local sem interromper o trader
-            startBrowserSpeechFallback();
-          }
-        } catch (err) {
-          console.error('Error parsing live ws message:', err);
-        }
-      };
-
-      ws.onerror = (e) => {
-        console.warn('[ClandeX-IA Voz] WebSocket offline ou não encontrado. Ativando voz local nativa.', e);
-        if (!didOpen) {
-          startBrowserSpeechFallback();
-        }
-      };
-
-      ws.onclose = () => {
-        if (activeEngine === 'gemini_live') {
-          setStatus('idle');
-        }
-      };
-
-      // Connect microphone
+      // 3. FALLBACK FINAL: Voz inteligente nativa do navegador
+      startBrowserSpeechFallback();
       await requestMicrophoneAccess();
-    } catch (err: any) {
-      console.warn('[ClandeX-IA Voz] Erro geral ao inicializar. Ativando voz local nativa.', err);
+    } catch {
       startBrowserSpeechFallback();
     }
   }, [
