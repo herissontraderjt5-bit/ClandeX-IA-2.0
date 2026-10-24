@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types/trading';
-import { X, Sliders, Volume2, Shield, RefreshCw, Database, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Sliders, Volume2, Shield, RefreshCw, Database, CheckCircle2, AlertCircle, Bot, Sparkles, ExternalLink } from 'lucide-react';
 import {
   getSupabaseConfig,
   setSupabaseCredentials,
@@ -27,11 +27,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
+  // Gemini API Key State
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('clandex_gemini_api_key') || '';
+    }
+    return '';
+  });
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+
   useEffect(() => {
     setLocalSettings(settings);
     const cfg = getSupabaseConfig();
     setSupabaseUrl(cfg.url);
     setSupabaseAnonKey(cfg.key);
+    if (typeof window !== 'undefined') {
+      setGeminiApiKey(localStorage.getItem('clandex_gemini_api_key') || '');
+    }
   }, [settings, isOpen]);
 
   if (!isOpen) return null;
@@ -43,6 +56,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const res = await testSupabaseConnection();
     setTestResult(res);
     setIsTesting(false);
+  };
+
+  const handleTestGemini = async () => {
+    const key = geminiApiKey.trim();
+    if (!key) {
+      setGeminiTestResult({ success: false, message: 'Insira sua chave Gemini para testar.' });
+      return;
+    }
+    if (key === 'AIzaSyDlckr22NxUjJXWVp9ENtPFxuDoBy2LFZ4') {
+      setGeminiTestResult({
+        success: false,
+        message: 'Esta chave foi bloqueada pela Google por vazamento. Crie uma nova no AI Studio.',
+      });
+      return;
+    }
+    setIsTestingGemini(true);
+    setGeminiTestResult(null);
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: key });
+      const resp = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: 'Olá teste ClandeX',
+      });
+      if (resp && resp.text) {
+        setGeminiTestResult({ success: true, message: 'Chave Gemini ativa e validada com sucesso!' });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('clandex_gemini_api_key', key);
+        }
+      } else {
+        setGeminiTestResult({ success: false, message: 'Resposta vazia da IA.' });
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('leaked') || err?.status === 403) {
+        setGeminiTestResult({
+          success: false,
+          message: 'Chave revogada pela Google (leaked). Crie uma nova no Google AI Studio.',
+        });
+      } else {
+        setGeminiTestResult({
+          success: false,
+          message: `Erro: ${err?.message || 'Falha ao validar chave'}`,
+        });
+      }
+    } finally {
+      setIsTestingGemini(false);
+    }
   };
 
   const handleResetDefaults = () => {
@@ -71,6 +131,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSave = () => {
     setSupabaseCredentials(supabaseUrl, supabaseAnonKey);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('clandex_gemini_api_key', geminiApiKey.trim());
+    }
     onSaveSettings(localSettings);
     onClose();
   };
@@ -338,6 +401,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <span>Som de Sinal Confirmado (Harmonia CALL/PUT)</span>
               </label>
+            </div>
+          </div>
+
+          {/* Gemini AI API Key Section */}
+          <div className="p-3.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <span className="font-semibold text-white block text-xs tracking-wide">
+                  INTELIGÊNCIA ARTIFICIAL (GOOGLE GEMINI)
+                </span>
+              </div>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold uppercase ${
+                  geminiApiKey && geminiApiKey.length > 15
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}
+              >
+                {geminiApiKey && geminiApiKey.length > 15 ? 'Chave Inserida' : 'Voz Local Ativa'}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] text-neutral-400">
+                    Chave de API Gemini (Google AI Studio):
+                  </label>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>Criar Chave Grátis</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 font-mono focus:border-cyan-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-neutral-500 mt-1">
+                  💡 A voz local funciona 100% mesmo sem chave. Para a voz neural idêntica ao Google AI Studio, insira uma chave nova gerada na sua conta.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isTestingGemini}
+                  onClick={handleTestGemini}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 font-semibold rounded-lg text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isTestingGemini ? 'animate-spin' : ''}`} />
+                  {isTestingGemini ? 'Validando Chave...' : 'Testar Conexão Gemini'}
+                </button>
+
+                {geminiTestResult && (
+                  <div
+                    className={`flex items-center gap-1.5 text-[11px] ${
+                      geminiTestResult.success ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {geminiTestResult.success ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>{geminiTestResult.message}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

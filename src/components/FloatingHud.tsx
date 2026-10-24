@@ -1870,9 +1870,25 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
                   )}
 
+                  {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && (
+                    <div className="text-[10px] font-mono text-center text-cyan-400/80 py-0.5">
+                      {liveVoice.activeEngine === 'gemini_live'
+                        ? '⚡ Conectado: Google Gemini Live Neural'
+                        : '🎙️ Conectado: Voz Local Especializada (PT-BR)'}
+                    </div>
+                  )}
+
                   {liveVoice?.errorMessage && (
-                    <div className="p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-[10px] text-center font-mono">
-                      {liveVoice.errorMessage}
+                    <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-[10px] font-mono flex flex-col gap-1 items-center text-center">
+                      <span>{liveVoice.errorMessage}</span>
+                      {onOpenSettings && (
+                        <button
+                          onClick={onOpenSettings}
+                          className="text-[10px] text-cyan-400 underline hover:text-cyan-300 font-bold cursor-pointer"
+                        >
+                          Configurar Nova Chave Gemini
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
