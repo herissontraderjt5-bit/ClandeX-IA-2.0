@@ -96,6 +96,7 @@ export function useLiveVoice({
   const speechSilenceTimeoutRef = useRef<any>(null);
   const accumulatedSpeechRef = useRef<string>('');
   const hasSpokenInTurnRef = useRef<boolean>(false);
+  const turnDispatchedRef = useRef<boolean>(false);
 
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
@@ -219,16 +220,17 @@ export function useLiveVoice({
         state.activeSources = state.activeSources.filter((s) => s !== source);
         if (state.activeSources.length === 0) {
           setAiSpeechLevel(0);
-          // Cooldown de 800ms após o fim do áudio para que todo o som ambiente dissipe antes de reabrir o microfone
+          // Cooldown de 600ms após o fim do áudio para que todo o som ambiente dissipe antes de reabrir o microfone
           speechCooldownTimeoutRef.current = setTimeout(() => {
             isAiSpeakingRef.current = false;
+            turnDispatchedRef.current = false;
             setStatus((prev) => (prev === 'speaking' ? 'listening' : prev));
             try {
               if (recognitionRef.current && statusRef.current === 'listening') {
                 recognitionRef.current.start();
               }
             } catch {}
-          }, 800);
+          }, 600);
         }
       };
     } catch (err) {
@@ -398,6 +400,33 @@ export function useLiveVoice({
     }
   }, []);
 
+  // Disparo atômico e único de conclusão de turno do usuário (evita corridas e repetições)
+  const dispatchTurn = useCallback((textQuery?: string) => {
+    if (turnDispatchedRef.current || isAiSpeakingRef.current) return;
+    turnDispatchedRef.current = true;
+    hasSpokenInTurnRef.current = false;
+
+    const q = textQuery?.trim();
+    if (q && q.length > 1) {
+      console.log('[ClandeX-IA Voz] Turno concluído do trader:', q);
+      setUserTranscript(q);
+      setLastTurnMessage({
+        id: `user-voice-${Date.now()}`,
+        role: 'user',
+        text: q,
+        timestamp: Date.now(),
+      });
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'turn_complete', text: q }));
+      }
+    } else {
+      console.log('[ClandeX-IA Voz] Turno concluído por áudio de microfone.');
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
+      }
+    }
+  }, []);
+
   // Iniciar reconhecimento de voz paralelo do navegador (PT-BR)
   const startSpeechRecognition = useCallback(() => {
     stopSpeechRecognition();
@@ -416,9 +445,9 @@ export function useLiveVoice({
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, descarta para evitar capturar a própria voz do assistente
+        // Se a IA estiver falando, interrompe a fala dela imediatamente
         if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          return;
+          interruptSpeech();
         }
 
         let interim = '';
@@ -434,13 +463,16 @@ export function useLiveVoice({
           }
         }
 
-        const currentDisplay = (finalChunk || interim).trim();
-        if (currentDisplay) {
-          setUserTranscript(currentDisplay);
-        }
-
         if (finalChunk.trim()) {
           accumulatedSpeechRef.current = (accumulatedSpeechRef.current + ' ' + finalChunk).trim();
+        }
+
+        const display = (accumulatedSpeechRef.current + ' ' + interim).trim();
+        if (display) {
+          setUserTranscript(display);
+          turnDispatchedRef.current = false;
+          hasSpokenInTurnRef.current = true;
+          lastVoiceActiveTimeRef.current = Date.now();
         }
 
         if (speechSilenceTimeoutRef.current) {
@@ -449,21 +481,10 @@ export function useLiveVoice({
 
         // Aguarda 750ms após término da fala para enviar a pergunta final
         speechSilenceTimeoutRef.current = setTimeout(() => {
-          const fullQuestion = (accumulatedSpeechRef.current || currentDisplay).trim();
-          if (fullQuestion && fullQuestion.length > 1 && !isAiSpeakingRef.current) {
-            console.log('[ClandeX-IA Voz] Pergunta do trader concluída via SpeechRecognition:', fullQuestion);
-            accumulatedSpeechRef.current = '';
-            setUserTranscript(fullQuestion);
-            setLastTurnMessage({
-              id: `user-voice-${Date.now()}`,
-              role: 'user',
-              text: fullQuestion,
-              timestamp: Date.now(),
-            });
-
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'turn_complete', text: fullQuestion }));
-            }
+          const fullQuestion = (accumulatedSpeechRef.current || display).trim();
+          accumulatedSpeechRef.current = '';
+          if (fullQuestion && fullQuestion.length > 1) {
+            dispatchTurn(fullQuestion);
           }
         }, 750);
       };
@@ -487,7 +508,7 @@ export function useLiveVoice({
     } catch (err) {
       console.warn('[ClandeX-IA] Falha ao iniciar reconhecimento:', err);
     }
-  }, [stopSpeechRecognition]);
+  }, [stopSpeechRecognition, dispatchTurn, interruptSpeech]);
 
   // Request Microphone Permissions & Audio Processing com Resampler 16kHz
   const requestMicrophoneAccess = useCallback(async () => {
@@ -521,12 +542,6 @@ export function useLiveVoice({
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        // Se a IA estiver falando ou mutado: NÃO ENVIA ÁUDIO PARA EVITAR ECO
-        if (isMutedRef.current || isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          setMicLevel(0);
-          return;
-        }
-
         const inputData = e.inputBuffer.getChannelData(0);
         let sum = 0;
         for (let i = 0; i < inputData.length; i += 8) {
@@ -534,6 +549,22 @@ export function useLiveVoice({
         }
         const rms = Math.sqrt(sum / (inputData.length / 8));
         const currentLevel = Math.min(100, Math.round(rms * 280));
+
+        // Se a IA estiver falando: verifica se o usuário começou a falar no microfone para interromper
+        if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
+          if (!isMutedRef.current && rms > 0.04) {
+            console.log('[ClandeX-IA] Usuário começou a falar -> Interrompendo fala da IA imediatamente!');
+            interruptSpeech();
+          }
+          setMicLevel(0);
+          return;
+        }
+
+        if (isMutedRef.current) {
+          setMicLevel(0);
+          return;
+        }
+
         setMicLevel(currentLevel);
 
         const now = Date.now();
@@ -541,6 +572,7 @@ export function useLiveVoice({
         if (rms > 0.012) {
           lastVoiceActiveTimeRef.current = now;
           hasSpokenInTurnRef.current = true;
+          turnDispatchedRef.current = false;
         }
 
         // Permite envio contínuo enquanto o usuário fala e mantém hangover de 1.0s após pausas
@@ -557,10 +589,8 @@ export function useLiveVoice({
           }
 
           // Fallback de silêncio para áudio puro:
-          if (hasSpokenInTurnRef.current && now - lastVoiceActiveTimeRef.current > 1050) {
-            hasSpokenInTurnRef.current = false;
-            console.log('[ClandeX-IA] Fim de fala detectado no áudio. Enviando turn_complete...');
-            wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
+          if (hasSpokenInTurnRef.current && !turnDispatchedRef.current && now - lastVoiceActiveTimeRef.current > 1100) {
+            dispatchTurn();
           }
         }
 
@@ -667,14 +697,8 @@ export function useLiveVoice({
 
             if (msg.type === 'ready') {
               setStatus('listening');
+              turnDispatchedRef.current = false;
               startSpeechRecognition();
-              // Saudação inicial de boas-vindas da ClandeX-IA em áudio neural 24kHz
-              ws.send(
-                JSON.stringify({
-                  type: 'client_content',
-                  text: `Olá trader! Sou a ClandeX-IA. Conexão neural de voz estabelecida. Estou monitorando ${contextRef.current.asset.symbol} com você em tempo real. Pode me fazer qualquer pergunta sobre o mercado!`,
-                })
-              );
             } else if (msg.type === 'audio') {
               scheduleAudioChunk(msg.audio);
             } else if (msg.type === 'text') {
@@ -689,6 +713,7 @@ export function useLiveVoice({
                 timestamp: Date.now(),
               });
             } else if (msg.type === 'turn_complete') {
+              turnDispatchedRef.current = false;
               if (currentAiTurnTextRef.current.trim()) {
                 setLastTurnMessage({
                   id: `model-voice-${Date.now()}`,
