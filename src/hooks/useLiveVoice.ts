@@ -172,6 +172,27 @@ export function useLiveVoice({
     isAiSpeakingRef.current = false;
   }, []);
 
+  // Interromper fala em tempo real
+  const interruptSpeech = useCallback(() => {
+    stopAudioPlayback();
+    if (speechCooldownTimeoutRef.current) {
+      clearTimeout(speechCooldownTimeoutRef.current);
+      speechCooldownTimeoutRef.current = null;
+    }
+    isAiSpeakingRef.current = false;
+    setStatus('listening');
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'interrupted' }));
+      } catch {}
+    }
+    try {
+      if (recognitionRef.current && statusRef.current === 'listening') {
+        recognitionRef.current.start();
+      }
+    } catch {}
+  }, [stopAudioPlayback]);
+
   /**
    * Reprodução de áudio sem cortes (Gapless Scheduling a 24.000 Hz) via Web Audio API
    */
@@ -954,27 +975,6 @@ Diretrizes obrigatórias:
       speakBrowserText(localReply);
     }
   }, [answerQuestionLocally, speakBrowserText]);
-
-  // Interromper fala em tempo real
-  const interruptSpeech = useCallback(() => {
-    stopAudioPlayback();
-    if (speechCooldownTimeoutRef.current) {
-      clearTimeout(speechCooldownTimeoutRef.current);
-      speechCooldownTimeoutRef.current = null;
-    }
-    isAiSpeakingRef.current = false;
-    setStatus('listening');
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(JSON.stringify({ type: 'interrupted' }));
-      } catch {}
-    }
-    try {
-      if (recognitionRef.current && statusRef.current === 'listening') {
-        recognitionRef.current.start();
-      }
-    } catch {}
-  }, [stopAudioPlayback]);
 
   const toggleMute = () => {
     setIsMuted((prev) => {
