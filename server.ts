@@ -113,7 +113,8 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
         }
 
         const candidateModels = [
-          process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp',
+          process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
+          'gemini-2.0-flash-exp',
           'gemini-2.0-flash',
           'gemini-2.5-flash',
         ];
@@ -271,7 +272,7 @@ NUNCA prometa lucros fixos ou garantias.
     `;
 
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       contents: prompt,
       config: {
         systemInstruction: 'Você é o analista técnico sênior da ClandeX-IA. Responda em tom direto, institucional e cirúrgico.',
