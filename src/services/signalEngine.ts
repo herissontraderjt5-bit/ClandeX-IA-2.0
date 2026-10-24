@@ -10,6 +10,7 @@ import {
   ExpirationTime,
 } from '../types/trading';
 import { audioAlerts } from './audioAlerts';
+import { isForexMarketOpen } from './marketData';
 import {
   fetchSignalsFromSupabase,
   upsertSignalToSupabase,
@@ -129,6 +130,16 @@ export class SignalEngine {
     const now = Math.floor(Date.now() / 1000);
     const dateObj = new Date();
     const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+
+    // Se for ativo de Forex e for final de semana (sábado ou domingo), o mercado está 100% FECHADO no TradingView!
+    const isCrypto = assetSymbol.includes('BTC') || assetSymbol.includes('ETH') || assetSymbol.includes('SOL') || assetSymbol.includes('BNB') || assetSymbol.includes('XRP');
+    if (!isCrypto && !isForexMarketOpen()) {
+      if (this.activePreAlert) {
+        this.activePreAlert = null;
+        this.notify();
+      }
+      return;
+    }
 
     // 1. Resolve pending trades STRICTLY when trade.expirationTimestamp is reached!
     this.resolvePendingTrades(currentCandle.close, now);

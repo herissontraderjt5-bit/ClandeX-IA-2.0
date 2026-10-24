@@ -10,7 +10,7 @@ import {
   AppSettings,
   ConfluenceBreakdown,
 } from './types/trading';
-import { INITIAL_ASSETS, marketDataManager } from './services/marketData';
+import { INITIAL_ASSETS, getLiveAssets, marketDataManager } from './services/marketData';
 import { analyzeMarket, calculateConfluences } from './services/analysisEngine';
 import { signalEngine } from './services/signalEngine';
 import { audioAlerts } from './services/audioAlerts';
@@ -61,7 +61,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export default function App() {
-  const [asset, setAsset] = useState<Asset>(INITIAL_ASSETS[0]);
+  const [asset, setAsset] = useState<Asset>(() => marketDataManager.getCurrentAsset());
   const [timeframe, setTimeframe] = useState<TimeFrame>('M1');
   const [expiration, setExpiration] = useState<ExpirationTime>('1m');
   const [candles, setCandles] = useState<Candle[]>(() => marketDataManager.getCandles());
@@ -336,7 +336,7 @@ export default function App() {
       {/* BACKGROUND: Fullscreen Hiove Broker Trading Platform */}
       <HioveBrokerBackground
         currentAsset={asset}
-        assetsList={INITIAL_ASSETS}
+        assetsList={getLiveAssets()}
         timeframe={timeframe}
         expiration={expiration}
         candles={candles}
@@ -352,7 +352,7 @@ export default function App() {
       {/* FOREGROUND: Floating Draggable ClandeX-IA HUD */}
       <FloatingHud
         asset={asset}
-        assetsList={INITIAL_ASSETS}
+        assetsList={getLiveAssets()}
         timeframe={timeframe}
         expiration={expiration}
         remainingSeconds={remainingSeconds}

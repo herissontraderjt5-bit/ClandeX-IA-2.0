@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/trading';
-import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
+import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews } from '../services/economicCalendar';
+import { isForexMarketOpen } from '../services/marketData';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
 export type VoiceEngine = 'gemini_live' | 'browser_speech';
@@ -231,7 +232,13 @@ export function useLiveVoice({
   const answerQuestionLocally = (questionText: string): string => {
     const q = questionText.toLowerCase();
     const ctx = contextRef.current;
+    const isClosedWeekendForex = ctx.asset.category === 'FOREX' && !isForexMarketOpen();
     const { upcomingHighImpact } = getRelevantEconomicEvents(ctx.asset.symbol);
+    const realNews = getRealMarketNews(ctx.asset.symbol);
+
+    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put'))) {
+      return `Aviso do TradingView: O mercado Forex está fechado neste fim de semana para ${ctx.asset.symbol}. Para sinais e operações ativas agora, recomendo usar Criptomoedas como Bitcoin ou Ethereum, que operam vinte e quatro horas por dia.`;
+    }
 
     if (
       q.includes('notícia') ||
@@ -240,6 +247,9 @@ export function useLiveVoice({
       q.includes('calendario') ||
       q.includes('impacto')
     ) {
+      if (realNews.length > 0) {
+        return `Notícia do TradingView: ${realNews[0].title}. O sentimento macroeconômico está ativo.`;
+      }
       if (upcomingHighImpact) {
         return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo prudência ou pausar operações.`;
       }
@@ -395,17 +405,21 @@ export function useLiveVoice({
     const keyLevels = Array.isArray(ctx.marketAnalysis?.keyLevels) ? ctx.marketAnalysis.keyLevels : [];
     const supList = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price.toFixed(ctx.asset.pipDecimals));
     const resList = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price.toFixed(ctx.asset.pipDecimals));
+    const isClosedWeekendForex = ctx.asset.category === 'FOREX' && !isForexMarketOpen();
+    const realNews = getRealMarketNews(ctx.asset.symbol);
 
     const marketPrompt = `
-Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO com o trader de Opções Binárias e Forex na corretora Hiove.
-Mercado atual em tempo real:
-- Paridade: ${ctx.asset.symbol} (${ctx.asset.name})
+Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO com o trader de Opções Binárias e Forex na corretora Hiove, com análise direta baseada no TradingView.
+Mercado atual em tempo real (TradingView):
+- Paridade: ${ctx.asset.symbol} | Símbolo TradingView: ${ctx.asset.tvSymbol}
+- Status do Mercado: ${isClosedWeekendForex ? 'Mercado Forex Fechado no fim de semana no TradingView (reabertura domingo 18h BRT). Se perguntarem sobre operar agora, recomende criptomoedas 24/7 (BTC, ETH).' : 'Mercado Aberto ao vivo no TradingView.'}
 - Preço Atual: ${ctx.asset.currentPrice} | Timeframe: ${ctx.timeframe}
 - Tendência: ${ctx.marketAnalysis.trend} (Força Compra: ${ctx.marketAnalysis.buyerStrength}, Venda: ${ctx.marketAnalysis.sellerStrength})
 - Confluência Técnica: ${ctx.confluences.totalScore}% para ${ctx.confluences.direction}
 - Suportes Técnicos: ${supList.slice(0, 2).join(', ') || 'dinâmicos'}
-- Resistências Técnicas: ${resList.slice(0, 2).join(', ') || 'dinâmicas'}
-- Notícias: ${upcomingHighImpact ? `${upcomingHighImpact.event} às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}
+- Resistências Técnicos: ${resList.slice(0, 2).join(', ') || 'dinâmicos'}
+- Notícia Real Mais Recente: ${realNews[0] ? `"${realNews[0].title}" (${realNews[0].source})` : 'Sem eventos de alto risco'}
+- Calendário: ${upcomingHighImpact ? `${upcomingHighImpact.event} às ${upcomingHighImpact.time}` : 'Sem notícias críticas imediatas'}
 
 Pergunta do trader por voz: "${clean}"
 
@@ -413,7 +427,8 @@ Diretrizes obrigatórias:
 1. Responda em Português do Brasil com tom natural, firme e amigável.
 2. Responda diretamente à pergunta em no máximo 1 a 2 frases faladas.
 3. Não use formatação markdown, nunca use asteriscos (**), fale como uma pessoa de verdade falando ao microfone.
-4. Responda exatamente o que o trader perguntou. Ao terminar, pare de falar e aguarde em silêncio.
+4. Se o par Forex estiver fechado no fim de semana, avise o trader e recomende Criptomoedas 24/7.
+5. Responda exatamente o que o trader perguntou. Ao terminar, pare de falar e aguarde em silêncio.
     `;
 
     // 1. Se Gemini Live estiver conectado, envia via sendClientContent com turnComplete

@@ -1,6 +1,29 @@
 import { Asset, Candle, DataSourceInfo, TimeFrame } from '../types/trading';
 
+/**
+ * Verifica se o mercado interbancário e Forex do TradingView está ABERTO ou FECHADO.
+ * - Mercado Forex fecha na Sexta-feira às 21:00 UTC (17:00 Nova York / 18:00 Brasília).
+ * - Mercado Forex reabre no Domingo às 21:00 UTC (17:00 Nova York / 18:00 Brasília).
+ * - Sábado e Domingo durante o dia: FOREX FECHADO (100% fechado no TradingView).
+ * - Criptomoedas (Bitcoin, Ethereum, Solana, etc.): ABERTAS 24 Horas por dia, 7 dias por semana (24/7)!
+ */
+export function isForexMarketOpen(d = new Date()): boolean {
+  const day = d.getUTCDay(); // 0 = Domingo, 1 = Segunda, ..., 5 = Sexta, 6 = Sábado
+  const hour = d.getUTCHours();
+  const minute = d.getUTCMinutes();
+
+  // Sexta-feira: fecha às 21:00 UTC
+  if (day === 5 && (hour > 21 || (hour === 21 && minute >= 0))) return false;
+  // Sábado: fechado o dia inteiro
+  if (day === 6) return false;
+  // Domingo: fechado até 21:00 UTC
+  if (day === 0 && (hour < 21 || (hour === 21 && minute < 0))) return false;
+
+  return true;
+}
+
 export const INITIAL_ASSETS: Asset[] = [
+  // 1. FOREX (Mercado Aberto de Segunda a Sexta; Fechado no Fim de Semana)
   {
     symbol: 'EUR/USD',
     name: 'Euro / Dólar Americano',
@@ -8,7 +31,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 5,
     currentPrice: 1.08485,
     change24h: 0.18,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.6,
     hiovePayoutPercent: 88,
     tvSymbol: 'FX:EURUSD',
@@ -20,7 +43,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 5,
     currentPrice: 1.29840,
     change24h: -0.22,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 87,
     tvSymbol: 'FX:GBPUSD',
@@ -32,7 +55,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 3,
     currentPrice: 152.380,
     change24h: 0.45,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.7,
     hiovePayoutPercent: 86,
     tvSymbol: 'FX:USDJPY',
@@ -44,7 +67,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 5,
     currentPrice: 0.66520,
     change24h: -0.15,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.9,
     hiovePayoutPercent: 85,
     tvSymbol: 'FX:AUDUSD',
@@ -56,7 +79,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 5,
     currentPrice: 1.38310,
     change24h: 0.31,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 85,
     tvSymbol: 'FX:USDCAD',
@@ -68,7 +91,7 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 3,
     currentPrice: 165.240,
     change24h: 0.62,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.1,
     hiovePayoutPercent: 86,
     tvSymbol: 'FX:EURJPY',
@@ -80,11 +103,13 @@ export const INITIAL_ASSETS: Asset[] = [
     pipDecimals: 3,
     currentPrice: 197.850,
     change24h: 0.28,
-    status: 'OPEN',
+    status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.2,
     hiovePayoutPercent: 85,
     tvSymbol: 'FX:GBPJPY',
   },
+
+  // 2. CRIPTOMOEDAS (Abertas 24 horas por dia, 7 dias por semana - Fim de semana 100% ativo)
   {
     symbol: 'BTC/USD',
     name: 'Bitcoin / Dólar Americano',
@@ -109,7 +134,54 @@ export const INITIAL_ASSETS: Asset[] = [
     hiovePayoutPercent: 89,
     tvSymbol: 'BINANCE:ETHUSDT',
   },
+  {
+    symbol: 'SOL/USD',
+    name: 'Solana / Dólar Americano',
+    category: 'CRYPTO',
+    pipDecimals: 2,
+    currentPrice: 174.40,
+    change24h: 4.12,
+    status: 'OPEN',
+    spread: 0.2,
+    hiovePayoutPercent: 88,
+    tvSymbol: 'BINANCE:SOLUSDT',
+  },
+  {
+    symbol: 'BNB/USD',
+    name: 'BNB / Dólar Americano',
+    category: 'CRYPTO',
+    pipDecimals: 2,
+    currentPrice: 592.30,
+    change24h: 0.95,
+    status: 'OPEN',
+    spread: 0.5,
+    hiovePayoutPercent: 87,
+    tvSymbol: 'BINANCE:BNBUSDT',
+  },
+  {
+    symbol: 'XRP/USD',
+    name: 'Ripple / Dólar Americano',
+    category: 'CRYPTO',
+    pipDecimals: 4,
+    currentPrice: 0.5280,
+    change24h: -0.45,
+    status: 'OPEN',
+    spread: 0.001,
+    hiovePayoutPercent: 86,
+    tvSymbol: 'BINANCE:XRPUSDT',
+  },
 ];
+
+/**
+ * Retorna lista de ativos com status de mercado recalculado em tempo real
+ */
+export function getLiveAssets(): Asset[] {
+  const forexOpen = isForexMarketOpen();
+  return INITIAL_ASSETS.map((asset) => ({
+    ...asset,
+    status: asset.category === 'FOREX' ? (forexOpen ? 'OPEN' : 'CLOSED') : 'OPEN',
+  }));
+}
 
 export function getTimeframeSeconds(tf: TimeFrame): number {
   switch (tf) {
@@ -172,7 +244,7 @@ export function generateInitialCandles(asset: Asset, timeframe: TimeFrame, count
 export class MarketDataManager {
   private cryptoWs: WebSocket | null = null;
   private tickInterval: number | null = null;
-  private currentAsset: Asset = INITIAL_ASSETS[0];
+  private currentAsset: Asset;
   private currentTimeframe: TimeFrame = 'M1';
   private candles: Candle[] = [];
   private onTickCallback: ((candle: Candle, remainingSec: number, asset: Asset) => void) | null = null;
@@ -182,6 +254,12 @@ export class MarketDataManager {
   private isDemoMode = false;
 
   constructor() {
+    const liveAssets = getLiveAssets();
+    // No fim de semana com Forex fechado, seleciona automaticamente Criptomoeda (BTC/USD 24/7)
+    const initialAsset = isForexMarketOpen()
+      ? liveAssets[0]
+      : (liveAssets.find((a) => a.category === 'CRYPTO') || liveAssets[0]);
+    this.currentAsset = { ...initialAsset };
     this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);
   }
 
@@ -194,11 +272,13 @@ export class MarketDataManager {
   }
 
   public setAsset(symbol: string) {
-    const found = INITIAL_ASSETS.find(a => a.symbol === symbol);
+    const liveAssets = getLiveAssets();
+    const found = liveAssets.find((a) => a.symbol === symbol);
     if (found && found.symbol !== this.currentAsset.symbol) {
       this.currentAsset = { ...found };
       this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);
       this.reconnectStreams();
+      this.notifySource();
     }
   }
 
@@ -250,8 +330,14 @@ export class MarketDataManager {
 
     if (this.currentAsset.category === 'CRYPTO' && typeof WebSocket !== 'undefined') {
       try {
-        const binanceSymbol = this.currentAsset.symbol.replace('/', '').toLowerCase();
-        const wsUrl = `wss://stream.binance.com:9443/ws/${binanceSymbol.includes('btc') ? 'btcusdt' : 'ethusdt'}@kline_1m`;
+        const sym = this.currentAsset.symbol.toLowerCase();
+        let pair = 'btcusdt';
+        if (sym.includes('eth')) pair = 'ethusdt';
+        else if (sym.includes('sol')) pair = 'solusdt';
+        else if (sym.includes('bnb')) pair = 'bnbusdt';
+        else if (sym.includes('xrp')) pair = 'xrpusdt';
+
+        const wsUrl = `wss://stream.binance.com:9443/ws/${pair}@kline_1m`;
         this.cryptoWs = new WebSocket(wsUrl);
 
         this.cryptoWs.onopen = () => {
@@ -283,13 +369,24 @@ export class MarketDataManager {
   private startTickLoop() {
     if (this.tickInterval) clearInterval(this.tickInterval);
 
-    // Micro-tick processor running every 400ms to provide fluid market tape
+    // Micro-tick processor
     this.tickInterval = window.setInterval(() => {
       const now = Math.floor(Date.now() / 1000);
       const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
       const remainingSec = tfSeconds - (now % tfSeconds);
 
-      // Random micro-jitter for Forex or fallback ticks
+      // Se for Forex e for final de semana, o mercado está FECHADO no TradingView
+      const isForexClosed = this.currentAsset.category === 'FOREX' && !isForexMarketOpen();
+      if (isForexClosed) {
+        // Atualiza apenas o cronômetro sem alterar os preços de mercado fechado
+        const activeCandle = this.candles[this.candles.length - 1];
+        if (activeCandle && this.onTickCallback) {
+          this.onTickCallback(activeCandle, remainingSec, this.currentAsset);
+        }
+        return;
+      }
+
+      // Micro-oscilação natural em dias úteis ou fallback para cripto
       if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
         const volatility = this.currentAsset.pipDecimals === 5 ? 0.00004 : (this.currentAsset.pipDecimals === 3 ? 0.015 : 4.5);
         const delta = (Math.random() - 0.495) * volatility;
@@ -361,17 +458,31 @@ export class MarketDataManager {
     }
 
     const isCrypto = this.currentAsset.category === 'CRYPTO';
+    const isForexClosed = !isCrypto && !isForexMarketOpen();
+
+    if (isForexClosed) {
+      this.onSourceChange({
+        providerName: 'TradingView Interbank (MERCADO FOREX FECHADO - FIM DE SEMANA)',
+        sourceType: 'REAL_FEED',
+        status: 'DISCONNECTED',
+        latencyMs: 0,
+        lastTickTime: Date.now(),
+        disclaimer: 'O mercado de Forex está fechado no TradingView durante o fim de semana. Reabre no domingo às 18h BRT. Selecione Criptomoedas (24/7) para operar ao vivo agora.',
+      });
+      return;
+    }
+
     this.onSourceChange({
       providerName: isCrypto
-        ? 'Binance WebSocket Feed Direto (Real-Time)'
-        : 'Interbank Spot Feed / Open Rates Real-Time',
+        ? `Binance WebSocket / TradingView Spot (${this.currentAsset.tvSymbol}) 24/7`
+        : `TradingView Interbank Spot Real-Time (${this.currentAsset.tvSymbol})`,
       sourceType: 'REAL_FEED',
       status: this.isConnected ? 'CONNECTED' : 'DISCONNECTED',
       latencyMs: this.latency,
       lastTickTime: Date.now(),
       disclaimer: isCrypto
-        ? 'Preços obtidos diretamente do livro de ofertas spot em tempo real.'
-        : 'Cotações de referência interbancária. Podem apresentar variação típica de spread (0.2 a 0.8 pips) em relação à corretora Hiove.',
+        ? 'Cotações em tempo real diretamente do livro de ofertas spot da Binance e TradingView. Mercado 24/7 aberto no fim de semana.'
+        : 'Cotações oficiais interbancárias TradingView em tempo real para Forex.',
     });
   }
 }

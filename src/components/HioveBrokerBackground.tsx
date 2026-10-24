@@ -21,7 +21,9 @@ import {
   DollarSign,
   Shield,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react';
+import { isForexMarketOpen } from '../services/marketData';
 
 export const HIOVE_LOGIN_URL = 'https://app.hiove.com/auth/login?redirect=%2Ftraderoom%3Fticker%3DETHUSDT';
 
@@ -54,7 +56,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
   onOpenSettings,
   onOpenWebhook,
 }) => {
-  const [bgMode, setBgMode] = useState<'LIVE_SITE' | 'PLATFORM'>('LIVE_SITE');
+  const [bgMode, setBgMode] = useState<'TRADINGVIEW' | 'PLATFORM' | 'LIVE_SITE'>('TRADINGVIEW');
   const [iframeKey, setIframeKey] = useState<number>(0);
   const [accountType, setAccountType] = useState<'DEMO' | 'REAL'>('DEMO');
   const [demoBalance, setDemoBalance] = useState<number>(10000.00);
@@ -143,6 +145,145 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
   const secs = remainingSeconds % 60;
   const formattedCountdown = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
+  const isForexOpen = isForexMarketOpen();
+  const isWeekendForex = currentAsset.category === 'FOREX' && !isForexOpen;
+
+  if (bgMode === 'TRADINGVIEW') {
+    return (
+      <div className="relative w-screen h-screen bg-[#07090e] text-neutral-100 flex flex-col overflow-hidden font-sans select-none">
+        {/* Top Control Header for TradingView Official Chart */}
+        <header className="h-12 bg-[#0b0f1a] border-b border-[#1b253b] flex items-center justify-between px-3 md:px-4 z-20 shrink-0 backdrop-blur-md">
+          {/* Left: TradingView Brand & Quick Asset Switcher */}
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="flex items-center gap-2 pr-3 border-r border-[#1e263d]">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="font-extrabold text-xs md:text-sm tracking-wider text-white">TRADINGVIEW OFICIAL</span>
+                <span className="text-[9px] font-mono text-cyan-400">CORRETORA & DADOS EM TEMPO REAL</span>
+              </div>
+            </div>
+
+            {/* Quick Assets Pills with 24/7 and Weekend Status */}
+            <div className="flex items-center gap-1 overflow-x-auto max-w-[32vw] md:max-w-[42vw] py-1">
+              {assetsList.slice(0, 7).map((a) => {
+                const isSelected = a.symbol === currentAsset.symbol;
+                const isForex = a.category === 'FOREX';
+                const isClosed = isForex && !isForexOpen;
+                return (
+                  <button
+                    key={a.symbol}
+                    onClick={() => onSelectAsset(a.symbol)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/60 shadow-sm font-bold'
+                        : isClosed
+                        ? 'text-neutral-500 hover:text-neutral-400 hover:bg-[#121827] border border-transparent'
+                        : 'text-neutral-300 hover:text-white hover:bg-[#121827] border border-transparent'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${isClosed ? 'bg-rose-500' : 'bg-emerald-400'}`} />
+                    <span>{a.symbol}</span>
+                    <span className={`text-[9px] font-bold ${isClosed ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {isClosed ? 'FECHADO' : '24/7'}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Dropdown for remaining assets */}
+              <select
+                value={currentAsset.symbol}
+                onChange={(e) => onSelectAsset(e.target.value)}
+                className="bg-[#121827] text-neutral-300 border border-[#1e263d] rounded-lg px-2 py-1 text-xs font-mono cursor-pointer focus:outline-none focus:border-cyan-500"
+              >
+                {assetsList.map((a) => {
+                  const isClosed = a.category === 'FOREX' && !isForexOpen;
+                  return (
+                    <option key={a.symbol} value={a.symbol} className="bg-[#0d121f]">
+                      {isClosed ? '🔴 [FECHADO FIM DE SEMANA] ' : '🟢 [24/7 CRIPTO] '}{a.symbol} ({a.tvSymbol})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Right Mode Switcher & Tools */}
+          <div className="flex items-center gap-1.5 md:gap-2 text-xs">
+            {/* Active TradingView Ticker badge */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-[#101726] border border-[#1e2942] rounded-lg font-mono text-[11px]">
+              <span className="text-neutral-400">Ativo TradingView:</span>
+              <strong className="text-cyan-300 font-bold">{currentAsset.tvSymbol}</strong>
+              <span className="text-neutral-500">•</span>
+              <span className="text-white font-bold">{currentAsset.currentPrice.toFixed(currentAsset.pipDecimals)}</span>
+            </div>
+
+            {/* Mode Switch Buttons */}
+            <button
+              onClick={() => setBgMode('TRADINGVIEW')}
+              className="px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg text-[11px] font-mono font-bold shadow-sm cursor-pointer"
+            >
+              📊 Gráfico TradingView
+            </button>
+            <button
+              onClick={() => setBgMode('PLATFORM')}
+              className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
+            >
+              📈 Simulador Hiove
+            </button>
+            <button
+              onClick={() => setBgMode('LIVE_SITE')}
+              className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
+            >
+              🌐 Login Hiove
+            </button>
+
+            <button
+              onClick={onOpenHistory}
+              className="hidden sm:inline-block px-2 py-1 text-neutral-400 hover:text-cyan-400 text-[11px] font-mono transition-colors cursor-pointer"
+            >
+              Histórico
+            </button>
+            <button
+              onClick={onOpenWebhook}
+              className="hidden sm:inline-block px-2 py-1 text-cyan-400 hover:text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
+            >
+              Webhooks
+            </button>
+          </div>
+        </header>
+
+        {/* Weekend Closed Warning Banner if Forex is currently selected */}
+        {isWeekendForex && (
+          <div className="bg-rose-950/90 border-b border-rose-500/50 px-4 py-2 flex items-center justify-between z-20 backdrop-blur-md">
+            <div className="flex items-center gap-2 text-xs font-mono text-rose-200">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+              <strong>MERCADO FOREX FECHADO (FIM DE SEMANA NO TRADINGVIEW):</strong>
+              <span className="hidden md:inline">O mercado Forex fecha sexta às 18h e reabre domingo às 18h BRT. Para sinais e operações ativas agora, utilize pares de Criptomoeda (24/7)!</span>
+            </div>
+            <button
+              onClick={() => onSelectAsset('BTC/USD')}
+              className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-mono font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-md"
+            >
+              Mudar para BTC/USD (24/7) ↗
+            </button>
+          </div>
+        )}
+
+        {/* Interactive TradingView Advanced Candlestick Chart */}
+        <div className="flex-1 w-full h-full relative bg-[#090d16]">
+          <iframe
+            key={`tv-chart-${currentAsset.tvSymbol}-${timeframe}`}
+            src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${encodeURIComponent(currentAsset.tvSymbol)}&interval=${timeframe === 'M5' ? '5' : '1'}&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=0b0f1a&theme=dark&style=1&timezone=America%2FSao_Paulo&locale=br`}
+            title={`TradingView Advanced Chart - ${currentAsset.tvSymbol}`}
+            className="w-full h-full border-0 block"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (bgMode === 'LIVE_SITE') {
     return (
       <div className="relative w-screen h-screen bg-[#07090e] text-neutral-100 flex flex-col overflow-hidden font-sans select-none">
@@ -164,17 +305,23 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
 
           <div className="flex items-center gap-2 text-xs">
             <button
-              onClick={() => setIframeKey((prev) => prev + 1)}
-              className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
-              title="Recarregar tela de login da Hiove"
+              onClick={() => setBgMode('TRADINGVIEW')}
+              className="px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 hover:bg-cyan-500/30 rounded-lg text-[11px] font-mono font-bold transition-colors cursor-pointer"
             >
-              Recarregar
+              📊 Gráfico TradingView
             </button>
             <button
               onClick={() => setBgMode('PLATFORM')}
               className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
             >
-              Alternar para Gráfico Hiove
+              📈 Simulador Hiove
+            </button>
+            <button
+              onClick={() => setIframeKey((prev) => prev + 1)}
+              className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
+              title="Recarregar tela de login da Hiove"
+            >
+              Recarregar
             </button>
             <button
               onClick={onOpenHistory}
@@ -310,6 +457,14 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
             <Wallet className="w-3.5 h-3.5" />
             DEPOSITAR
           </a>
+
+          {/* Switch to TradingView Chart */}
+          <button
+            onClick={() => setBgMode('TRADINGVIEW')}
+            className="px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 rounded-xl text-xs font-mono font-bold transition-colors cursor-pointer"
+          >
+            📊 Gráfico TradingView
+          </button>
 
           {/* Switch to Live Site Mode */}
           <button

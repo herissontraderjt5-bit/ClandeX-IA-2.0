@@ -55,9 +55,9 @@ import {
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage } from '../hooks/useLiveVoice';
-import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
+import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews, MarketNewsItem } from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
-import { marketDataManager } from '../services/marketData';
+import { marketDataManager, isForexMarketOpen } from '../services/marketData';
 import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
 
@@ -303,6 +303,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'chat'>('sinal');
   const [copiedSignal, setCopiedSignal] = useState(false);
 
+  // Market status (TradingView Weekend Forex closure check)
+  const isForexOpen = isForexMarketOpen();
+  const isForexClosed = asset.category === 'FOREX' && !isForexOpen;
+  const realNewsList = useMemo(() => getRealMarketNews(asset.symbol), [asset.symbol]);
+
   // Real-time Technical Overview calculated from current candles, timeframe & asset
   const activeCandles = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
   const technicalData = useMemo(() => {
@@ -485,20 +490,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
           const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
 
+          const topNews = realNewsList[0];
+          const marketStatusStr = isForexClosed
+            ? 'MERCADO FOREX FECHADO (FIM DE SEMANA NO TRADINGVIEW). Oriente o trader a operar Criptomoedas 24/7 (BTC, ETH, SOL).'
+            : 'MERCADO ABERTO EM TEMPO REAL NO TRADINGVIEW.';
+
           const prompt = `
-Você é a ClandeX-IA, mentora institucional e analista quantitativa de Opções Binárias e Forex para a corretora Hiove.
-Mercado em Tempo Real:
-- Ativo: ${asset.symbol} (${asset.name})
+Você é a ClandeX-IA, mentora institucional e analista quantitativa de Opções Binárias e Forex para a corretora Hiove com base direta nos dados do TradingView.
+Mercado em Tempo Real (TradingView):
+- Ativo: ${asset.symbol} (${asset.name}) | Símbolo TradingView: ${asset.tvSymbol}
+- Status do Mercado: ${marketStatusStr}
 - Preço Atual: ${asset.currentPrice} | Timeframe: ${timeframe}
 - Tendência: ${marketAnalysis.trend} (Força Compra: ${marketAnalysis.buyerStrength}, Venda: ${marketAnalysis.sellerStrength})
 - Suportes: ${supList.join(', ') || 'dinâmicos'}
 - Resistências: ${resList.join(', ') || 'dinâmicos'}
 - Confluência: ${confluences.totalScore}% para ${confluences.direction}
-- Notícias: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas'}
+- Banco de Notícias Reais: ${topNews ? `"${topNews.title}" (${topNews.source} - Impacto: ${topNews.impact})` : 'Sem eventos de risco no momento'}
+- Calendário Econômico: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas imediatas'}
 
 Pergunta do Trader: "${textToSend}"
 
-Responda em português brasileiro de forma direta, clara, profissional e motivadora. Seja concisa e objetiva.
+Responda em português brasileiro de forma direta, clara, profissional e motivadora. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7. Seja concisa e objetiva.
           `;
 
           const resp = await ai.models.generateContent({
@@ -561,18 +573,21 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         throw new Error(data.error || 'Erro na resposta');
       }
     } catch {
-      let fallbackText = '';
-      const lower = textToSend.toLowerCase();
-      if (lower.includes('notic') || lower.includes('notíc') || lower.includes('calend') || lower.includes('impacto')) {
-        if (upcomingHighImpact) {
+      if (isForexClosed) {
+        fallbackText = `Aviso do TradingView: O mercado Forex está fechado neste fim de semana para ${asset.symbol} (reabre domingo às 18:00 BRT). Não há formação de novas velas no mercado à vista agora. Para sinais ao vivo e confluências ativas, selecione Criptomoedas como BTC/USD ou ETH/USD, que operam 24 horas por dia!`;
+      } else if (lower.includes('notic') || lower.includes('notíc') || lower.includes('calend') || lower.includes('impacto')) {
+        const topNews = realNewsList[0];
+        if (topNews) {
+          fallbackText = `Banco de Notícias Reais TradingView: "${topNews.title}" (${topNews.source}). ${topNews.summary}`;
+        } else if (upcomingHighImpact) {
           fallbackText = `Próxima notícia de alto impacto para ${asset.symbol}: ${upcomingHighImpact.event} (${upcomingHighImpact.currency}) agendada para ${upcomingHighImpact.time}. Impacto alto. Evite operar nos 5 minutos antes e depois.`;
         } else {
-          fallbackText = `Não há notícias de alto impacto imediatas previstas para os próximos minutos em ${asset.symbol}. O mercado técnico está limpo para confluências.`;
+          fallbackText = `Não há notícias de alto impacto imediatas previstas para os próximos minutos em ${asset.symbol}. O mercado técnico no TradingView está limpo para confluências.`;
         }
       } else {
         const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
         const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
-        fallbackText = `Atenção: A tendência atual de ${asset.symbol} é ${marketAnalysis.trend}. A força compradora está ${marketAnalysis.buyerStrength} e vendedora ${marketAnalysis.sellerStrength}.\n• Suportes: ${supList.length > 0 ? supList.join(', ') : 'Zonas dinâmicas'}\n• Resistências: ${resList.length > 0 ? resList.join(', ') : 'Zonas dinâmicas'}.`;
+        fallbackText = `Análise TradingView de ${asset.symbol} (${asset.tvSymbol}): Tendência ${marketAnalysis.trend}. Força compradora ${marketAnalysis.buyerStrength} e vendedora ${marketAnalysis.sellerStrength}.\n• Suportes: ${supList.length > 0 ? supList.join(', ') : 'Zonas dinâmicas'}\n• Resistências: ${resList.length > 0 ? resList.join(', ') : 'Zonas dinâmicas'}. Confluência técnica de ${confluences.totalScore}% para ${confluences.direction}.`;
       }
 
       setChatMessages((prev) => [
@@ -955,6 +970,34 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             {/* TAB 1: SINAL (ÁREA DO SINAL LIMPA E RESUMIDA COM PLACAR DO DIA) */}
             {activeTab === 'sinal' && (
               <div className="space-y-3">
+                {/* AVISO DE MERCADO FOREX FECHADO NO FIM DE SEMANA (COM BOTÃO RÁPIDO PARA CRIPTO 24/7) */}
+                {isForexClosed && (
+                  <div className="p-3 bg-gradient-to-r from-rose-950/70 via-neutral-900 to-rose-950/70 border border-rose-500/60 rounded-2xl shadow-xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-rose-300 font-mono font-bold text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
+                        <span>MERCADO FOREX FECHADO</span>
+                      </div>
+                      <span className="text-[9px] font-mono font-bold text-rose-300 bg-rose-950 px-2 py-0.5 rounded-full border border-rose-500/50">
+                        TRADINGVIEW FIM DE SEMANA
+                      </span>
+                    </div>
+
+                    <p className="text-[10px] text-neutral-300 font-mono leading-relaxed">
+                      O par <strong>{asset.symbol}</strong> fecha aos fins de semana (sexta 18h até domingo 18h BRT). A ClandeX-IA pausou novos sinais nesta paridade para proteger sua banca.
+                    </p>
+
+                    <button
+                      onClick={() => onSelectAsset('BTC/USD')}
+                      className="w-full py-2 px-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-neutral-950 font-mono font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-[0.99]"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Alternar para BTC/USD (Cripto 24/7 Ativo)</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {/* 1. PLACAR DO DIA COM A DATA DE HOJE E QUANTIDADE DE WIN E LOSS */}
                 <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl shadow-xl space-y-2">
                   <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
@@ -1411,14 +1454,32 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         onChange={(e) => onSelectAsset(e.target.value)}
                         className="w-full bg-black/60 border border-neutral-700/80 hover:border-cyan-500/60 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold appearance-none focus:outline-none transition-colors cursor-pointer"
                       >
-                        {assetsList.map((a) => (
-                          <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
-                            {a.symbol} — {a.name}
-                          </option>
-                        ))}
+                        {assetsList.map((a) => {
+                          const isClosed = a.category === 'FOREX' && !isForexOpen;
+                          return (
+                            <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                              {isClosed ? '🔴 [FECHADO FIM DE SEMANA] ' : '🟢 [24/7 CRIPTO] '}{a.symbol} — {a.name}
+                            </option>
+                          );
+                        })}
                       </select>
                       <ChevronDown className="w-4 h-4 text-cyan-400 absolute right-3 top-2.5 pointer-events-none" />
                     </div>
+
+                    {isForexClosed && (
+                      <div className="mt-2 p-2 rounded-xl bg-rose-950/40 border border-rose-500/50 text-[10px] font-mono text-rose-300 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>Forex fechado no TradingView no fim de semana</span>
+                        </div>
+                        <button
+                          onClick={() => onSelectAsset('BTC/USD')}
+                          className="px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold rounded text-[9px] transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          Ir p/ BTC/USD (24/7)
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Timeframe Selector */}
@@ -1743,6 +1804,66 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         {technicalData.atr.status}
                       </span>
                     </div>
+                  </div>
+                </div>
+
+                {/* 4. BANCO DE DADOS DE NOTÍCIAS REAIS & CALENDÁRIO ECONÔMICO (TRADINGVIEW & INSTITUCIONAL) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white font-mono">
+                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>BANCO DE NOTÍCIAS REAIS</span>
+                    </div>
+                    <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
+                      TRADINGVIEW FEED
+                    </span>
+                  </div>
+
+                  {/* Lista de Notícias Reais Filtradas */}
+                  <div className="space-y-2">
+                    {realNewsList.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-2.5 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1.5 transition-all hover:border-cyan-500/40"
+                      >
+                        <div className="flex items-center justify-between text-[9px] font-mono">
+                          <span className="text-cyan-400 font-bold">{item.source}</span>
+                          <span className="text-neutral-500">{item.timeAgo}</span>
+                        </div>
+
+                        <div className="text-xs font-bold text-white leading-tight">
+                          {item.title}
+                        </div>
+
+                        <p className="text-[10px] text-neutral-300 leading-relaxed font-mono">
+                          {item.summary}
+                        </p>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px] font-mono">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              item.impact === 'HIGH'
+                                ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
+                                : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
+                            }`}
+                          >
+                            {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO' : '🟡 MÉDIO IMPACTO'}
+                          </span>
+
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              item.sentiment === 'BULLISH'
+                                ? 'text-emerald-400 bg-emerald-950/40'
+                                : item.sentiment === 'BEARISH'
+                                ? 'text-rose-400 bg-rose-950/40'
+                                : 'text-neutral-400 bg-neutral-900'
+                            }`}
+                          >
+                            {item.sentiment === 'BULLISH' ? '↗ ALTA' : item.sentiment === 'BEARISH' ? '↘ BAIXA' : '⚪ NEUTRO'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
