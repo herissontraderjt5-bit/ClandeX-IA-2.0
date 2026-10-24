@@ -29,10 +29,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Gemini API Key State
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    let envKey = '';
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        envKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
+      }
+    } catch {}
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('clandex_gemini_api_key') || '';
+      return localStorage.getItem('clandex_gemini_api_key') || envKey || '';
     }
-    return '';
+    return envKey;
   });
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [geminiTestResult, setGeminiTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
@@ -77,7 +83,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: key });
       const resp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.7-flash',
         contents: 'Olá teste ClandeX',
       });
       if (resp && resp.text) {

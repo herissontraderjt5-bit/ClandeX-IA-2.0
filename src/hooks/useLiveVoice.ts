@@ -309,7 +309,7 @@ Responda em português brasileiro de forma direta, clara e concisa (máximo de 1
         `;
 
         const resp = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.7-flash',
           contents: prompt,
         });
 
@@ -525,7 +525,11 @@ Regras de fala:
 3. Sem formatações de texto ou asteriscos.
           `;
 
-          const liveModels = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+          const liveModels = [
+            'gemini-3.8-live',
+            'gemini-3.1-flash-live-preview',
+            'gemini-2.5-flash-native-audio-latest',
+          ];
           for (const m of liveModels) {
             try {
               const liveSession = await ai.live.connect({
