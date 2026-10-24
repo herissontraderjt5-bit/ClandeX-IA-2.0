@@ -2,6 +2,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AppSettings, SignalRecord, WebhookLog } from '../types/trading';
 
 export const DEFAULT_SUPABASE_URL = 'https://qxojtaqselrgitdmmora.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4b2p0YXFzZWxyZ2l0ZG1tb3JhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NDk2OTcsImV4cCI6MjEwODQyNTY5N30.uXue9bIJhkIbPqLXhqpIpf2W_rdKUT9v-sce4E310oo';
 
 export const getSupabaseConfig = () => {
   let envUrl = '';
@@ -17,7 +19,7 @@ export const getSupabaseConfig = () => {
   const localUrl = typeof window !== 'undefined' ? localStorage.getItem('clandex_supabase_url') || '' : '';
 
   const url = localUrl || envUrl || DEFAULT_SUPABASE_URL;
-  const key = localKey || envKey || '';
+  const key = localKey || envKey || DEFAULT_SUPABASE_ANON_KEY;
 
   return { url, key };
 };
