@@ -99,65 +99,92 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
 8. Nunca garanta lucros certos.
         `;
 
-        try {
-          session = await ai.live.connect({
-            model: 'gemini-3.8-live',
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
+        if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {
+          isConnecting = false;
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'error',
+                error: 'Chave GEMINI_API_KEY não configurada no servidor. Configure sua chave no .env para áudio Gemini Live.',
+              })
+            );
+          }
+          return;
+        }
+
+        const candidateModels = [
+          process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp',
+          'gemini-2.0-flash',
+          'gemini-2.5-flash',
+        ];
+
+        let connected = false;
+        let lastErrorMsg = '';
+
+        for (const candidate of candidateModels) {
+          try {
+            session = await ai.live.connect({
+              model: candidate,
+              config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
+                  },
+                },
+                systemInstruction,
+                outputAudioTranscription: {},
+                inputAudioTranscription: {},
+              },
+              callbacks: {
+                onmessage: (message: LiveServerMessage) => {
+                  const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                  if (audio && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'audio', audio }));
+                  }
+
+                  if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'interrupted' }));
+                  }
+
+                  const text = message.serverContent?.modelTurn?.parts?.[0]?.text;
+                  if (text && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'text', text }));
+                  }
+
+                  const userText = (message.serverContent as any)?.inputAudioTranscription?.text;
+                  if (userText && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'user_text', userText }));
+                  }
+                },
+                onclose: () => {
+                  if (clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'closed' }));
+                  }
+                },
+                onerror: (err: any) => {
+                  console.error(`Gemini Live session error (${candidate}):`, err);
+                  if (clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'error', error: 'Erro na sessão de voz.' }));
+                  }
                 },
               },
-              systemInstruction,
-              outputAudioTranscription: {},
-              inputAudioTranscription: {},
-            },
-            callbacks: {
-              onmessage: (message: LiveServerMessage) => {
-                const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                if (audio && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'audio', audio }));
-                }
+            });
 
-                if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'interrupted' }));
-                }
-
-                const text = message.serverContent?.modelTurn?.parts?.[0]?.text;
-                if (text && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'text', text }));
-                }
-
-                const userText = (message.serverContent as any)?.inputAudioTranscription?.text;
-                if (userText && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'user_text', userText }));
-                }
-              },
-              onclose: () => {
-                if (clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'closed' }));
-                }
-              },
-              onerror: (err: any) => {
-                console.error('Gemini Live session error:', err);
-                if (clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'error', error: 'Erro na sessão de voz.' }));
-                }
-              },
-            },
-          });
-
-          isConnecting = false;
-          if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(JSON.stringify({ type: 'ready' }));
+            connected = true;
+            console.log(`[Gemini Live] Conectado com sucesso usando o modelo: ${candidate}`);
+            break;
+          } catch (connErr: any) {
+            lastErrorMsg = connErr?.message || String(connErr);
+            console.warn(`[Gemini Live] Falha com modelo ${candidate}: ${lastErrorMsg}`);
           }
-        } catch (connErr: any) {
-          isConnecting = false;
-          console.error('Error connecting to Gemini Live:', connErr);
-          if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(JSON.stringify({ type: 'error', error: connErr?.message || 'Falha ao conectar no Gemini 3.8 Live.' }));
-          }
+        }
+
+        isConnecting = false;
+        if (connected && clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ type: 'ready' }));
+        } else if (!connected && clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ type: 'error', error: lastErrorMsg || 'Falha ao conectar no Gemini Live.' }));
         }
       }
 
@@ -244,7 +271,7 @@ NUNCA prometa lucros fixos ou garantias.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction: 'Você é o analista técnico sênior da ClandeX-IA. Responda em tom direto, institucional e cirúrgico.',

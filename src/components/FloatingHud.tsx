@@ -54,7 +54,7 @@ import {
   AppSettings,
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
-import { LiveVoiceStatus } from '../hooks/useLiveVoice';
+import { LiveVoiceStatus, VoiceEngine } from '../hooks/useLiveVoice';
 import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
 import { marketDataManager } from '../services/marketData';
@@ -88,6 +88,7 @@ interface FloatingHudProps {
     micLevel: number;
     aiSpeechLevel: number;
     isActivatingMic: boolean;
+    activeEngine?: VoiceEngine;
     startLiveConversation: () => Promise<void>;
     disconnectSession: () => void;
     toggleMute: () => void;

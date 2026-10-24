@@ -3,6 +3,7 @@ import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/
 import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
+export type VoiceEngine = 'gemini_live' | 'browser_speech';
 
 interface UseLiveVoiceParams {
   asset: Asset;
@@ -24,6 +25,7 @@ export function useLiveVoice({
   const [micLevel, setMicLevel] = useState<number>(0);
   const [aiSpeechLevel, setAiSpeechLevel] = useState<number>(0);
   const [isActivatingMic, setIsActivatingMic] = useState(false);
+  const [activeEngine, setActiveEngine] = useState<VoiceEngine>('gemini_live');
 
   // Audio & WebSocket Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -36,6 +38,9 @@ export function useLiveVoice({
     activeSources: [],
   });
 
+  // Browser Fallback Recognition & TTS Refs
+  const recognitionRef = useRef<any>(null);
+  const speechAnimIntervalRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   isMutedRef.current = isMuted;
 
@@ -43,7 +48,7 @@ export function useLiveVoice({
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
   contextRef.current = { asset, timeframe, marketAnalysis, confluences };
 
-  // Linear resampler to convert native input sampleRate to 16000Hz for Gemini Live
+  // Resampler for Gemini Live (16kHz PCM)
   const resampleTo16k = (inputData: Float32Array, inputSampleRate: number): Float32Array => {
     if (inputSampleRate === 16000) return inputData;
     const ratio = inputSampleRate / 16000;
@@ -59,7 +64,6 @@ export function useLiveVoice({
     return result;
   };
 
-  // Convert Float32Array to Int16 Little-Endian Base64 (16kHz PCM)
   const pcmToBase64 = (float32Array: Float32Array): string => {
     const int16 = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
@@ -74,7 +78,6 @@ export function useLiveVoice({
     return btoa(binary);
   };
 
-  // Convert Base64 (24kHz 16-bit PCM LE) to Float32Array
   const base64ToPcm = (base64: string): Float32Array => {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -89,44 +92,39 @@ export function useLiveVoice({
     return float32;
   };
 
-  // Stop current audio playback
   const stopAudioPlayback = useCallback(() => {
     const state = audioPlaybackStateRef.current;
     state.activeSources.forEach((src) => {
       try {
         src.stop();
         src.disconnect();
-      } catch {
-        // Already ended
-      }
+      } catch {}
     });
     state.activeSources = [];
-    if (outputAudioCtxRef.current) {
-      state.nextStartTime = outputAudioCtxRef.current.currentTime;
-    }
+    state.nextStartTime = 0;
     setAiSpeechLevel(0);
+
+    if (speechAnimIntervalRef.current) {
+      clearInterval(speechAnimIntervalRef.current);
+      speechAnimIntervalRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
   }, []);
 
-  // Schedule raw 24kHz PCM chunk for audio playback
   const scheduleAudioChunk = useCallback((base64Audio: string) => {
     try {
       const pcmData = base64ToPcm(base64Audio);
-      if (!outputAudioCtxRef.current) {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        outputAudioCtxRef.current = new AudioCtx({ sampleRate: 24000 });
-      }
-
       const ctx = outputAudioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
+      if (!ctx) return;
 
       let sum = 0;
-      for (let i = 0; i < pcmData.length; i += 8) {
-        sum += pcmData[i] * pcmData[i];
+      for (let i = 0; i < pcmData.length; i += 16) {
+        sum += Math.abs(pcmData[i]);
       }
-      const rms = Math.sqrt(sum / (pcmData.length / 8));
-      const level = Math.min(100, Math.round(rms * 320));
+      const avg = sum / (pcmData.length / 16);
+      const level = Math.min(100, Math.round(avg * 320));
       setAiSpeechLevel(Math.max(15, level));
 
       const audioBuffer = ctx.createBuffer(1, pcmData.length, 24000);
@@ -155,9 +153,156 @@ export function useLiveVoice({
     }
   }, []);
 
+  /**
+   * Resposta local especializada em Opções Binárias e SMC (Português do Brasil)
+   */
+  const answerQuestionLocally = (questionText: string): string => {
+    const q = questionText.toLowerCase();
+    const ctx = contextRef.current;
+    const { upcomingHighImpact } = getRelevantEconomicEvents(ctx.asset.symbol);
+
+    if (q.includes('notícia') || q.includes('noticia') || q.includes('calendário') || q.includes('calendario') || q.includes('impacto')) {
+      if (upcomingHighImpact) {
+        return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo prudência ou pausar operações.`;
+      }
+      return 'Sem notícias críticas de alto impacto agendadas para os próximos minutos nesta paridade. O fluxo técnico está limpo.';
+    }
+
+    if (q.includes('entrar') || q.includes('entrada') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put')) {
+      if (ctx.confluences.totalScore >= 75) {
+        const dir = ctx.confluences.direction === 'CALL' ? 'COMPRA' : 'VENDA';
+        return `Confluência forte de ${ctx.confluences.totalScore}% para ${dir}. Principais gatilhos: ${ctx.confluences.reasons.slice(0, 2).join(' e ')}. Respeite o gerenciamento.`;
+      } else if (ctx.confluences.totalScore >= 60) {
+        return `Oportunidade em observação com probabilidade de ${ctx.confluences.totalScore}%. Aguarde a validação do candle.`;
+      }
+      return `Sem confluência suficiente no momento, pontuação de apenas ${ctx.confluences.totalScore}%. Mercado lateral ou em ruído. Preserve sua banca.`;
+    }
+
+    if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo')) {
+      return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${ctx.marketAnalysis.trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
+    }
+
+    if (q.includes('suporte') || q.includes('resistência') || q.includes('resistencia') || q.includes('taxa') || q.includes('preço') || q.includes('preco')) {
+      const keyLevels = ctx.marketAnalysis.keyLevels || [];
+      const sup = keyLevels.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+      const res = keyLevels.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+      let msg = `O preço atual do ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
+      if (sup.length > 0) msg += `Suporte em ${sup[0]}. `;
+      if (res.length > 0) msg += `Resistência em ${res[0]}.`;
+      return msg;
+    }
+
+    return `Ativo ${ctx.asset.symbol} operando a ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. Tendência de ${ctx.marketAnalysis.trend} com confluência ${ctx.confluences.direction} de ${ctx.confluences.totalScore}%. Pode perguntar sobre tendência, confluência ou notícias.`;
+  };
+
+  /**
+   * Fala a resposta em português do Brasil e anima o avatar
+   */
+  const speakBrowserText = useCallback((textToSpeak: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    stopAudioPlayback();
+    setStatus('speaking');
+
+    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 1.05;
+    utterance.pitch = 1.05;
+
+    const voices = window.speechSynthesis.getVoices();
+    const ptVoice = voices.find((v) => v.lang.startsWith('pt') || v.lang.includes('BR'));
+    if (ptVoice) utterance.voice = ptVoice;
+
+    utterance.onstart = () => {
+      let phase = 0;
+      speechAnimIntervalRef.current = setInterval(() => {
+        phase += 0.35;
+        const baseLevel = 45 + Math.sin(phase * 4.2) * 25 + Math.sin(phase * 8.5) * 15;
+        setAiSpeechLevel(Math.max(25, Math.min(95, Math.round(baseLevel))));
+      }, 70);
+    };
+
+    utterance.onend = () => {
+      stopAudioPlayback();
+      setStatus('listening');
+    };
+
+    utterance.onerror = () => {
+      stopAudioPlayback();
+      setStatus('listening');
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, [stopAudioPlayback]);
+
+  /**
+   * Ativa modo de voz inteligente do navegador com reconhecimento de fala nativo (PT-BR)
+   */
+  const startBrowserSpeechFallback = useCallback(() => {
+    setActiveEngine('browser_speech');
+    setErrorMessage(null);
+    setStatus('listening');
+    setHasMicPermission(true);
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'pt-BR';
+        recognition.continuous = true;
+        recognition.interimResults = false;
+
+        recognition.onresult = (event: any) => {
+          if (isMutedRef.current) return;
+          const lastIdx = event.results.length - 1;
+          const transcript = event.results[lastIdx]?.[0]?.transcript?.trim();
+          if (transcript) {
+            console.log('[ClandeX-IA Voz] Pergunta recebida:', transcript);
+            const answer = answerQuestionLocally(transcript);
+            speakBrowserText(answer);
+          }
+        };
+
+        recognition.onerror = (err: any) => {
+          if (err.error !== 'no-speech') {
+            console.warn('[ClandeX-IA Voz] Reconhecimento aviso:', err.error);
+          }
+        };
+
+        recognition.onend = () => {
+          // Mantém ouvindo enquanto estiver ativo
+          if (recognitionRef.current && !isMutedRef.current) {
+            try {
+              recognition.start();
+            } catch {}
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+      } catch (e) {
+        console.warn('[ClandeX-IA] Falha ao iniciar SpeechRecognition:', e);
+      }
+    }
+
+    // Saudação inicial imediata
+    const assetSym = contextRef.current.asset.symbol;
+    speakBrowserText(`ClandeX-IA conectada por voz. Monitorando ${assetSym}. Pode falar comigo!`);
+  }, [speakBrowserText]);
+
   // Disconnect WebSocket and media streams
   const disconnectSession = useCallback(() => {
     stopAudioPlayback();
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
 
     if (processorRef.current) {
       processorRef.current.disconnect();
@@ -182,25 +327,21 @@ export function useLiveVoice({
       wsRef.current = null;
     }
 
-    if (outputAudioCtxRef.current) {
-      outputAudioCtxRef.current.close().catch(() => {});
-      outputAudioCtxRef.current = null;
-    }
-
     setStatus('idle');
     setMicLevel(0);
     setAiSpeechLevel(0);
-    setHasMicPermission(null);
+    setErrorMessage(null);
   }, [stopAudioPlayback]);
 
-  // Request & attach microphone access
+  // Request Microphone Permissions
   const requestMicrophoneAccess = useCallback(async () => {
     try {
       setIsActivatingMic(true);
-
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (outputAudioCtxRef.current && outputAudioCtxRef.current.state === 'suspended') {
-        await outputAudioCtxRef.current.resume();
+      const inputCtx = new AudioCtx();
+      inputAudioCtxRef.current = inputCtx;
+      if (inputCtx.state === 'suspended') {
+        await inputCtx.resume();
       }
 
       let stream: MediaStream;
@@ -218,21 +359,13 @@ export function useLiveVoice({
 
       micStreamRef.current = stream;
       setHasMicPermission(true);
-      setErrorMessage(null);
-
-      const inputCtx = new AudioCtx();
-      inputAudioCtxRef.current = inputCtx;
-
-      if (inputCtx.state === 'suspended') {
-        await inputCtx.resume();
-      }
 
       const source = inputCtx.createMediaStreamSource(stream);
       const processor = inputCtx.createScriptProcessor(2048, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (isMutedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (isMutedRef.current) {
           setMicLevel(0);
           return;
         }
@@ -245,9 +378,11 @@ export function useLiveVoice({
         const rms = Math.sqrt(sum / (inputData.length / 8));
         setMicLevel(Math.min(100, Math.round(rms * 280)));
 
-        const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
-        const base64Pcm = pcmToBase64(resampled);
-        wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
+          const base64Pcm = pcmToBase64(resampled);
+          wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
+        }
       };
 
       source.connect(processor);
@@ -261,7 +396,7 @@ export function useLiveVoice({
     }
   }, []);
 
-  // Connect to Gemini Live API
+  // Connect to Gemini Live API or fallback seamlessly to Browser Voice Assistant
   const startLiveConversation = useCallback(async () => {
     try {
       setErrorMessage(null);
@@ -273,15 +408,39 @@ export function useLiveVoice({
       audioPlaybackStateRef.current = { nextStartTime: outputCtx.currentTime, activeSources: [] };
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/live`;
-      const ws = new WebSocket(wsUrl);
+      
+      // Inteligência de resolução de porta: tenta primeiro a porta atual, ou fallback para :3000
+      let hostToUse = window.location.host;
+      if (
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+        window.location.port !== '3000' &&
+        window.location.port !== ''
+      ) {
+        hostToUse = `${window.location.hostname}:3000`;
+      }
+
+      const wsUrl = `${protocol}//${hostToUse}/api/live`;
+      console.log('[ClandeX-IA Voz] Conectando WebSocket ao vivo em:', wsUrl);
+
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (wsErr) {
+        console.warn('[ClandeX-IA Voz] Falha imediata ao criar WebSocket:', wsErr);
+        startBrowserSpeechFallback();
+        return;
+      }
       wsRef.current = ws;
 
       const currentCtx = contextRef.current;
       const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(currentCtx.asset.symbol);
       const marketSession = getCurrentMarketSession();
 
+      let didOpen = false;
+
       ws.onopen = () => {
+        didOpen = true;
+        setActiveEngine('gemini_live');
         ws.send(
           JSON.stringify({
             type: 'start',
@@ -315,8 +474,9 @@ export function useLiveVoice({
             setStatus('listening');
             stopAudioPlayback();
           } else if (msg.type === 'error') {
-            setErrorMessage(msg.error || 'Erro na sessão com a IA.');
-            setStatus('error');
+            console.warn('[Gemini Live] Mensagem de erro do servidor:', msg.error);
+            // Se o servidor Gemini retornar erro (ex: sem API key), ativa voz local sem interromper o trader
+            startBrowserSpeechFallback();
           }
         } catch (err) {
           console.error('Error parsing live ws message:', err);
@@ -324,80 +484,33 @@ export function useLiveVoice({
       };
 
       ws.onerror = (e) => {
-        console.error('WebSocket live error:', e);
-        setErrorMessage('Falha ao conectar no servidor de voz.');
-        setStatus('error');
+        console.warn('[ClandeX-IA Voz] WebSocket offline ou não encontrado. Ativando voz local nativa.', e);
+        if (!didOpen) {
+          startBrowserSpeechFallback();
+        }
       };
 
       ws.onclose = () => {
-        setStatus('idle');
+        if (activeEngine === 'gemini_live') {
+          setStatus('idle');
+        }
       };
 
       // Connect microphone
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-          let stream: MediaStream;
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              },
-            });
-          } catch {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          }
-
-          micStreamRef.current = stream;
-          setHasMicPermission(true);
-
-          const inputCtx = new AudioCtx();
-          inputAudioCtxRef.current = inputCtx;
-          if (inputCtx.state === 'suspended') {
-            await inputCtx.resume();
-          }
-
-          const source = inputCtx.createMediaStreamSource(stream);
-          const processor = inputCtx.createScriptProcessor(2048, 1, 1);
-          processorRef.current = processor;
-
-          processor.onaudioprocess = (e) => {
-            if (isMutedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-              setMicLevel(0);
-              return;
-            }
-
-            const inputData = e.inputBuffer.getChannelData(0);
-            let sum = 0;
-            for (let i = 0; i < inputData.length; i += 8) {
-              sum += inputData[i] * inputData[i];
-            }
-            const rms = Math.sqrt(sum / (inputData.length / 8));
-            setMicLevel(Math.min(100, Math.round(rms * 280)));
-
-            const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
-            const base64Pcm = pcmToBase64(resampled);
-            wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
-          };
-
-          source.connect(processor);
-          processor.connect(inputCtx.destination);
-        } catch {
-          setHasMicPermission(false);
-        }
-      } else {
-        setHasMicPermission(false);
-      }
+      await requestMicrophoneAccess();
     } catch (err: any) {
-      console.error('Failed to start live session:', err);
-      setErrorMessage(err?.message || 'Falha ao iniciar conversa de voz.');
-      setStatus('error');
+      console.warn('[ClandeX-IA Voz] Erro geral ao inicializar. Ativando voz local nativa.', err);
+      startBrowserSpeechFallback();
     }
-  }, [scheduleAudioChunk, stopAudioPlayback]);
+  }, [
+    scheduleAudioChunk,
+    stopAudioPlayback,
+    requestMicrophoneAccess,
+    startBrowserSpeechFallback,
+    activeEngine,
+  ]);
 
-  // Handle Mute Toggle
-  const toggleMute = useCallback(() => {
+  const toggleMute = () => {
     setIsMuted((prev) => {
       const next = !prev;
       if (micStreamRef.current) {
@@ -407,9 +520,8 @@ export function useLiveVoice({
       }
       return next;
     });
-  }, []);
+  };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       disconnectSession();
@@ -424,10 +536,10 @@ export function useLiveVoice({
     micLevel,
     aiSpeechLevel,
     isActivatingMic,
+    activeEngine,
     startLiveConversation,
     disconnectSession,
     toggleMute,
     requestMicrophoneAccess,
-    stopAudioPlayback,
   };
 }

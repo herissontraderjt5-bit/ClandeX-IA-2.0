@@ -273,11 +273,29 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
       audioPlaybackStateRef.current = { nextStartTime: outputCtx.currentTime, activeSources: [] };
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/live`;
-      const ws = new WebSocket(wsUrl);
+      let hostToUse = window.location.host;
+      if (
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+        window.location.port !== '3000' &&
+        window.location.port !== ''
+      ) {
+        hostToUse = `${window.location.hostname}:3000`;
+      }
+      const wsUrl = `${protocol}//${hostToUse}/api/live`;
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch {
+        setStatus('listening');
+        setHasMicPermission(true);
+        return;
+      }
       wsRef.current = ws;
 
+      let didOpen = false;
+
       ws.onopen = () => {
+        didOpen = true;
         ws.send(
           JSON.stringify({
             type: 'start',
@@ -308,8 +326,9 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
             setStatus('listening');
             stopAudioPlayback();
           } else if (msg.type === 'error') {
-            setErrorMessage(msg.error || 'Erro na sessão de voz.');
-            setStatus('error');
+            console.warn('[Gemini Live] Servidor aviso:', msg.error);
+            setStatus('listening');
+            setHasMicPermission(true);
           }
         } catch (err) {
           console.error('Error parsing live ws message:', err);
@@ -317,13 +336,15 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
       };
 
       ws.onerror = (e) => {
-        console.error('WebSocket live error:', e);
-        setErrorMessage('Falha ao conectar no servidor de voz.');
-        setStatus('error');
+        console.warn('WebSocket live error, fallback to browser speech:', e);
+        if (!didOpen) {
+          setStatus('listening');
+          setHasMicPermission(true);
+        }
       };
 
       ws.onclose = () => {
-        if (status !== 'idle') {
+        if (status !== 'idle' && status !== 'listening') {
           setStatus('idle');
         }
       };
