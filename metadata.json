@@ -1,0 +1,6 @@
+{
+  "name": "ClandeX-IA — Inteligência Artificial para Opções Binárias",
+  "description": "Sistema profissional de análise técnica de mercado, Smart Money Concepts (SMC), Price Action e geração de sinais para opções binárias integrado à corretora Hiove.",
+  "requestFramePermissions": ["CAMERA_MICROPHONE"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

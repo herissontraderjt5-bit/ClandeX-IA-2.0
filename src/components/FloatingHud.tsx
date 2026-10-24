@@ -1,0 +1,1971 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  Activity,
+  Volume2,
+  VolumeX,
+  Settings,
+  Minus,
+  X,
+  Play,
+  Square,
+  Sparkles,
+  Maximize2,
+  ChevronDown,
+  Clock,
+  Layers,
+  ArrowUpRight,
+  ArrowDownRight,
+  ShieldAlert,
+  HelpCircle,
+  Send,
+  Zap,
+  BarChart3,
+  ChevronRight,
+  Copy,
+  Check,
+  Calendar,
+  Timer,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Flame,
+  MessageSquare,
+  Bot,
+  User,
+  RotateCcw,
+  Mic,
+  MicOff,
+  PhoneOff,
+  Radio,
+  TrendingUp,
+  TrendingDown,
+  Gauge,
+  SlidersHorizontal,
+} from 'lucide-react';
+import {
+  Asset,
+  Candle,
+  ConfluenceBreakdown,
+  DataSourceInfo,
+  MarketAnalysis,
+  SignalRecord,
+  TimeFrame,
+  ExpirationTime,
+  AppSettings,
+} from '../types/trading';
+import { CyberAiAvatar3D } from './CyberAiAvatar3D';
+import { LiveVoiceStatus } from '../hooks/useLiveVoice';
+import { getRelevantEconomicEvents, getCurrentMarketSession } from '../services/economicCalendar';
+import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
+import { marketDataManager } from '../services/marketData';
+import { signalEngine } from '../services/signalEngine';
+import { audioAlerts } from '../services/audioAlerts';
+
+interface FloatingHudProps {
+  asset: Asset;
+  assetsList: Asset[];
+  timeframe: TimeFrame;
+  expiration: ExpirationTime;
+  remainingSeconds: number;
+  currentCandle: Candle | null;
+  candles?: Candle[];
+  marketAnalysis: MarketAnalysis;
+  confluences: ConfluenceBreakdown;
+  activePreAlert: SignalRecord | null;
+  latestConfirmedSignal: SignalRecord | null;
+  activeTrade?: SignalRecord | null;
+  lastResolvedTrade?: SignalRecord | null;
+  lastCancelledSignal?: SignalRecord | null;
+  signalsHistory: SignalRecord[];
+  dataSource: DataSourceInfo;
+  isAnalyzing: boolean;
+  settings: AppSettings;
+  liveVoice?: {
+    status: LiveVoiceStatus;
+    errorMessage: string | null;
+    hasMicPermission: boolean | null;
+    isMuted: boolean;
+    micLevel: number;
+    aiSpeechLevel: number;
+    isActivatingMic: boolean;
+    startLiveConversation: () => Promise<void>;
+    disconnectSession: () => void;
+    toggleMute: () => void;
+    requestMicrophoneAccess: () => Promise<void>;
+  };
+  onSelectAsset: (symbol: string) => void;
+  onSelectTimeframe: (tf: TimeFrame) => void;
+  onSelectExpiration: (exp: ExpirationTime) => void;
+  onToggleAnalysis: () => void;
+  onToggleSound: () => void;
+  onOpenSettings: () => void;
+  onOpenWebhook?: () => void;
+  onOpenVoice?: () => void;
+  onTriggerAiInsight: () => void;
+  onTriggerTestSignal?: () => void;
+  onTriggerCancelTest?: () => void;
+  isAiLoading: boolean;
+  aiInsightText: string | null;
+}
+
+function evaluateAiConfluences(tech: TechnicalOverviewData) {
+  let callPoints = 0;
+  let putPoints = 0;
+  const reasons: string[] = [];
+
+  // 1. Tendência Maior
+  if (tech.majorTrend.status === 'ALTA') {
+    callPoints += 25;
+    reasons.push(`Tendência Maior (${tech.timeframe}): ALTA com força ${tech.majorTrend.strength}`);
+  } else if (tech.majorTrend.status === 'BAIXA') {
+    putPoints += 25;
+    reasons.push(`Tendência Maior (${tech.timeframe}): BAIXA com força ${tech.majorTrend.strength}`);
+  } else {
+    callPoints += 5;
+    putPoints += 5;
+  }
+
+  // 2. RSI (14)
+  if (tech.rsi.condition === 'SOBREVENDIDO') {
+    callPoints += 22;
+    reasons.push(`RSI Sobrevendido (${tech.rsi.value} pts) - Potencial repique comprador`);
+  } else if (tech.rsi.condition === 'SOBRECOMPRADO') {
+    putPoints += 22;
+    reasons.push(`RSI Sobrecomprado (${tech.rsi.value} pts) - Exaustão compradora`);
+  } else if (tech.rsi.signal === 'ALTA') {
+    callPoints += 12;
+    reasons.push(`RSI (${tech.rsi.value} pts) com inclinação de alta`);
+  } else if (tech.rsi.signal === 'BAIXA') {
+    putPoints += 12;
+    reasons.push(`RSI (${tech.rsi.value} pts) com inclinação de baixa`);
+  }
+
+  // 3. MACD
+  if (tech.macd.status === 'ALTA') {
+    callPoints += 18;
+    reasons.push(`MACD em ALTA (Histograma positivo)`);
+  } else if (tech.macd.status === 'BAIXA') {
+    putPoints += 18;
+    reasons.push(`MACD em BAIXA (Histograma negativo)`);
+  }
+
+  // 4. Médias Móveis Curtas (EMA 9/21)
+  if (tech.maShort.status === 'ALTA') {
+    callPoints += 15;
+    reasons.push(`Médias Curtas (EMA 9/21): Tendência de ALTA`);
+  } else if (tech.maShort.status === 'BAIXA') {
+    putPoints += 15;
+    reasons.push(`Médias Curtas (EMA 9/21): Tendência de BAIXA`);
+  }
+
+  // 5. Médias Móveis Longas (SMA 50/200)
+  if (tech.maLong.status === 'ALTA') {
+    callPoints += 10;
+    reasons.push(`Médias Longas (SMA 50/200): Estrutura de ALTA`);
+  } else if (tech.maLong.status === 'BAIXA') {
+    putPoints += 10;
+    reasons.push(`Médias Longas (SMA 50/200): Estrutura de BAIXA`);
+  }
+
+  // 6. Bandas de Bollinger
+  if (tech.bollingerBands.status === 'ALTA') {
+    callPoints += 10;
+    reasons.push(`Bandas de Bollinger: Retração altista na banda inferior`);
+  } else if (tech.bollingerBands.status === 'BAIXA') {
+    putPoints += 10;
+    reasons.push(`Bandas de Bollinger: Rejeição na banda superior`);
+  }
+
+  // 7. Delta de Volume
+  if (tech.delta.buyerPercent >= 52) {
+    callPoints += 14;
+    reasons.push(`Delta de Volume: ${tech.delta.buyerPercent}% Comprador`);
+  } else if (tech.delta.sellerPercent >= 52) {
+    putPoints += 14;
+    reasons.push(`Delta de Volume: ${tech.delta.sellerPercent}% Vendedor`);
+  }
+
+  // 8. ADX
+  if (tech.adx.value >= 22) {
+    reasons.push(`ADX (${tech.adx.value} pts): Força direcional confirmada`);
+  }
+
+  const direction: 'CALL' | 'PUT' = callPoints >= putPoints ? 'CALL' : 'PUT';
+  const dominantPoints = direction === 'CALL' ? callPoints : putPoints;
+  const score = Math.min(95, Math.max(76, Math.round(dominantPoints * 0.85 + 18)));
+
+  return { direction, score, reasons };
+}
+
+export const FloatingHud: React.FC<FloatingHudProps> = ({
+  asset,
+  assetsList,
+  timeframe,
+  expiration,
+  remainingSeconds,
+  currentCandle,
+  candles,
+  marketAnalysis,
+  confluences,
+  activePreAlert,
+  latestConfirmedSignal,
+  activeTrade,
+  lastResolvedTrade,
+  lastCancelledSignal,
+  signalsHistory,
+  dataSource,
+  isAnalyzing,
+  settings,
+  liveVoice,
+  onSelectAsset,
+  onSelectTimeframe,
+  onSelectExpiration,
+  onToggleAnalysis,
+  onToggleSound,
+  onOpenSettings,
+  onOpenWebhook,
+  onOpenVoice,
+  onTriggerAiInsight,
+  onTriggerTestSignal,
+  onTriggerCancelTest,
+  isAiLoading,
+  aiInsightText,
+}) => {
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
+  const [position, setPosition] = useState({ x: 24, y: 84 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; posX: number; posY: number }>({
+    startX: 0,
+    startY: 0,
+    posX: 24,
+    posY: 84,
+  });
+
+  // Restore position from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('clandex_hud_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          setPosition(parsed);
+          dragRef.current.posX = parsed.x;
+          dragRef.current.posY = parsed.y;
+        }
+      }
+    } catch {}
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, select, input')) return;
+    setIsDragging(true);
+    dragRef.current.startX = e.clientX;
+    dragRef.current.startY = e.clientY;
+    dragRef.current.posX = position.x;
+    dragRef.current.posY = position.y;
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      const newX = Math.max(10, Math.min(window.innerWidth - 380, dragRef.current.posX + dx));
+      const newY = Math.max(10, Math.min(window.innerHeight - 80, dragRef.current.posY + dy));
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        setIsDragging(false);
+        try {
+          localStorage.setItem('clandex_hud_pos', JSON.stringify(position));
+        } catch {}
+      }
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, position]);
+
+  // HUD Tabs: 'sinal' | 'analise' | 'chat'
+  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'chat'>('sinal');
+  const [copiedSignal, setCopiedSignal] = useState(false);
+
+  // Real-time Technical Overview calculated from current candles, timeframe & asset
+  const activeCandles = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+  const technicalData = useMemo(() => {
+    return computeTechnicalOverview(activeCandles, timeframe, asset);
+  }, [activeCandles, timeframe, asset, currentCandle?.close]);
+
+  // Chat IA State
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'model'; text: string; timestamp: number }>>([
+    {
+      id: 'welcome',
+      role: 'model',
+      text: `Olá! Sou a ClandeX-IA. Estou monitorando ${asset.symbol} em tempo real.\n\nPergunte-me qualquer dúvida sobre:\n• Próxima notícia de alto impacto e horário de divulgação\n• Regiões de suporte e resistência atuais\n• Força da tendência maior (compradores x vendedores)\n• Order Blocks e Fair Value Gaps (FVG)\n• Momento ideal para entrar em CALL ou PUT`,
+      timestamp: Date.now(),
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-Speech & TTS Audio Engine for ClandeX-IA
+  const [isAutoSpeechEnabled, setIsAutoSpeechEnabled] = useState(true);
+  const [isSpeakingText, setIsSpeakingText] = useState(false);
+  const [ttsSpeechLevel, setTtsSpeechLevel] = useState(0);
+  const ttsIntervalRef = useRef<any>(null);
+  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
+  // Pre-load browser voices for Portuguese (pt-BR)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const loadVoices = () => {
+      const v = window.speechSynthesis.getVoices();
+      availableVoicesRef.current = v;
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      if (ttsIntervalRef.current) clearInterval(ttsIntervalRef.current);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const cleanTextForSpeech = (rawText: string): string => {
+    return rawText
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/`(.*?)`/g, '$1')
+      .replace(/#{1,6}\s+/g, '')
+      .replace(/[•▪▫-]\s+/g, '')
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}]/gu, '')
+      .replace(/\n+/g, '. ')
+      .trim();
+  };
+
+  const stopSpeaking = useCallback(() => {
+    if (ttsIntervalRef.current) {
+      clearInterval(ttsIntervalRef.current);
+      ttsIntervalRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingText(false);
+    setTtsSpeechLevel(0);
+  }, []);
+
+  const speakText = useCallback((textToSpeak: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    stopSpeaking();
+
+    const clean = cleanTextForSpeech(textToSpeak);
+    if (!clean) return;
+
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 1.05;
+    utterance.pitch = 1.05;
+
+    const voices = availableVoicesRef.current.length > 0
+      ? availableVoicesRef.current
+      : window.speechSynthesis.getVoices();
+
+    const ptVoices = voices.filter((v) => v.lang.startsWith('pt') || v.lang.includes('BR'));
+    const preferredVoice = ptVoices.find((v) =>
+      /female|mulher|luciana|francisca|maria|leticia|google/i.test(v.name)
+    ) || ptVoices[0];
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onstart = () => {
+      setIsSpeakingText(true);
+      let phase = 0;
+      ttsIntervalRef.current = setInterval(() => {
+        phase += 0.35;
+        const baseLevel = 45 + Math.sin(phase * 4.2) * 25 + Math.sin(phase * 8.5) * 15;
+        setTtsSpeechLevel(Math.max(25, Math.min(95, Math.round(baseLevel))));
+      }, 70);
+    };
+
+    utterance.onend = () => {
+      stopSpeaking();
+    };
+
+    utterance.onerror = (e) => {
+      console.warn('SpeechSynthesis error:', e);
+      stopSpeaking();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, [stopSpeaking]);
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, activeTab, isChatLoading]);
+
+  const handleSendChatMessage = async (customPrompt?: string) => {
+    const textToSend = (customPrompt || chatInput).trim();
+    if (!textToSend || isChatLoading) return;
+
+    const userMsg = {
+      id: `user-${Date.now()}`,
+      role: 'user' as const,
+      text: textToSend,
+      timestamp: Date.now(),
+    };
+
+    const newHistory = [...chatMessages, userMsg];
+    setChatMessages(newHistory);
+    setChatInput('');
+    setIsChatLoading(true);
+
+    // Compute active economic calendar events for the asset
+    const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(asset.symbol);
+    const marketSession = getCurrentMarketSession();
+
+    try {
+      const response = await fetch('/api/gemini/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newHistory.map((m) => ({ role: m.role, text: m.text })),
+          marketContext: {
+            asset: asset.symbol,
+            assetName: asset.name,
+            currentPrice: asset.currentPrice,
+            spread: asset.spread,
+            timeframe,
+            marketAnalysis,
+            confluences,
+            upcomingHighImpact,
+            relevantEvents: relevantEvents.slice(0, 6),
+            marketSession,
+          },
+        }),
+      });
+
+      const data = await response.json();
+      if (data && data.success && data.reply) {
+        const replyText = data.reply;
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `model-${Date.now()}`,
+            role: 'model' as const,
+            text: replyText,
+            timestamp: Date.now(),
+          },
+        ]);
+
+        if (isAutoSpeechEnabled && (!liveVoice || liveVoice.status === 'idle')) {
+          speakText(replyText);
+        }
+      } else {
+        throw new Error(data.error || 'Erro na resposta');
+      }
+    } catch {
+      let fallbackText = '';
+      const lower = textToSend.toLowerCase();
+      if (lower.includes('notic') || lower.includes('notíc') || lower.includes('calend') || lower.includes('impacto')) {
+        if (upcomingHighImpact) {
+          fallbackText = `Próxima notícia de alto impacto para ${asset.symbol}: ${upcomingHighImpact.event} (${upcomingHighImpact.currency}) agendada para ${upcomingHighImpact.time}. Impacto alto. Evite operar nos 5 minutos antes e depois.`;
+        } else {
+          fallbackText = `Não há notícias de alto impacto imediatas previstas para os próximos minutos em ${asset.symbol}. O mercado técnico está limpo para confluências.`;
+        }
+      } else {
+        const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+        const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+        fallbackText = `Atenção: A tendência atual de ${asset.symbol} é ${marketAnalysis.trend}. A força compradora está ${marketAnalysis.buyerStrength} e vendedora ${marketAnalysis.sellerStrength}.\n• Suportes: ${supList.length > 0 ? supList.join(', ') : 'Zonas dinâmicas'}\n• Resistências: ${resList.length > 0 ? resList.join(', ') : 'Zonas dinâmicas'}.`;
+      }
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `model-${Date.now()}`,
+          role: 'model' as const,
+          text: fallbackText,
+          timestamp: Date.now(),
+        },
+      ]);
+
+      if (isAutoSpeechEnabled && (!liveVoice || liveVoice.status === 'idle')) {
+        speakText(fallbackText);
+      }
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  // Placar do Dia (Hoje) - Estatísticas dinâmicas dos sinais de hoje
+  const todayDateString = useMemo(() => {
+    return new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }, []);
+
+  const todaySignals = useMemo(() => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    const curDate = now.getDate();
+    return signalsHistory.filter((s) => {
+      const d = new Date(s.timestamp);
+      return (
+        d.getDate() === curDate &&
+        d.getMonth() === curMonth &&
+        d.getFullYear() === curYear
+      );
+    });
+  }, [signalsHistory]);
+
+  const todayWins = todaySignals.filter((s) => s.result === 'WIN').length;
+  const todayLosses = todaySignals.filter((s) => s.result === 'LOSS').length;
+  const todayTies = todaySignals.filter((s) => s.result === 'EMPATE').length;
+  const totalFinishedToday = todayWins + todayLosses;
+  const todayWinRate = totalFinishedToday > 0 ? ((todayWins / totalFinishedToday) * 100).toFixed(1) : '100.0';
+
+  // Operação em andamento (aguardando estritamente a expiração!)
+  const isTradeRunning = activeTrade && activeTrade.result === 'PENDING';
+  const nowSec = Math.floor(Date.now() / 1000);
+  const remainingExpSec = isTradeRunning ? Math.max(0, (activeTrade?.expirationTimestamp || 0) - nowSec) : 0;
+  const expMins = Math.floor(remainingExpSec / 60);
+  const expSecs = remainingExpSec % 60;
+  const formattedExpCountdown = `${String(expMins).padStart(2, '0')}:${String(expSecs).padStart(2, '0')}`;
+
+  // Live PnL check during active trade
+  const isCallTrade = activeTrade?.direction === 'CALL';
+  const isWinning = isTradeRunning
+    ? isCallTrade
+      ? asset.currentPrice > activeTrade.entryPrice
+      : asset.currentPrice < activeTrade.entryPrice
+    : false;
+  const isTied = isTradeRunning ? asset.currentPrice === activeTrade.entryPrice : false;
+  const diffPips = isTradeRunning && activeTrade
+    ? Math.abs(asset.currentPrice - activeTrade.entryPrice) * (asset.pipDecimals === 5 ? 10000 : 100)
+    : 0;
+
+  // Has recently resolved trade (within 15 seconds after expiration reached 0)
+  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 15000;
+
+  // Has recently cancelled signal (within 12 seconds)
+  const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 12000;
+
+  // Confirmed signal entry window (first 8 seconds after confirmation)
+  const hasConfirmed = !!latestConfirmedSignal && Date.now() - latestConfirmedSignal.timestamp < 8000;
+  const hasPreAlert = !!activePreAlert;
+
+  // Format candle countdown string MM:SS
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  const formattedCountdown = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  // Card header styling based on alert state
+  let alertBadgeClass = 'text-neutral-400 bg-neutral-900 border-neutral-700/60';
+  let alertStatusText = 'MONITORANDO MERCADO';
+  let glowBorderClass = 'border-cyan-500/25';
+
+  if (hasResolvedTrade && lastResolvedTrade) {
+    if (lastResolvedTrade.result === 'WIN') {
+      alertStatusText = '🏆 VITÓRIA (WIN)!';
+      alertBadgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse';
+      glowBorderClass = 'glow-call border-emerald-500/60';
+    } else if (lastResolvedTrade.result === 'LOSS') {
+      alertStatusText = '❌ OPERAÇÃO FINALIZADA: LOSS';
+      alertBadgeClass = 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
+      glowBorderClass = 'glow-put border-rose-500/60';
+    } else {
+      alertStatusText = '⚪ OPERAÇÃO FINALIZADA: EMPATE';
+      alertBadgeClass = 'bg-neutral-800 text-neutral-300 border-neutral-700';
+    }
+  } else if (hasCancelledSignal && lastCancelledSignal) {
+    alertStatusText = '🛡️ CANCELADO [PROTEÇÃO DE BANCA]';
+    alertBadgeClass = 'bg-rose-500/25 text-rose-300 border-rose-500/70 shadow-sm';
+    glowBorderClass = 'glow-put border-rose-500/50';
+  } else if (isTradeRunning && activeTrade) {
+    alertStatusText = `⏳ EXPIRAÇÃO EM ANDAMENTO: ${activeTrade.direction}`;
+    alertBadgeClass = isWinning
+      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse'
+      : 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
+    glowBorderClass = isWinning ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
+  } else if (hasConfirmed && latestConfirmedSignal) {
+    alertStatusText = `🚀 CONFIRMADO [15s-10s]: ${latestConfirmedSignal.direction}`;
+    alertBadgeClass = latestConfirmedSignal.direction === 'CALL'
+      ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 animate-pulse shadow-sm'
+      : 'bg-rose-500/25 text-rose-300 border-rose-400 animate-pulse shadow-sm';
+    glowBorderClass = latestConfirmedSignal.direction === 'CALL' ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
+  } else if (hasPreAlert && activePreAlert) {
+    alertStatusText = `⚡ PRÉ-ALERTA [60s-15s]: ${activePreAlert.direction}`;
+    alertBadgeClass = 'bg-amber-500/25 text-amber-300 border-amber-500/70 animate-pulse shadow-sm';
+    glowBorderClass = 'glow-alert border-amber-500/50';
+  } else if (confluences.classification === 'CONFLUÊNCIA MUITO FORTE') {
+    alertStatusText = 'VARREDURA INSTITUCIONAL: ALTA FORÇA';
+    alertBadgeClass = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50';
+  }
+
+  // Active directional hero selection
+  const activeDirection = activeTrade?.direction || latestConfirmedSignal?.direction || activePreAlert?.direction || lastCancelledSignal?.direction || null;
+  const isCall = activeDirection === 'CALL';
+  const isPut = activeDirection === 'PUT';
+
+  // Copy signal to clipboard
+  const handleCopySignal = () => {
+    const dir = isCall ? 'CALL (COMPRA) ↗' : isPut ? 'PUT (VENDA) ↘' : confluences.direction;
+    const text = `🎯 CLANDEX-IA SIGNAL
+📊 Par: ${asset.symbol}
+⏱️ Timeframe: ${timeframe}
+⏳ Expiração: ${expiration}
+📈 Direção: ${dir}
+💵 Cotação: ${asset.currentPrice.toFixed(asset.pipDecimals)}
+⭐ Confluência: ${confluences.totalScore}% (${confluences.classification})
+📅 Placar Hoje: ${todayWins} WIN x ${todayLosses} LOSS (${todayWinRate}%)
+🕒 Horário: ${new Date().toLocaleTimeString('pt-BR')}`;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedSignal(true);
+      setTimeout(() => setCopiedSignal(false), 2000);
+    } catch {}
+  };
+
+  if (isClosed) {
+    return (
+      <button
+        onClick={() => setIsClosed(false)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 bg-neutral-900/90 border border-cyan-500/50 rounded-xl text-cyan-300 font-medium text-xs shadow-2xl backdrop-blur-md hover:bg-neutral-800 transition-all glow-cyan cursor-pointer"
+      >
+        <Activity className="w-4 h-4 text-cyan-400 animate-pulse" />
+        Restaurar Painel ClandeX-IA
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{ left: `${position.x}px`, top: `${position.y}px` }}
+      className={`fixed z-40 w-[360px] md:w-[380px] bg-neutral-950/95 backdrop-blur-xl border rounded-2xl shadow-2xl transition-shadow duration-300 select-none ${glowBorderClass}`}
+    >
+      {/* HUD Draggable Titlebar */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="flex items-center justify-between px-3.5 py-2.5 bg-neutral-900/80 border-b border-neutral-800/80 rounded-t-2xl cursor-grab active:cursor-grabbing"
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <span className="font-bold tracking-wider text-xs text-white">CLANDEX-IA</span>
+          <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
+            {asset.symbol} • {timeframe}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-neutral-400">
+          {/* Real-Time Live Voice with 3D Technological Avatar */}
+          <button
+            onClick={onOpenVoice}
+            title="Conversar por Voz com a IA (Avatar Tecnológico 3D • Gemini Live)"
+            className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/50 text-cyan-300 rounded-lg text-[10px] font-mono font-bold transition-all shadow-[0_0_12px_rgba(6,182,212,0.25)] cursor-pointer"
+          >
+            <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />
+            <span>Voz 3D</span>
+          </button>
+
+          <button
+            onClick={onToggleSound}
+            title={settings.soundEnabled ? 'Silenciar Alertas' : 'Ativar Alertas Sonoros'}
+            className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            {settings.soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5 text-neutral-500" />}
+          </button>
+          <button
+            onClick={onOpenWebhook}
+            title={settings.webhook?.enabled ? 'Webhook Ativo — Configurar Automação' : 'Configurar Webhook / Automação'}
+            className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors relative cursor-pointer"
+          >
+            <Send className={`w-3.5 h-3.5 ${settings.webhook?.enabled ? 'text-emerald-400' : 'text-neutral-400'}`} />
+            {settings.webhook?.enabled && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0.5 right-0.5 animate-ping" />
+            )}
+          </button>
+          <button
+            onClick={onOpenSettings}
+            title="Configurações de Confluência"
+            className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setIsMinimized(!isMinimized)}
+            title={isMinimized ? 'Expandir' : 'Minimizar'}
+            className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setIsClosed(true)}
+            title="Fechar Painel"
+            className="p-1 hover:text-rose-400 rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Minimized Quick Bar with Placar do Dia & Live Timer */}
+      {isMinimized ? (
+        <div className="p-3 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-mono font-bold text-white">{asset.symbol}</span>
+            <span className="text-[11px] font-mono text-cyan-400">{timeframe}</span>
+            {/* Placar do Dia Compacto */}
+            <span className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-[10px] font-mono font-bold flex items-center gap-1">
+              <span className="text-emerald-400">{todayWins}W</span>
+              <span className="text-neutral-500">x</span>
+              <span className="text-rose-400">{todayLosses}L</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            {isTradeRunning ? (
+              <span className="text-amber-300 font-mono font-bold text-[11px] flex items-center gap-1 bg-amber-950/40 border border-amber-500/40 px-2 py-0.5 rounded-lg animate-pulse">
+                <Clock className="w-3 h-3 text-amber-400" />
+                {formattedExpCountdown}
+              </span>
+            ) : (
+              <span className="font-mono text-neutral-300 text-xs">{formattedCountdown}</span>
+            )}
+            <button
+              onClick={() => setIsMinimized(false)}
+              className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Expanded HUD Content with Clean Separate Tabs */
+        <div>
+          {/* Navigation Tabs Bar */}
+          <div className="flex items-center px-3 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1.5">
+            <button
+              onClick={() => setActiveTab('sinal')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'sinal'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Sinal</span>
+              {isTradeRunning && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />}
+              {activePreAlert && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />}
+              {hasConfirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('analise')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'analise'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Técnica</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'chat'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Chat IA</span>
+              {liveVoice && liveVoice.status !== 'idle' ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              )}
+            </button>
+          </div>
+
+          {/* Persistent Live Voice Audio Dock: Active across all tabs when turned on */}
+          {liveVoice && liveVoice.status !== 'idle' && (
+            <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-cyan-950/90 via-[#0a1222] to-neutral-950 border-b border-cyan-500/30 text-[10px] font-mono">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    liveVoice.status === 'speaking'
+                      ? 'bg-cyan-400 animate-ping'
+                      : liveVoice.status === 'listening'
+                      ? liveVoice.isMuted
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-400 animate-pulse'
+                      : 'bg-amber-400 animate-pulse'
+                  }`}
+                />
+                <span className="font-bold text-white tracking-wide">
+                  {liveVoice.status === 'speaking'
+                    ? 'IA FALANDO...'
+                    : liveVoice.status === 'listening'
+                    ? liveVoice.isMuted
+                      ? 'MIC MUTADO'
+                      : 'IA OUVINDO...'
+                    : 'CONECTANDO...'}
+                </span>
+                <div className="flex items-center gap-0.5 h-2.5">
+                  {[6, 12, 16, 10, 6, 14, 8].map((h, i) => {
+                    const lvl = liveVoice.status === 'speaking' ? liveVoice.aiSpeechLevel : liveVoice.micLevel;
+                    const barH = Math.max(2.5, Math.round((h * Math.max(20, lvl)) / 100));
+                    return (
+                      <span
+                        key={i}
+                        className={`w-0.5 rounded-full transition-all duration-75 ${
+                          liveVoice.status === 'speaking' ? 'bg-cyan-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ height: `${barH}px` }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {liveVoice.status === 'listening' && (
+                  <button
+                    onClick={liveVoice.toggleMute}
+                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
+                      liveVoice.isMuted
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+                    }`}
+                  >
+                    {liveVoice.isMuted ? 'Desmutar' : 'Mutar'}
+                  </button>
+                )}
+                <button
+                  onClick={liveVoice.disconnectSession}
+                  className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[9px] font-bold cursor-pointer transition-colors"
+                >
+                  DESLIGAR
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="p-3.5 space-y-3 text-xs max-h-[76vh] overflow-y-auto custom-scrollbar">
+            {/* TAB 1: SINAL (ÁREA DO SINAL LIMPA E RESUMIDA COM PLACAR DO DIA) */}
+            {activeTab === 'sinal' && (
+              <div className="space-y-3">
+                {/* 1. PLACAR DO DIA COM A DATA DE HOJE E QUANTIDADE DE WIN E LOSS */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl shadow-xl space-y-2">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white font-mono">
+                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>PLACAR DO DIA</span>
+                      <span className="text-[10px] text-cyan-400 font-semibold">({todayDateString})</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
+                      {todayWinRate}% ASSERTIVO
+                    </span>
+                  </div>
+
+                  {/* Scoreboard Metrics Grid */}
+                  <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                    <div className="p-2 bg-emerald-950/25 border border-emerald-500/40 rounded-xl">
+                      <span className="text-[9px] text-emerald-400/90 block font-bold uppercase tracking-wider">
+                        WIN
+                      </span>
+                      <span className="font-extrabold text-base text-emerald-300 flex items-center justify-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        {todayWins}
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-rose-950/25 border border-rose-500/40 rounded-xl">
+                      <span className="text-[9px] text-rose-400/90 block font-bold uppercase tracking-wider">
+                        LOSS
+                      </span>
+                      <span className="font-extrabold text-base text-rose-300 flex items-center justify-center gap-1">
+                        <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        {todayLosses}
+                      </span>
+                    </div>
+
+                    <div className="p-2 bg-neutral-900 border border-neutral-800 rounded-xl">
+                      <span className="text-[9px] text-neutral-400 block font-bold uppercase tracking-wider">
+                        TOTAL
+                      </span>
+                      <span className="font-bold text-base text-white">
+                        {totalFinishedToday + todayTies}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. MAIN SIGNAL CARD (RESUMIDO COM EFEITOS VISUAIS TECNOLÓGICOS) */}
+                <div
+                  className={`p-3.5 rounded-2xl border transition-all duration-300 shadow-xl relative overflow-hidden backdrop-blur-md ${
+                    isTradeRunning
+                      ? isWinning
+                        ? 'bg-gradient-to-b from-emerald-950/60 via-[#07121b] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.25)]'
+                        : 'bg-gradient-to-b from-rose-950/60 via-[#180a12] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
+                      : hasResolvedTrade
+                      ? lastResolvedTrade?.result === 'WIN'
+                        ? 'bg-gradient-to-b from-emerald-950/50 via-[#061214] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                        : 'bg-gradient-to-b from-rose-950/50 via-[#140810] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)]'
+                      : hasConfirmed
+                      ? latestConfirmedSignal?.direction === 'CALL'
+                        ? 'bg-gradient-to-b from-emerald-950/50 via-[#07131a] to-black border-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
+                        : 'bg-gradient-to-b from-rose-950/50 via-[#180812] to-black border-rose-500/80 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
+                      : hasPreAlert
+                      ? 'bg-gradient-to-b from-amber-950/50 via-[#140e07] to-black border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                      : 'bg-[#090e18]/90 border-cyan-500/25 shadow-inner'
+                  }`}
+                >
+                  {/* Holographic background cyber line effect */}
+                  <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-15 pointer-events-none" />
+
+                  {/* Header do Card Tecnológico */}
+                  <div className="flex items-center justify-between mb-2.5 relative z-10">
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 shadow-sm ${alertBadgeClass}`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isTradeRunning
+                            ? 'bg-cyan-400 animate-ping'
+                            : hasConfirmed
+                            ? 'bg-emerald-400 animate-ping'
+                            : hasPreAlert
+                            ? 'bg-amber-400 animate-pulse'
+                            : 'bg-cyan-400 animate-pulse'
+                        }`}
+                      />
+                      {alertStatusText}
+                    </span>
+
+                    {/* Copy signal button */}
+                    <button
+                      onClick={handleCopySignal}
+                      title="Copiar dados do sinal"
+                      className="flex items-center gap-1 text-[10px] font-mono text-cyan-300 hover:text-white px-2 py-0.5 rounded-lg bg-black/60 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer backdrop-blur-sm"
+                    >
+                      {copiedSignal ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-cyan-400" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* ESTÁGIO 1: RESULTADO APURADO (DURAÇÃO ESTRITA DE 5s) */}
+                  {hasResolvedTrade && lastResolvedTrade ? (
+                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
+                      <div
+                        className={`p-3 rounded-xl border text-center space-y-1.5 ${
+                          lastResolvedTrade.result === 'WIN'
+                            ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                            : lastResolvedTrade.result === 'LOSS'
+                            ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
+                            : 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                        }`}
+                      >
+                        <div className="text-base font-black font-mono tracking-wider flex items-center justify-center gap-2">
+                          {lastResolvedTrade.result === 'WIN' ? (
+                            <>
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-bounce" />
+                              <span>VITÓRIA CONFIRMADA (WIN)!</span>
+                            </>
+                          ) : lastResolvedTrade.result === 'LOSS' ? (
+                            <>
+                              <XCircle className="w-5 h-5 text-rose-400" />
+                              <span>OPERAÇÃO FINALIZADA: LOSS</span>
+                            </>
+                          ) : (
+                            <span>OPERAÇÃO EMPATADA</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-center gap-3 text-[10px] font-mono text-neutral-200">
+                          <span>Entrada: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                          <span>➔</span>
+                          <span>Saída: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
+                        </div>
+
+                        <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                          <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado dura 5s (próxima análise liberada)</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : isTradeRunning && activeTrade ? (
+                    /* ESTÁGIO 2: OPERAÇÃO EM ANDAMENTO (CRONÔMETRO DE EXPIRAÇÃO ATÉ O ZERO!) */
+                    <div className="space-y-2.5 relative z-10">
+                      <div
+                        className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                          isCallTrade
+                            ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300'
+                            : 'bg-rose-500/15 border-rose-500/60 text-rose-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`p-2 rounded-lg ${
+                              isCallTrade ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                            }`}
+                          >
+                            {isCallTrade ? (
+                              <ArrowUpRight className="w-5 h-5 stroke-[3]" />
+                            ) : (
+                              <ArrowDownRight className="w-5 h-5 stroke-[3]" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold tracking-wider opacity-80">
+                              OPERAÇÃO ABERTA NA HIOVE
+                            </div>
+                            <div className="text-base font-black font-mono tracking-wide">
+                              {isCallTrade ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right font-mono">
+                          <div className="text-[9px] opacity-75">EXPIRAÇÃO</div>
+                          <div className="text-xs font-bold text-white">{activeTrade.expiration.toUpperCase()}</div>
+                        </div>
+                      </div>
+
+                      {/* Cronômetro de Expiração Tecnológico */}
+                      <div className="p-2.5 bg-black/70 rounded-xl border border-cyan-500/50 text-center space-y-0.5 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]">
+                        <div className="flex items-center justify-center gap-1.5 text-[9px] font-mono text-cyan-400 uppercase tracking-wider font-bold">
+                          <Clock className="w-3 h-3 animate-spin" />
+                          <span>EXPIRAÇÃO AO VIVO:</span>
+                        </div>
+                        <div className="text-2xl font-black font-mono text-cyan-300 tracking-wider">
+                          {formattedExpCountdown}
+                        </div>
+                      </div>
+
+                      {/* Status Dinâmico Resumido */}
+                      <div
+                        className={`p-1.5 rounded-lg text-center font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 border ${
+                          isWinning
+                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                            : isTied
+                            ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                            : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                        }`}
+                      >
+                        {isWinning ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>NO LUCRO (WIN PROVISÓRIO) • +{diffPips.toFixed(1)} pips</span>
+                          </>
+                        ) : isTied ? (
+                          <span>NO EMPATE • 0.0 pips</span>
+                        ) : (
+                          <>
+                            <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                            <span>NO PREJUÍZO (LOSS PROVISÓRIO) • -{diffPips.toFixed(1)} pips</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : hasCancelledSignal && lastCancelledSignal ? (
+                    /* ESTÁGIO 3: SINAL CANCELADO (PROTEÇÃO DE BANCA - DURAÇÃO DE 5s) */
+                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in duration-200">
+                      <div className="p-2.5 bg-rose-500/15 border border-rose-500/60 rounded-xl text-rose-300 flex items-center justify-between shadow-[0_0_15px_rgba(244,63,94,0.25)]">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-rose-500 text-white">
+                            <ShieldAlert className="w-5 h-5 stroke-[2.5]" />
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-rose-400">
+                              PROTEÇÃO DE CAPITAL (JANELA 15s-10s)
+                            </div>
+                            <div className="text-sm font-black font-mono tracking-wide text-white">
+                              SINAL CANCELADO • NÃO ENTRAR
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-mono text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-500/40">
+                          5s auto-limpeza
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-black/60 border border-rose-500/30 rounded-xl text-[10px] font-mono text-neutral-300">
+                        <div className="text-rose-400 font-bold mb-0.5 flex items-center gap-1">
+                          <XCircle className="w-3 h-3" />
+                          <span>Motivo da Invalidação:</span>
+                        </div>
+                        <div>{lastCancelledSignal.cancelReason || 'Confluência < 60% na janela de 15s. Ordem abortada.'}</div>
+                      </div>
+                    </div>
+                  ) : hasConfirmed && latestConfirmedSignal ? (
+                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 10s) */
+                    <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
+                      <div
+                        className={`p-3 rounded-xl border flex items-center justify-between ${
+                          latestConfirmedSignal.direction === 'CALL'
+                            ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                            : 'bg-rose-500/25 border-rose-400 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`p-2 rounded-lg ${
+                              latestConfirmedSignal.direction === 'CALL' ? 'bg-emerald-400 text-black shadow-lg shadow-emerald-400/50' : 'bg-rose-500 text-white shadow-lg shadow-rose-500/50'
+                            }`}
+                          >
+                            {latestConfirmedSignal.direction === 'CALL' ? (
+                              <ArrowUpRight className="w-6 h-6 stroke-[3]" />
+                            ) : (
+                              <ArrowDownRight className="w-6 h-6 stroke-[3]" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-emerald-300 animate-pulse">
+                              CONFIRMADO NA JANELA DE 15s A 10s!
+                            </div>
+                            <div className="text-xl font-black font-mono tracking-wide text-white">
+                              {latestConfirmedSignal.direction === 'CALL' ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right font-mono">
+                          <div className="text-[9px] opacity-75">EXPIRAÇÃO</div>
+                          <div className="text-xs font-bold text-white">{latestConfirmedSignal.expiration.toUpperCase()}</div>
+                        </div>
+                      </div>
+
+                      <div className="p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-neutral-300">Entrada: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                        <span className="text-emerald-400 font-bold">Confiança: {latestConfirmedSignal.confluenceScore}%</span>
+                      </div>
+                    </div>
+                  ) : hasPreAlert && activePreAlert ? (
+                    /* ESTÁGIO 5: PRÉ-ALERTA GERADO PELA IA (COM CONFLUÊNCIAS TÉCNICAS E CONTAGEM) */
+                    <div className="space-y-2.5 relative z-10 animate-in fade-in duration-200">
+                      <div className="p-3 bg-amber-500/20 border border-amber-500/60 rounded-xl text-amber-300 flex items-center justify-between shadow-[0_0_20px_rgba(245,158,11,0.25)]">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-lg bg-amber-500 text-black shadow-lg shadow-amber-500/40">
+                            {activePreAlert.direction === 'CALL' ? (
+                              <ArrowUpRight className="w-5 h-5 stroke-[3]" />
+                            ) : (
+                              <ArrowDownRight className="w-5 h-5 stroke-[3]" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-amber-400 animate-pulse">
+                              PRÉ-ALERTA DA IA • AGUARDANDO ENTRADA
+                            </div>
+                            <div className="text-lg font-black font-mono tracking-wide text-white">
+                              {activePreAlert.direction === 'CALL' ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right font-mono">
+                          <div className="text-[9px] opacity-75">EXPIRAÇÃO</div>
+                          <div className="text-xs font-bold text-white">{activePreAlert.expiration.toUpperCase()}</div>
+                        </div>
+                      </div>
+
+                      {/* Decisão entre 15s e 10s */}
+                      <div className="p-2 bg-black/70 border border-amber-500/40 rounded-xl text-center space-y-0.5">
+                        <div className="text-[9px] font-mono text-amber-300 uppercase font-bold">
+                          {remainingSeconds > 15 ? 'Janela de Decisão (Confirmação/Cancelamento):' : 'Momento de Decisão (15s a 10s):'}
+                        </div>
+                        <div className="text-base font-black font-mono text-white">
+                          {remainingSeconds > 15 ? `Em ${remainingSeconds - 15} segundos` : 'AVALIANDO FECHAMENTO AGORA...'}
+                        </div>
+                        <div className="text-[9px] text-neutral-400 font-mono">
+                          Prepare a boleta na Hiove. Confiança calculada: <strong className="text-amber-400">{activePreAlert.confluenceScore}%</strong>
+                        </div>
+                      </div>
+
+                      {/* Botão de Cancelamento de Pré-Alerta */}
+                      <div className="pt-1">
+                        <button
+                          onClick={() => signalEngine.cancelPreAlert('Cancelado pelo operador.')}
+                          className="w-full py-2 px-3 rounded-xl bg-rose-950/30 hover:bg-rose-900/50 border border-rose-500/40 text-rose-300 font-mono text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>CANCELAR PRÉ-ALERTA</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ESTÁGIO 6: MONITORAMENTO DO MERCADO EM TEMPO REAL */
+                    <div className="py-7 px-4 text-center space-y-3 relative z-10 flex flex-col items-center justify-center min-h-[160px] overflow-hidden">
+                      {isAnalyzing ? (
+                        <>
+                          {/* Laser scanning line effect */}
+                          <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] animate-pulse pointer-events-none" />
+
+                          {/* Sonar / Radar Pulse Rings */}
+                          <div className="relative flex items-center justify-center">
+                            <div className="w-14 h-14 rounded-full bg-cyan-500/15 border border-cyan-400/60 flex items-center justify-center text-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                              <Activity className="w-6 h-6 animate-pulse" />
+                            </div>
+                            <div className="absolute inset-0 rounded-full border border-cyan-400/50 animate-ping pointer-events-none" style={{ animationDuration: '2s' }} />
+                            <div className="absolute -inset-2 rounded-full border border-cyan-500/20 animate-pulse pointer-events-none" />
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="text-sm font-black font-mono tracking-wider text-cyan-300 flex items-center justify-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                              <span>ANALISANDO MERCADO...</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-neutral-300">
+                              Monitorando <strong className="text-white">{asset.symbol}</strong> ({timeframe}) em frequência contínua
+                            </div>
+                            <div className="text-[9px] font-mono text-cyan-400/80">
+                              Aguardando confluência com alta probabilidade...
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Standby State */}
+                          <div className="w-12 h-12 rounded-full bg-neutral-900 border border-neutral-700/80 flex items-center justify-center text-neutral-400 shadow-inner">
+                            <Activity className="w-5 h-5 text-neutral-500" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-xs font-bold font-mono tracking-wider text-neutral-300">
+                              ANÁLISE PAUSADA
+                            </div>
+                            <div className="text-[10px] font-mono text-neutral-400 max-w-[240px]">
+                              Clique em <strong>INICIAR ANÁLISE</strong> abaixo para a IA monitorar o mercado em frequência contínua até achar uma probabilidade.
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Webhook notification badge */}
+                  {settings.webhook?.enabled && (
+                    <div className="mt-2 flex items-center justify-between px-2.5 py-1 bg-emerald-950/30 border border-emerald-500/30 rounded-lg text-[9px] font-mono text-emerald-300 relative z-10">
+                      <div className="flex items-center gap-1.5">
+                        <Send className="w-2.5 h-2.5 text-emerald-400" />
+                        <span>Webhook de Automação: Ativo</span>
+                      </div>
+                      <span className="opacity-80">Automático</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. BOTÃO DE INICIAR / PARAR ANÁLISE (EMBAIXO DO CARD DE SINAL) */}
+                <div className="pt-1">
+                  {isAnalyzing ? (
+                    <button
+                      onClick={onToggleAnalysis}
+                      className="w-full relative group overflow-hidden py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 hover:from-rose-500 hover:to-rose-500 text-white font-mono font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-[0_0_25px_rgba(244,63,94,0.45)] hover:shadow-[0_0_35px_rgba(244,63,94,0.7)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer border border-rose-400"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+                      <Square className="w-4 h-4 fill-current stroke-[2]" />
+                      <span>PARAR ANÁLISE</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onToggleAnalysis}
+                      className="w-full relative group overflow-hidden py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 via-emerald-500 to-cyan-400 hover:from-cyan-400 hover:to-emerald-400 text-neutral-950 font-mono font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-[0_0_25px_rgba(6,182,212,0.45)] hover:shadow-[0_0_35px_rgba(16,185,129,0.7)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer border border-cyan-300"
+                    >
+                      <Play className="w-4 h-4 fill-current stroke-[2]" />
+                      <span>INICIAR ANÁLISE</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+
+
+            {/* TAB 2: PÁGINA TÉCNICA - SELEÇÃO DE ATIVO / TIMEFRAME E INDICADORES ESTRUTURADOS */}
+            {activeTab === 'analise' && (
+              <div className="space-y-3">
+                {/* 1. SELEÇÃO DE ATIVO E TIMEFRAME (APENAS ESTES CONTROLES NO TOPO) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
+                  {/* Ativo Selector */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <SlidersHorizontal className="w-3 h-3 text-cyan-400" />
+                        SELECIONAR ATIVO
+                      </label>
+                      <span className="text-[9px] font-mono text-neutral-400">
+                        {asset.category === 'FOREX' ? 'Mercado Forex' : 'Criptomoeda'}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={asset.symbol}
+                        onChange={(e) => onSelectAsset(e.target.value)}
+                        className="w-full bg-black/60 border border-neutral-700/80 hover:border-cyan-500/60 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold appearance-none focus:outline-none transition-colors cursor-pointer"
+                      >
+                        {assetsList.map((a) => (
+                          <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                            {a.symbol} — {a.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-cyan-400 absolute right-3 top-2.5 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Timeframe Selector */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock className="w-3 h-3 text-cyan-400" />
+                        TIMEFRAME
+                      </label>
+                      <span className="text-[9px] font-mono text-neutral-400">
+                        Ativo no gráfico: <strong className="text-white">{timeframe}</strong>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'] as TimeFrame[]).map((tf) => {
+                        const isSelected = timeframe === tf;
+                        return (
+                          <button
+                            key={tf}
+                            onClick={() => onSelectTimeframe(tf)}
+                            className={`py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer text-center ${
+                              isSelected
+                                ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                                : 'bg-neutral-950/80 text-neutral-400 border border-neutral-800 hover:text-white hover:border-neutral-700'
+                            }`}
+                          >
+                            {tf}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. TENDÊNCIA MAIOR DE ACORDO COM O TIMEFRAME SELECIONADO */}
+                <div
+                  className={`p-3 rounded-2xl border transition-all shadow-md ${
+                    technicalData.majorTrend.status === 'ALTA'
+                      ? 'bg-emerald-950/20 border-emerald-500/40'
+                      : technicalData.majorTrend.status === 'BAIXA'
+                      ? 'bg-rose-950/20 border-rose-500/40'
+                      : 'bg-amber-950/20 border-amber-500/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+                      <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                      TENDÊNCIA MAIOR ({timeframe})
+                    </span>
+                    <span
+                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
+                        technicalData.majorTrend.status === 'ALTA'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
+                          : technicalData.majorTrend.status === 'BAIXA'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                      }`}
+                    >
+                      {technicalData.majorTrend.status === 'ALTA' && <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
+                      {technicalData.majorTrend.status === 'BAIXA' && <TrendingDown className="w-3.5 h-3.5 text-rose-400" />}
+                      {technicalData.majorTrend.status}
+                    </span>
+                  </div>
+                  <div className="pt-1.5 flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-neutral-400">{technicalData.majorTrend.description}</span>
+                    <span className="text-[9px] text-neutral-400 uppercase font-semibold">
+                      Força: <strong className="text-white">{technicalData.majorTrend.strength}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. GRID DE INDICADORES TÉCNICOS EXIGIDOS */}
+                <div className="space-y-2">
+                  {/* RSI */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        RSI (14)
+                      </div>
+                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                        <span>{technicalData.rsi.value}</span>
+                        <span className="text-[10px] text-neutral-400 font-normal">pts</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.rsi.condition === 'SOBRECOMPRADO'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : technicalData.rsi.condition === 'SOBREVENDIDO'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.rsi.statusLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* MACD */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        MACD (12, 26, 9)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.macd.description}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.macd.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.macd.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.macd.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* MÉDIAS MÓVEIS DE CURTO PERÍODO */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        MÉDIAS CURTO PERÍODO (EMA 9 / 21)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.maShort.label}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.maShort.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.maShort.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}
+                      >
+                        {technicalData.maShort.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* MÉDIAS MÓVEIS DE LONGO PERÍODO */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        MÉDIAS LONGO PERÍODO (SMA 50 / 200)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.maLong.label}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.maLong.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.maLong.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}
+                      >
+                        {technicalData.maLong.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* BANDAS DE BOLLINGER */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        BANDAS DE BOLLINGER (20, 2)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.bollingerBands.description}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.bollingerBands.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.bollingerBands.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.bollingerBands.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* VOLUME */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        VOLUME (FLUXO NEGOCIADO)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.volume.description}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.volume.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.volume.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.volume.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* DELTA */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        DELTA (FLUXO COMPRADOR X VENDEDOR)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                        {technicalData.delta.description}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.delta.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.delta.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.delta.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ADX */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        ADX (ÍNDICE DIRECIONAL MÉDIO)
+                      </div>
+                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                        <span>{technicalData.adx.value}</span>
+                        <span className="text-[10px] text-neutral-400 font-normal">força</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.adx.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.adx.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.adx.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ESTOCÁSTICO */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        ESTOCÁSTICO (%K 14)
+                      </div>
+                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                        <span>{technicalData.stochastic.label}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.stochastic.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.stochastic.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.stochastic.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ATR / VOLATILIDADE */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        ATR / VOLATILIDADE
+                      </div>
+                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                        <span>{technicalData.atr.pips}</span>
+                        <span className="text-[10px] text-neutral-400 font-normal">pips</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.atr.status === 'ALTA'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : technicalData.atr.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
+                      >
+                        {technicalData.atr.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: Interactive Real-Time AI Chat */}
+            {activeTab === 'chat' && (
+              <div className="space-y-3">
+                {/* Chat Top Banner with active Asset context */}
+                <div className="p-2.5 bg-[#0f1422] border border-[#1b253d] rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
+                      <Bot className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-white text-xs">ClandeX-IA</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono">
+                        {asset.symbol} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)} • {timeframe}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      setChatMessages([
+                        {
+                          id: `welcome-${Date.now()}`,
+                          role: 'model',
+                          text: `Chat reiniciado para ${asset.symbol}. Estou pronta para conversar por voz ou texto. O que deseja analisar?`,
+                          timestamp: Date.now(),
+                        },
+                      ])
+                    }
+                    title="Reiniciar chat com IA"
+                    className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* 3D Female Robotic Face Embedded Directly on the Page */}
+                <div className="relative w-full h-56 rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_30px_rgba(6,182,212,0.15)] overflow-hidden flex items-center justify-center">
+                  {/* Holographic background cyber grid */}
+                  <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-20 pointer-events-none" />
+
+                  {/* Corner Status Badge */}
+                  <div className="absolute top-2 left-2.5 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 backdrop-blur-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <span>IA VOZ & ROSTO 3D</span>
+                  </div>
+
+                  {/* Top Right Controls & Status */}
+                  <div className="absolute top-2 right-2.5 z-10 flex items-center gap-1.5">
+                    {/* Parar Fala Button when TTS is reading */}
+                    {isSpeakingText && (
+                      <button
+                        onClick={stopSpeaking}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-950/90 border border-rose-500/60 text-[9px] font-mono text-rose-300 hover:bg-rose-900 transition-all cursor-pointer shadow-md shadow-rose-900/40 animate-pulse"
+                        title="Interromper fala da IA"
+                      >
+                        <Square className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
+                        <span>PARAR FALA</span>
+                      </button>
+                    )}
+
+                    {/* Auto Speech Toggle Button */}
+                    <button
+                      onClick={() => {
+                        if (isSpeakingText) stopSpeaking();
+                        setIsAutoSpeechEnabled(!isAutoSpeechEnabled);
+                      }}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-mono transition-all cursor-pointer backdrop-blur-sm ${
+                        isAutoSpeechEnabled
+                          ? 'bg-cyan-950/80 border-cyan-500/50 text-cyan-300'
+                          : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
+                      }`}
+                      title={isAutoSpeechEnabled ? 'Voz Automática da ClandeX Ativada (Clique para silenciar)' : 'Voz Automática Silenciada (Clique para falar)'}
+                    >
+                      {isAutoSpeechEnabled ? <Volume2 className="w-2.5 h-2.5 text-cyan-400" /> : <VolumeX className="w-2.5 h-2.5 text-neutral-500" />}
+                      <span>{isAutoSpeechEnabled ? 'VOZ ATIVA' : 'MUDO'}</span>
+                    </button>
+
+                    {/* Live / TTS Status Pill */}
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-neutral-900/80 border border-neutral-700/80 text-[9px] font-mono text-neutral-300 backdrop-blur-sm">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          (liveVoice?.status === 'speaking' || isSpeakingText)
+                            ? 'bg-cyan-400 animate-ping'
+                            : liveVoice?.status === 'listening'
+                            ? 'bg-emerald-400 animate-pulse'
+                            : liveVoice?.status === 'connecting'
+                            ? 'bg-amber-400 animate-ping'
+                            : 'bg-neutral-500'
+                        }`}
+                      />
+                      <span>
+                        {liveVoice?.status === 'speaking'
+                          ? 'FALANDO AO VIVO'
+                          : isSpeakingText
+                          ? 'FALANDO RESPOSTA'
+                          : liveVoice?.status === 'listening'
+                          ? 'OUVINDO'
+                          : liveVoice?.status === 'connecting'
+                          ? 'CONECTANDO'
+                          : 'STANDBY'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cyber Sound Frequency Visualizer Component */}
+                  <CyberAiAvatar3D
+                    status={
+                      liveVoice && (liveVoice.status === 'speaking' || liveVoice.status === 'listening' || liveVoice.status === 'connecting')
+                        ? liveVoice.status
+                        : isSpeakingText
+                        ? 'speaking'
+                        : 'idle'
+                    }
+                    speechLevel={
+                      liveVoice && liveVoice.aiSpeechLevel > 0
+                        ? liveVoice.aiSpeechLevel
+                        : ttsSpeechLevel
+                    }
+                    micLevel={liveVoice?.micLevel || 0}
+                    isAnalyzing={isAnalyzing}
+                    className="w-full h-full"
+                  />
+                </div>
+
+                {/* Embedded Controls: LIGAR / DESLIGAR / MUTAR */}
+                <div className="space-y-1.5">
+                  {(!liveVoice || liveVoice.status === 'idle') && (
+                    <button
+                      onClick={liveVoice?.startLiveConversation}
+                      className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
+                    >
+                      <Radio className="w-4 h-4 text-neutral-950 animate-pulse" />
+                      <span>LIGAR VOZ IA</span>
+                    </button>
+                  )}
+
+                  {liveVoice && liveVoice.status === 'connecting' && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled
+                        className="flex-1 py-2.5 px-4 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-wait"
+                      >
+                        <span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                        <span>CONECTANDO À IA...</span>
+                      </button>
+                      <button
+                        onClick={liveVoice.disconnectSession}
+                        className="py-2.5 px-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold rounded-xl text-xs cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+
+                  {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && (
+                    <div className="flex items-center gap-2">
+                      {/* Microphone Control */}
+                      {liveVoice.hasMicPermission ? (
+                        <button
+                          onClick={liveVoice.toggleMute}
+                          className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            liveVoice.isMuted
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
+                          }`}
+                        >
+                          {liveVoice.isMuted ? (
+                            <MicOff className="w-4 h-4 text-amber-400" />
+                          ) : (
+                            <Mic className="w-4 h-4 text-emerald-400" />
+                          )}
+                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo'}</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={liveVoice.requestMicrophoneAccess}
+                          disabled={liveVoice.isActivatingMic}
+                          className="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <Mic className="w-4 h-4 text-cyan-400 animate-pulse" />
+                          <span>{liveVoice.isActivatingMic ? 'Ativando...' : 'Ativar Microfone'}</span>
+                        </button>
+                      )}
+
+                      {/* Desligar Button */}
+                      <button
+                        onClick={liveVoice.disconnectSession}
+                        className="py-2.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer active:scale-98"
+                      >
+                        <PhoneOff className="w-4 h-4" />
+                        <span>DESLIGAR</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {liveVoice?.errorMessage && (
+                    <div className="p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-[10px] text-center font-mono">
+                      {liveVoice.errorMessage}
+                    </div>
+                  )}
+                </div>
+
+                {/* Chat Messages Container */}
+                <div className="h-[180px] overflow-y-auto space-y-2.5 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar">
+                  {chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      <div className="flex items-center gap-1 mb-0.5 text-[9px] text-neutral-500 font-mono">
+                        {msg.role === 'user' ? (
+                          <>
+                            <span>Você</span>
+                            <User className="w-2.5 h-2.5" />
+                          </>
+                        ) : (
+                          <>
+                            <Bot className="w-2.5 h-2.5 text-cyan-400" />
+                            <span className="text-cyan-400 font-semibold">ClandeX-IA</span>
+                            <button
+                              onClick={() => speakText(msg.text)}
+                              className="ml-1 text-neutral-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                              title="Ouvir esta mensagem novamente com voz e animação 3D"
+                            >
+                              <Volume2 className="w-2.5 h-2.5" />
+                            </button>
+                          </>
+                        )}
+                        <span>
+                          {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      <div
+                        className={`max-w-[92%] p-2.5 rounded-2xl text-[11px] leading-relaxed select-text ${
+                          msg.role === 'user'
+                            ? 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-500/40 text-cyan-100 rounded-tr-xs'
+                            : 'bg-[#101522] border border-[#1c273e] text-neutral-200 rounded-tl-xs whitespace-pre-wrap'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  ))}
+
+                  {isChatLoading && (
+                    <div className="flex items-start gap-2 p-2 bg-[#101522] border border-cyan-500/30 rounded-xl max-w-[85%] text-xs text-cyan-300">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-spin shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-mono">Consultando confluências, SMC e notícias...</span>
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={chatBottomRef} />
+                </div>
+
+                {/* Input Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendChatMessage();
+                  }}
+                  className="flex items-center gap-1.5"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Pergunte sobre próxima notícia, S/R, tendência maior, pullback..."
+                    disabled={isChatLoading}
+                    className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || isChatLoading}
+                    className="p-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 disabled:hover:from-cyan-600 disabled:hover:to-blue-600 text-white rounded-xl transition-all cursor-pointer shadow-md shadow-cyan-500/20"
+                    title="Enviar pergunta para a IA"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
