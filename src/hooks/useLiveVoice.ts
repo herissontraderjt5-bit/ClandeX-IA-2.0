@@ -69,6 +69,9 @@ export function useLiveVoice({
   // Supressão de eco acústico e controle estrito de turnos
   const isAiSpeakingRef = useRef<boolean>(false);
   const speechCooldownTimeoutRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const accumulatedTranscriptRef = useRef<string>('');
+  const lastAiSpokenPhraseRef = useRef<string>('');
   const lastProcessedQuestionRef = useRef<string>('');
   const lastProcessedTimeRef = useRef<number>(0);
   const currentAiTurnTextRef = useRef<string>('');
@@ -95,6 +98,56 @@ export function useLiveVoice({
   const speechAnimIntervalRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   isMutedRef.current = isMuted;
+
+  // Desativa fisicamente os tracks do microfone e cancela o reconhecimento para que a IA nunca capture sua própria voz
+  const muteMicrophoneHardware = useCallback(() => {
+    isAiSpeakingRef.current = true;
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+    }
+  }, []);
+
+  // Reativa o microfone apenas após a fala da IA ter terminado completamente e os ecos se dissiparem
+  const unmuteMicrophoneHardware = useCallback(() => {
+    if (speechCooldownTimeoutRef.current) {
+      clearTimeout(speechCooldownTimeoutRef.current);
+      speechCooldownTimeoutRef.current = null;
+    }
+    isAiSpeakingRef.current = false;
+    accumulatedTranscriptRef.current = '';
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    if (isMutedRef.current) return;
+
+    if (micStreamRef.current) {
+      micStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+    }
+
+    if (statusRef.current !== 'idle') {
+      setStatus('listening');
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch {}
+      }
+    }
+  }, []);
 
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
@@ -202,29 +255,24 @@ export function useLiveVoice({
       state.nextStartTime = startTime + audioBuffer.duration;
       state.activeSources.push(source);
 
-      // Marca que a IA está ativamente falando som
-      isAiSpeakingRef.current = true;
-      if (speechCooldownTimeoutRef.current) {
-        clearTimeout(speechCooldownTimeoutRef.current);
-        speechCooldownTimeoutRef.current = null;
-      }
+      // Desliga fisicamente o microfone e cancela reconhecimento enquanto a IA reproduz voz
+      muteMicrophoneHardware();
       setStatus('speaking');
 
       source.onended = () => {
         state.activeSources = state.activeSources.filter((s) => s !== source);
         if (state.activeSources.length === 0) {
           setAiSpeechLevel(0);
-          // Todos os pedaços de áudio terminaram! Aplica cooldown de 800ms para dispersar reverberação acústica
+          // Cooldown de 1200ms para dispersar reverberação acústica antes de reabrir o microfone
           speechCooldownTimeoutRef.current = setTimeout(() => {
-            isAiSpeakingRef.current = false;
-            setStatus((prev) => (prev === 'speaking' ? 'listening' : prev));
-          }, 800);
+            unmuteMicrophoneHardware();
+          }, 1200);
         }
       };
     } catch (err) {
       console.error('Error playing audio chunk:', err);
     }
-  }, []);
+  }, [muteMicrophoneHardware, unmuteMicrophoneHardware]);
 
   /**
    * Resposta local especializada em Opções Binárias e SMC (Português do Brasil)
@@ -309,14 +357,13 @@ export function useLiveVoice({
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
     stopAudioPlayback();
-    isAiSpeakingRef.current = true;
-    if (speechCooldownTimeoutRef.current) {
-      clearTimeout(speechCooldownTimeoutRef.current);
-      speechCooldownTimeoutRef.current = null;
-    }
+    // Muta fisicamente o microfone e aborta reconhecimento enquanto a IA fala
+    muteMicrophoneHardware();
     setStatus('speaking');
 
     const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+    lastAiSpokenPhraseRef.current = clean;
+
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'pt-BR';
     utterance.rate = 1.05;
@@ -342,18 +389,16 @@ export function useLiveVoice({
 
     utterance.onend = () => {
       stopAudioPlayback();
-      // Espera 800ms de cooldown após a fala terminar para que o som do ambiente dissipe totalmente
+      // Espera 1200ms de cooldown após a fala terminar para que a reverberação do som ambiente dissipe totalmente
       speechCooldownTimeoutRef.current = setTimeout(() => {
-        isAiSpeakingRef.current = false;
-        setStatus('listening');
-      }, 800);
+        unmuteMicrophoneHardware();
+      }, 1200);
     };
 
     utterance.onerror = () => {
       stopAudioPlayback();
       speechCooldownTimeoutRef.current = setTimeout(() => {
-        isAiSpeakingRef.current = false;
-        setStatus('listening');
+        unmuteMicrophoneHardware();
       }, 500);
     };
 
@@ -361,7 +406,7 @@ export function useLiveVoice({
       window.speechSynthesis.resume();
     }
     window.speechSynthesis.speak(utterance);
-  }, [stopAudioPlayback]);
+  }, [stopAudioPlayback, muteMicrophoneHardware, unmuteMicrophoneHardware]);
 
   /**
    * Processa a pergunta do microfone do trader de forma natural (Turn-Taking estrito)
@@ -491,7 +536,7 @@ Diretrizes obrigatórias:
   }, [speakBrowserText]);
 
   /**
-   * Inicia o receptor contínuo de reconhecimento de fala (PT-BR) com supressão de eco
+   * Inicia o receptor contínuo de reconhecimento de fala (PT-BR) com supressão de eco e janela de silêncio de 1.8s
    */
   const startSpeechRecognitionListener = useCallback(() => {
     const SpeechRecognition =
@@ -505,27 +550,79 @@ Diretrizes obrigatórias:
     try {
       if (recognitionRef.current) {
         try {
-          recognitionRef.current.stop();
+          recognitionRef.current.abort();
         } catch {}
       }
 
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
       recognition.continuous = true;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, mutada ou em cooldown acústico, descarta sem processar!
-        if (isMutedRef.current || isAiSpeakingRef.current || statusRef.current === 'speaking' || statusRef.current === 'connecting') {
+        // Se a IA estiver falando, mutada ou em cooldown acústico, descarta sem processar
+        if (
+          isMutedRef.current ||
+          isAiSpeakingRef.current ||
+          statusRef.current === 'speaking' ||
+          statusRef.current === 'connecting'
+        ) {
           return;
         }
-        const lastIdx = event.results.length - 1;
-        const result = event.results[lastIdx];
-        const transcript = result?.[0]?.transcript?.trim();
-        if (transcript && transcript.length >= 2) {
-          console.log('[ClandeX-IA Voz] Fala capturada:', transcript);
-          handleUserSpokenInput(transcript);
+
+        let interimTranscript = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const res = event.results[i];
+          const text = res[0].transcript;
+          if (res.isFinal) {
+            finalChunk += text + ' ';
+          } else {
+            interimTranscript += text;
+          }
         }
+
+        if (finalChunk.trim()) {
+          accumulatedTranscriptRef.current += (accumulatedTranscriptRef.current ? ' ' : '') + finalChunk.trim();
+        }
+
+        const currentSpokenText = (accumulatedTranscriptRef.current + ' ' + interimTranscript).trim();
+        if (!currentSpokenText) return;
+
+        // Anti-echo acústico: se o áudio captado for a própria frase falada pela IA (eco de alto-falante)
+        if (lastAiSpokenPhraseRef.current) {
+          const normAi = lastAiSpokenPhraseRef.current.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const normUser = currentSpokenText.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normAi.length > 5 && normUser.length > 5 && (normAi.includes(normUser) || normUser.includes(normAi))) {
+            console.log('[ClandeX-IA Voz] Eco de áudio captado e suprimido:', currentSpokenText);
+            return;
+          }
+        }
+
+        // Mostra na tela em tempo real o que o usuário está falando
+        setUserTranscript(currentSpokenText);
+
+        // Reinicia o timer de silêncio: aguarda 1.8 segundos de silêncio contínuo após o trader terminar de falar antes de enviar
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+
+        silenceTimerRef.current = setTimeout(() => {
+          const completeSentence = (accumulatedTranscriptRef.current + ' ' + interimTranscript).trim();
+          accumulatedTranscriptRef.current = '';
+          silenceTimerRef.current = null;
+
+          if (
+            completeSentence.length >= 3 &&
+            !isAiSpeakingRef.current &&
+            statusRef.current === 'listening'
+          ) {
+            console.log('[ClandeX-IA Voz] Frase completa concluída pelo usuário:', completeSentence);
+            muteMicrophoneHardware(); // Muta imediatamente o microfone antes da IA responder
+            handleUserSpokenInput(completeSentence);
+          }
+        }, 1800);
       };
 
       recognition.onerror = (err: any) => {
@@ -535,19 +632,31 @@ Diretrizes obrigatórias:
       };
 
       recognition.onend = () => {
-        if (recognitionRef.current && !isMutedRef.current && statusRef.current !== 'idle') {
+        // Só reinicia se o usuário não se mutou, a IA não estiver falando e o status for listening
+        if (
+          recognitionRef.current &&
+          !isMutedRef.current &&
+          !isAiSpeakingRef.current &&
+          statusRef.current === 'listening'
+        ) {
           try {
             recognition.start();
           } catch {}
         }
       };
 
-      recognition.start();
       recognitionRef.current = recognition;
+
+      // Inicia a escuta se a IA não estiver falando e o microfone não estiver mutado
+      if (!isAiSpeakingRef.current && !isMutedRef.current && statusRef.current === 'listening') {
+        try {
+          recognition.start();
+        } catch {}
+      }
     } catch (e) {
       console.warn('[ClandeX-IA] Reconhecimento contínuo não pôde iniciar imediatamente:', e);
     }
-  }, [handleUserSpokenInput]);
+  }, [handleUserSpokenInput, muteMicrophoneHardware]);
 
   /**
    * Ativa modo de voz inteligente com reconhecimento de fala nativo (PT-BR)
@@ -555,9 +664,10 @@ Diretrizes obrigatórias:
   const startBrowserSpeechFallback = useCallback(() => {
     activeEngineRef.current = 'browser_speech';
     setActiveEngine('browser_speech');
-    setStatus('listening');
     setHasMicPermission(true);
 
+    // Muta microfone e prepara a escuta com antecedência
+    muteMicrophoneHardware();
     startSpeechRecognitionListener();
 
     const assetSym = contextRef.current.asset.symbol;
@@ -568,8 +678,9 @@ Diretrizes obrigatórias:
       text: greeting,
       timestamp: Date.now(),
     });
+    // Fala saudação. utterance.onend aguardará 1.2s de cooldown e chamará unmuteMicrophoneHardware()
     speakBrowserText(greeting);
-  }, [speakBrowserText, startSpeechRecognitionListener]);
+  }, [muteMicrophoneHardware, speakBrowserText, startSpeechRecognitionListener]);
 
   // Request Microphone Permissions & Audio Processing
   const requestMicrophoneAccess = useCallback(async () => {
@@ -783,13 +894,15 @@ Diretrizes de Conversação:
           }
 
           if (directConnected && geminiLiveSessionRef.current) {
+            muteMicrophoneHardware();
             startSpeechRecognitionListener();
             await requestMicrophoneAccess();
 
-            // Dispara saudação inicial curta e direta: 1 frase falada, depois silêncio absoluto aguardando o usuário
+            // Dispara saudação inicial curta e direta com microfone mutado: 1 frase falada, depois silêncio absoluto aguardando o usuário
             try {
               const currentCtx = contextRef.current;
               const greetingText = `ClandeX-IA conectada ao vivo. Estou monitorando ${currentCtx.asset.symbol}. Como posso ajudar suas operações agora?`;
+              lastAiSpokenPhraseRef.current = greetingText;
               currentAiTurnTextRef.current = '';
               geminiLiveSessionRef.current.sendClientContent({
                 turns: [
@@ -806,6 +919,7 @@ Diretrizes de Conversação:
               });
             } catch (greetErr) {
               console.warn('[Gemini Live] Aviso saudação inicial:', greetErr);
+              unmuteMicrophoneHardware();
             }
             return;
           }
@@ -882,11 +996,19 @@ Diretrizes de Conversação:
     requestMicrophoneAccess,
     startBrowserSpeechFallback,
     startSpeechRecognitionListener,
+    muteMicrophoneHardware,
+    unmuteMicrophoneHardware,
   ]);
 
   // Disconnect WebSocket, Direct Session and media streams
   const disconnectSession = useCallback(() => {
     stopAudioPlayback();
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    accumulatedTranscriptRef.current = '';
 
     if (speechCooldownTimeoutRef.current) {
       clearTimeout(speechCooldownTimeoutRef.current);
@@ -905,7 +1027,7 @@ Diretrizes de Conversação:
 
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        recognitionRef.current.abort();
       } catch {}
       recognitionRef.current = null;
     }
