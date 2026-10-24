@@ -96,6 +96,7 @@ interface FloatingHudProps {
     disconnectSession: () => void;
     toggleMute: () => void;
     requestMicrophoneAccess: () => Promise<void>;
+    sendTextMessage?: (text: string) => void;
   };
   onSelectAsset: (symbol: string) => void;
   onSelectTimeframe: (tf: TimeFrame) => void;
@@ -447,6 +448,13 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const textToSend = (customPrompt || chatInput).trim();
     if (!textToSend || isChatLoading) return;
 
+    // Se a IA de Voz estiver conectada, envia diretamente para o Gemini Live responder por voz com Zephyr
+    if (liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && liveVoice.sendTextMessage) {
+      liveVoice.sendTextMessage(textToSend);
+      setChatInput('');
+      return;
+    }
+
     const userMsg = {
       id: `user-${Date.now()}`,
       role: 'user' as const,
@@ -514,8 +522,11 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           `;
 
           const resp = await ai.models.generateContent({
-            model: 'gemini-3.7-flash',
+            model: 'gemini-3.8-flash',
             contents: prompt,
+            config: {
+              temperature: 0.4,
+            },
           });
 
           if (resp && resp.text) {

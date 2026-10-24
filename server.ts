@@ -149,12 +149,16 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
                     }
                   }
 
-                  const outputText = (message.serverContent as any)?.outputAudioTranscription?.text;
+                  const outputText =
+                    (message.serverContent as any)?.outputTranscription?.text ||
+                    (message.serverContent as any)?.outputAudioTranscription?.text;
                   if (outputText && clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: 'text', text: outputText }));
                   }
 
-                  const userText = (message.serverContent as any)?.inputAudioTranscription?.text;
+                  const userText =
+                    (message.serverContent as any)?.inputTranscription?.text ||
+                    (message.serverContent as any)?.inputAudioTranscription?.text;
                   if (userText && clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: 'user_text', userText }));
                   }
@@ -209,13 +213,41 @@ DIRETRIZES PARA A CONVERSA POR VOZ:
         }
       }
 
-      // Text prompt over live session
-      if (msg.text && session) {
+      // Turn complete / Client Content / Direct Text
+      if ((msg.type === 'turn_complete' || msg.type === 'client_content') && session) {
         try {
-          session.sendRealtimeInput({
-            text: msg.text,
+          if (msg.text && typeof msg.text === 'string' && msg.text.trim()) {
+            console.log(`[Gemini Live] Enviando clientContent com texto: "${msg.text.trim()}"`);
+            session.sendClientContent({
+              turns: [
+                {
+                  role: 'user',
+                  parts: [{ text: msg.text.trim() }],
+                },
+              ],
+              turnComplete: true,
+            });
+          } else {
+            console.log('[Gemini Live] Sinalizando turnComplete: true para o áudio...');
+            session.sendClientContent({ turnComplete: true });
+          }
+        } catch (turnErr) {
+          console.error('[Gemini Live] Erro ao enviar turnComplete:', turnErr);
+        }
+      } else if (msg.text && session) {
+        try {
+          session.sendClientContent({
+            turns: [
+              {
+                role: 'user',
+                parts: [{ text: msg.text }],
+              },
+            ],
+            turnComplete: true,
           });
-        } catch {}
+        } catch (txtErr) {
+          console.error('[Gemini Live] Erro ao enviar texto:', txtErr);
+        }
       }
 
       // Stop session
