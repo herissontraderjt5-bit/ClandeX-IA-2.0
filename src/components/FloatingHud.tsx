@@ -41,6 +41,7 @@ import {
   TrendingDown,
   Gauge,
   SlidersHorizontal,
+  Bell,
 } from 'lucide-react';
 import {
   Asset,
@@ -54,7 +55,7 @@ import {
   AppSettings,
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
-import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage } from '../hooks/useLiveVoice';
+import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews, MarketNewsItem } from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
 import { marketDataManager, isForexMarketOpen } from '../services/marketData';
@@ -82,6 +83,7 @@ interface FloatingHudProps {
   settings: AppSettings;
   liveVoice?: {
     status: LiveVoiceStatus;
+    assistantState?: AssistantUiState;
     errorMessage: string | null;
     hasMicPermission: boolean | null;
     isMuted: boolean;
@@ -93,6 +95,11 @@ interface FloatingHudProps {
     aiResponseText?: string;
     lastTurnMessage?: LiveTurnMessage | null;
     voiceHistory?: LiveTurnMessage[];
+    volume?: number;
+    setVolume?: (v: number) => void;
+    voiceAnnouncements?: boolean;
+    setVoiceAnnouncements?: (b: boolean) => void;
+    isProcessing?: boolean;
     startLiveConversation: () => Promise<void>;
     disconnectSession: () => void;
     toggleMute: () => void;
@@ -1787,7 +1794,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               </div>
             )}
 
-            {/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo */}
+            {/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo (ETAPAS 2, 3, 4, 5, 6, 7) */}
             {activeTab === 'voz' && (
               <div className="space-y-3">
                 {/* Voz 3D Top Banner */}
@@ -1798,73 +1805,98 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white text-xs">ClandeX-IA Voz 3D</span>
+                        <span className="font-bold text-white text-xs">CandleX-IA Voz ao Vivo</span>
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            liveVoice?.status === 'speaking'
+                            (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
                               ? 'bg-cyan-400 animate-ping'
-                              : liveVoice?.status === 'listening'
+                              : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                              ? 'bg-purple-400 animate-pulse'
+                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
                               ? 'bg-emerald-400 animate-pulse'
-                              : liveVoice?.status === 'connecting'
+                              : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
                               ? 'bg-amber-400 animate-ping'
                               : 'bg-neutral-500'
                           }`}
                         />
                       </div>
                       <div className="text-[10px] text-neutral-400 font-mono">
-                        {asset.symbol} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)} • Conversa Falada
+                        {asset.symbol} • {timeframe} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)}
                       </div>
                     </div>
                   </div>
 
                   <div className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300">
-                    {liveVoice?.activeEngine === 'gemini_live' ? 'Gemini Neural' : 'Voz PT-BR'}
+                    {liveVoice?.activeEngine === 'gemini_live' ? 'Gemini Live' : 'Voz PT-BR'}
                   </div>
                 </div>
 
                 {/* 3D Cyber Sound Frequency Visualizer Container (Immersive & Large) */}
-                <div className="relative w-full h-[320px] rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_35px_rgba(6,182,212,0.18)] overflow-hidden flex items-center justify-center">
+                <div className="relative w-full h-[300px] rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_35px_rgba(6,182,212,0.18)] overflow-hidden flex items-center justify-center">
                   <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-20 pointer-events-none" />
 
-                  {/* Corner Status Badge */}
+                  {/* Corner Status Badge com Estados Oficiais da ETAPA 3 */}
                   <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 backdrop-blur-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <span>AVATAR 3D AO VIVO</span>
+                    <span>AVATAR 3D CANDLEX</span>
                   </div>
 
-                  {/* Top Right Controls & Status */}
+                  {/* Top Right Controls & Formal States: DESCONECTADO, CONECTANDO, OUVINDO, PROCESSANDO, FALANDO, ERRO */}
                   <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
-                    {liveVoice?.status === 'speaking' && (
+                    {(liveVoice?.status === 'speaking' || liveVoice?.assistantState === 'FALANDO') && (
                       <button
                         onClick={liveVoice?.interruptSpeech}
                         className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-600/90 hover:bg-rose-500 border border-rose-400 text-[9px] font-mono font-bold text-white transition-all cursor-pointer shadow-md shadow-rose-900/50 animate-pulse"
-                        title="Interromper fala da IA em tempo real"
+                        title="Interromper fala da IA em tempo real (Barge-in)"
                       >
                         <Square className="w-2.5 h-2.5 fill-white text-white" />
                         <span>INTERROMPER</span>
                       </button>
                     )}
 
-                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-neutral-900/80 border border-neutral-700/80 text-[9px] font-mono text-neutral-300 backdrop-blur-sm">
+                    <div
+                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-mono backdrop-blur-sm ${
+                        (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
+                          ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300'
+                          : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
+                          : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                          ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+                          : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                          ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                          : liveVoice?.status === 'error'
+                          ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
+                          : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
+                      }`}
+                    >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          liveVoice?.status === 'speaking'
+                          (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
                             ? 'bg-cyan-400 animate-ping'
-                            : liveVoice?.status === 'listening'
+                            : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                            ? 'bg-purple-400 animate-pulse'
+                            : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
                             ? 'bg-emerald-400 animate-pulse'
-                            : liveVoice?.status === 'connecting'
+                            : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
                             ? 'bg-amber-400 animate-ping'
+                            : liveVoice?.status === 'error'
+                            ? 'bg-rose-400'
                             : 'bg-neutral-500'
                         }`}
                       />
                       <span>
-                        {liveVoice?.status === 'speaking'
-                          ? 'FALANDO AO VIVO'
-                          : liveVoice?.status === 'listening'
-                          ? 'OUVINDO VOCÊ'
-                          : liveVoice?.status === 'connecting'
-                          ? 'CONECTANDO'
-                          : 'DESLIGADO'}
+                        {liveVoice?.assistantState ||
+                          (liveVoice?.status === 'speaking'
+                            ? 'FALANDO'
+                            : liveVoice?.isProcessing
+                            ? 'PROCESSANDO'
+                            : liveVoice?.status === 'listening'
+                            ? 'OUVINDO'
+                            : liveVoice?.status === 'connecting'
+                            ? 'CONECTANDO'
+                            : liveVoice?.status === 'error'
+                            ? 'ERRO'
+                            : 'DESCONECTADO')}
                       </span>
                     </div>
                   </div>
@@ -1878,7 +1910,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   />
                 </div>
 
-                {/* Voice Controls: Ligar / Desligar / Mutar */}
+                {/* Voice Controls: Iniciar conversa / Encerrar conversa / Silenciar áudio */}
                 <div className="space-y-2">
                   {(!liveVoice || liveVoice.status === 'idle') && (
                     <button
@@ -1886,7 +1918,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       className="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
                     >
                       <Radio className="w-4 h-4 text-neutral-950 animate-pulse" />
-                      <span>LIGAR VOZ 3D (FALE AO MICROFONE)</span>
+                      <span>INICIAR CONVERSA (FALE AO MICROFONE)</span>
                     </button>
                   )}
 
@@ -1908,7 +1940,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                   )}
 
-                  {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && (
+                  {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking' || liveVoice.isProcessing) && (
                     <div className="flex items-center gap-2">
                       {liveVoice.hasMicPermission ? (
                         <button
@@ -1924,7 +1956,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           ) : (
                             <Mic className="w-4 h-4 text-emerald-400" />
                           )}
-                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo (Falando)'}</span>
+                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo (Silenciar)'}</span>
                         </button>
                       ) : (
                         <button
@@ -1942,14 +1974,58 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         className="py-3 px-5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer active:scale-98"
                       >
                         <PhoneOff className="w-4 h-4" />
-                        <span>DESLIGAR</span>
+                        <span>ENCERRAR</span>
                       </button>
                     </div>
                   )}
                 </div>
 
+                {/* Controles de Áudio: Volume e Avisos por Voz de Sinais (ETAPAS 3 e 6) */}
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Volume Control */}
+                  <div className="p-2 bg-[#0c1220] border border-[#1b253d] rounded-xl flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1 text-[11px] font-mono text-neutral-300">
+                      <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span>Volume:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={liveVoice?.volume ?? 100}
+                        onChange={(e) => liveVoice?.setVolume && liveVoice.setVolume(Number(e.target.value))}
+                        className="w-16 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                        title="Controle de volume da voz da IA"
+                      />
+                      <span className="text-[10px] font-mono text-cyan-300 w-6 text-right">
+                        {liveVoice?.volume ?? 100}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Avisos Falados de Sinais (ETAPA 6) */}
+                  <div className="p-2 bg-[#0c1220] border border-[#1b253d] rounded-xl flex items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1 text-[11px] font-mono text-neutral-300">
+                      <Bell className={`w-3.5 h-3.5 ${liveVoice?.voiceAnnouncements ? 'text-emerald-400' : 'text-neutral-500'} shrink-0`} />
+                      <span className="truncate">Avisos Sinais:</span>
+                    </div>
+                    <button
+                      onClick={() => liveVoice?.setVoiceAnnouncements && liveVoice.setVoiceAnnouncements(!liveVoice.voiceAnnouncements)}
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-all ${
+                        liveVoice?.voiceAnnouncements
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                      }`}
+                      title="Ativar/Desativar avisos por voz para sinais confirmados e cancelamentos"
+                    >
+                      {liveVoice?.voiceAnnouncements ? 'LIGADO' : 'DESLIG'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Real-time Dynamic Audio Feedback Strip (No Chat, Pure Audio Status) */}
-                {liveVoice && liveVoice.status === 'listening' && (
+                {liveVoice && (liveVoice.status === 'listening' || liveVoice.assistantState === 'OUVINDO') && (
                   <div className="p-3 bg-[#0c1220] border border-emerald-500/30 rounded-xl space-y-2">
                     <div className="flex items-center gap-2 text-[11px] font-mono">
                       <Mic className={`w-3.5 h-3.5 ${liveVoice.micLevel > 5 ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
@@ -1969,27 +2045,35 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                     ) : (
                       <div className="text-[10px] font-mono text-neutral-400 italic">
-                        Fale sua dúvida ao microfone... A IA responderá por voz.
+                        Fale sua dúvida ao microfone... CandleX responderá por voz.
                       </div>
                     )}
                   </div>
                 )}
 
-                {liveVoice && liveVoice.status === 'speaking' && (
+                {/* Animação e feedback de PROCESSANDO */}
+                {liveVoice && (liveVoice.isProcessing || liveVoice.assistantState === 'PROCESSANDO') && (
+                  <div className="p-3 bg-purple-950/40 border border-purple-500/40 rounded-xl flex items-center gap-2 text-xs font-mono text-purple-200 animate-pulse">
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-purple-400 border-t-transparent animate-spin shrink-0" />
+                    <span>CandleX consultando confluências técnicas do gráfico...</span>
+                  </div>
+                )}
+
+                {/* Animação de Ondas Sonoras e feedback de FALANDO */}
+                {liveVoice && (liveVoice.status === 'speaking' || liveVoice.assistantState === 'FALANDO') && (
                   <div className="p-3 bg-cyan-950/40 border border-cyan-500/40 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-cyan-200 animate-pulse">
                     <div className="flex items-center gap-2">
                       <Volume2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                      <span className="font-bold">ClandeX-IA falando com você...</span>
+                      <span className="font-bold">CandleX falando ao vivo...</span>
                     </div>
-                    {/* Equalizer Bars */}
+                    {/* Equalizer Waveform Bars */}
                     <div className="flex items-center gap-0.5 h-3">
-                      {[6, 12, 18, 10, 14, 8, 16].map((h, i) => (
+                      {[6, 14, 20, 10, 16, 8, 18, 12, 19, 7].map((h, i) => (
                         <div
                           key={i}
-                          className="w-1 bg-cyan-400 rounded-full animate-pulse"
+                          className="w-1 bg-cyan-400 rounded-full transition-all duration-75"
                           style={{
-                            height: `${Math.max(4, Math.min(18, (h * (liveVoice.aiSpeechLevel || 40)) / 40))}px`,
-                            animationDelay: `${i * 90}ms`,
+                            height: `${Math.max(4, Math.min(18, (h * (liveVoice.aiSpeechLevel || 40)) / 35))}px`,
                           }}
                         />
                       ))}
@@ -2000,7 +2084,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 {(!liveVoice || liveVoice.status === 'idle') && (
                   <div className="p-2.5 bg-neutral-900/60 border border-neutral-800/80 rounded-xl text-center">
                     <p className="text-[11px] text-neutral-400 font-mono">
-                      Conversa falada e natural em tempo real. Ligue a voz e fale livremente com a IA.
+                      Conversa falada e contínua em tempo real. Inicie a conversa e fale livremente com a CandleX.
                     </p>
                   </div>
                 )}

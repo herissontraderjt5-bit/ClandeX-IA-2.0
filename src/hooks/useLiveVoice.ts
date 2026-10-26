@@ -2,8 +2,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/trading';
 import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews } from '../services/economicCalendar';
 import { isForexMarketOpen } from '../services/marketData';
+import { tradingContextAdapter } from '../services/voice/TradingContextAdapter';
+import { signalEventBridge } from '../services/voice/SignalEventBridge';
+import { signalEngine } from '../services/signalEngine';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
+export type AssistantUiState = 'DESCONECTADO' | 'CONECTANDO' | 'OUVINDO' | 'PROCESSANDO' | 'FALANDO' | 'ERRO';
 export type VoiceEngine = 'gemini_live' | 'browser_speech';
 
 export interface LiveTurnMessage {
@@ -68,6 +72,47 @@ export function useLiveVoice({
   const [aiResponseText, setAiResponseText] = useState<string>('');
   const [lastTurnMessage, setLastTurnMessage] = useState<LiveTurnMessage | null>(null);
   const [voiceHistory, setVoiceHistory] = useState<LiveTurnMessage[]>([]);
+  const voiceHistoryRef = useRef<LiveTurnMessage[]>([]);
+  voiceHistoryRef.current = voiceHistory;
+
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [volume, setVolumeState] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('candlex_voice_volume');
+      if (saved !== null) return Number(saved);
+    }
+    return 100;
+  });
+  const volumeRef = useRef<number>(volume);
+  volumeRef.current = volume;
+
+  const setVolume = useCallback((val: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(val)));
+    setVolumeState(clamped);
+    volumeRef.current = clamped;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('candlex_voice_volume', String(clamped));
+    }
+  }, []);
+
+  const [voiceAnnouncements, setVoiceAnnouncementsState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('candlex_voice_announcements');
+      if (saved !== null) return saved === 'true';
+    }
+    return true;
+  });
+  const voiceAnnouncementsRef = useRef<boolean>(voiceAnnouncements);
+  voiceAnnouncementsRef.current = voiceAnnouncements;
+
+  const setVoiceAnnouncements = useCallback((enabled: boolean) => {
+    setVoiceAnnouncementsState(enabled);
+    voiceAnnouncementsRef.current = enabled;
+    signalEventBridge.setEnabled(enabled);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('candlex_voice_announcements', String(enabled));
+    }
+  }, []);
 
   const statusRef = useRef<LiveVoiceStatus>('idle');
   statusRef.current = status;
@@ -111,6 +156,12 @@ export function useLiveVoice({
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
   contextRef.current = { asset, timeframe, marketAnalysis, confluences };
+
+  // Sincroniza o contrato de trading context em tempo real (ETAPA 4 & 5)
+  useEffect(() => {
+    tradingContextAdapter.setTimeframe(timeframe);
+    tradingContextAdapter.setAnalysis(marketAnalysis, confluences);
+  }, [timeframe, marketAnalysis, confluences]);
 
   // Pré-carrega vozes do navegador para que a voz feminina esteja disponível de imediato
   useEffect(() => {
@@ -374,15 +425,16 @@ export function useLiveVoice({
       return 'Tamo junto! Mantenha sempre a disciplina e o gerenciamento de risco. Estou atenta ao gráfico para o que você precisar.';
     }
 
-    // 5. Identidade da IA
+    // 5. Identidade da IA (ETAPA 7)
     if (
       q.includes('quem é você') ||
       q.includes('quem e voce') ||
       q.includes('o que você faz') ||
       q.includes('como funciona') ||
+      q.includes('quem e candlex') ||
       q.includes('quem e clandex')
     ) {
-      return 'Sou a ClandeX-IA, sua mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove. Analiso Smart Money Concepts, confluências e notícias para orientar seus trades com segurança.';
+      return 'Sou a CandleX, sua assistente inteligente e mentora de trading em Opções Binárias e Forex para o aplicativo CandleX-IA. Analiso Price Action, fluxo de candles e confluências para orientar suas entradas com segurança.';
     }
 
     // 6. Opinião geral e visão do mercado ("o que você acha?", "como tá o mercado?")
@@ -584,6 +636,7 @@ export function useLiveVoice({
     utterance.rate = 1.08; // Fala rápida, fluida e natural
     // Timbre feminino nítido, claro e agradável
     utterance.pitch = 1.18;
+    utterance.volume = Math.max(0, Math.min(1, volumeRef.current / 100));
 
     // Seleção estrita de voz feminina em Português (eliminando completamente vozes masculinas como Daniel)
     const pickFemaleVoice = (): SpeechSynthesisVoice | null => {
@@ -732,56 +785,74 @@ export function useLiveVoice({
       }
 
       // Tenta Gemini com modelos ativos (gemini-3.5-flash-lite e gemini-3.5-flash)
-      const geminiKey = getEffectiveGeminiKey();
-      if (geminiKey && geminiKey.length > 15) {
-        try {
-          const { GoogleGenAI } = await import('@google/genai');
-          const ai = new GoogleGenAI({ apiKey: geminiKey });
-          const currentCtx = contextRef.current;
-          const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
-          const dir = currentCtx.confluences?.direction === 'CALL' ? 'COMPRA' : currentCtx.confluences?.direction === 'PUT' ? 'VENDA' : 'NEUTRO';
+      setIsProcessing(true);
+      try {
+        const geminiKey = getEffectiveGeminiKey();
+        if (geminiKey && geminiKey.length > 15) {
+          try {
+            const { GoogleGenAI } = await import('@google/genai');
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+            const contextSummary = tradingContextAdapter.getContextSummary();
+            const recentTurns = voiceHistoryRef.current
+              .slice(-4)
+              .map((h) => `${h.role === 'user' ? 'Trader' : 'CandleX'}: ${h.text}`)
+              .join('\n');
 
-          const systemInstruction = `Você é a ClandeX-IA, mentora institucional feminina de trading em Opções Binárias e Forex, conversando por voz em tempo real com o trader.
-Você fala diretamente ao microfone com o trader.
-DIRETRIZES FUNDAMENTAIS:
-1. Ouça com atenção e responda DIRETAMENTE ao que o trader acabou de perguntar.
-2. Responda em Português do Brasil com naturalidade, segurança e máxima concisão: estritamente 1 a 2 frases faladas.
-3. NUNCA use markdown, asteriscos, numerações ou tópicos no texto de fala.
-4. Responda a qualquer pergunta do usuário com base nos dados do mercado abaixo ou em conselhos operacionais:
-- Ativo na tela: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
-- Preço Atual: ${currentCtx.asset.currentPrice.toFixed(currentCtx.asset.pipDecimals)}
-- Timeframe: ${currentCtx.timeframe}
-- Tendência Principal: ${currentCtx.marketAnalysis?.trend || 'LATERAL'}
-- Confluência do Robô: ${currentCtx.confluences?.totalScore ?? 0}% para ${dir}
-- Força Compradora: ${currentCtx.marketAnalysis?.buyerStrength || 'MODERADA'} | Vendedora: ${currentCtx.marketAnalysis?.sellerStrength || 'MODERADA'}
-- Próxima Notícia: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}.`;
+            const systemInstruction = `Você é a CandleX, assistente inteligente e mentora de trading institucional de Opções Binárias e Forex para o aplicativo CandleX-IA.
+Você está conversando por voz em tempo real diretamente com o trader humano via microfone.
 
-          const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
-          for (const modelName of candidateModels) {
-            try {
-              const fetchPromise = ai.models.generateContent({
-                model: modelName,
-                contents: cleanPrompt,
-                config: {
-                  systemInstruction,
-                  temperature: 0.4,
-                },
-              });
+PERSONALIDADE (CANDLEX):
+Profissional, natural, objetiva e amigável. Responda como uma especialista humana em análise técnica e Price Action.
 
-              const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
-              const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+REGRAS OBRIGATÓRIAS (ETAPA 7):
+1. Responda DIRETAMENTE ao que o trader acabou de perguntar em Português do Brasil com naturalidade e clareza.
+2. Seja sempre concisa: estritamente 1 a 2 frases faladas. Não faça discursos longos.
+3. NUNCA use markdown, asteriscos, tópicos, numerações ou formatações no texto de fala.
+4. Mantenha a memória de contexto da conversa (se o trader disser "e no gráfico de cinco minutos?", "e o suporte?", "vale a pena entrar agora?", entenda a referência anterior).
+5. Domine Price Action, Suporte e Resistência, Fluxo de candles, Tendência, Consolidação, Rompimento, Rejeição, CALL, PUT, M1, M5, Forex e Criptomoedas.
+6. Não invente preços ou indicadores. Não prometa lucros e não garanta resultados.
+7. Se não houver confirmação técnica ou dados suficientes, informe com clareza.
 
-              if (response && response.text) {
-                const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
-                if (cleanText) return cleanText;
+DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
+${contextSummary}
+
+MEMÓRIA RECENTE DA CONVERSA:
+${recentTurns || 'Início da sessão de voz.'}`;
+
+            const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+            for (const modelName of candidateModels) {
+              try {
+                const fetchPromise = ai.models.generateContent({
+                  model: modelName,
+                  contents: cleanPrompt,
+                  config: {
+                    systemInstruction,
+                    temperature: 0.4,
+                  },
+                });
+
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
+                const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+
+                if (response && response.text) {
+                  const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
+                  if (cleanText) {
+                    setIsProcessing(false);
+                    return cleanText;
+                  }
+                }
+              } catch (modelErr) {
+                console.warn(`[CandleX-IA Voz] Falha no modelo ${modelName}:`, modelErr);
               }
-            } catch (modelErr) {
-              console.warn(`[ClandeX-IA Voz] Falha no modelo ${modelName}:`, modelErr);
             }
+          } catch (genAiErr) {
+            console.warn('[CandleX-IA Voz] Erro ao instanciar Gemini:', genAiErr);
           }
-        } catch (genAiErr) {
-          console.warn('[ClandeX-IA Voz] Erro ao instanciar Gemini:', genAiErr);
         }
+      } catch (overallErr) {
+        console.warn('[CandleX-IA Voz] Exceção em generateAiReply:', overallErr);
+      } finally {
+        setIsProcessing(false);
       }
 
       // Fallback local robusto caso Gemini não responda em 2.8s ou sem chave
@@ -838,7 +909,6 @@ DIRETRIZES FUNDAMENTAIS:
       }
 
       // No Vercel ou modo cliente direto: processa a resposta imediatamente
-      setStatus('speaking');
       try {
         const reply = await generateAiReply(q);
         if (reply) {
@@ -857,7 +927,7 @@ DIRETRIZES FUNDAMENTAIS:
           turnDispatchedRef.current = false;
         }
       } catch (err) {
-        console.warn('[ClandeX-IA Voz] Erro ao responder:', err);
+        console.warn('[CandleX-IA Voz] Erro ao responder:', err);
         const fallbackReply = answerQuestionLocally(q);
         const modelTurn: LiveTurnMessage = {
           id: `model-voice-${Date.now()}`,
@@ -879,7 +949,7 @@ DIRETRIZES FUNDAMENTAIS:
     if (typeof window === 'undefined') return;
     const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
-      console.warn('[ClandeX-IA] Web SpeechRecognition não disponível neste navegador.');
+      console.warn('[CandleX-IA] Web SpeechRecognition não disponível neste navegador.');
       return;
     }
 
@@ -899,9 +969,10 @@ DIRETRIZES FUNDAMENTAIS:
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, ignoramos resultados do microfone para evitar eco e autointerrupção
+        // Se a IA estiver falando, o usuário começou a falar ao microfone: BARGE-IN imediato!
         if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          return;
+          console.log('[CandleX-IA] Trader interrompeu a fala da IA (Barge-in instantâneo)!');
+          interruptSpeech();
         }
 
         let interim = '';
@@ -1338,14 +1409,50 @@ DIRETRIZES FUNDAMENTAIS:
     });
   };
 
+  // Conecta avisos falados de novos sinais e cancelamentos (ETAPA 6)
+  useEffect(() => {
+    signalEventBridge.setUserSpeakingCheck(
+      () => isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing
+    );
+
+    const onSignal = (signal: any, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => {
+      if (voiceAnnouncementsRef.current && sessionActiveRef.current) {
+        if (event === 'CONFIRMED' && signal) {
+          const dir = signal.direction === 'CALL' ? 'CALL, compra' : 'PUT, venda';
+          const spoken = `Atenção! O CandleX-IA identificou um sinal de ${dir} no par ${signal.asset}, timeframe ${signal.timeframe}. Confluência de ${signal.confluenceScore} por cento.`;
+          speakBrowserText(spoken);
+        } else if (event === 'CANCELLED' && signal) {
+          const spoken = `Atenção: sinal no par ${signal.asset} cancelado por proteção do algoritmo CandleX-IA.`;
+          speakBrowserText(spoken);
+        }
+      }
+    };
+
+    signalEngine.addOnSignalEvent(onSignal);
+  }, [speakBrowserText, isProcessing]);
+
   useEffect(() => {
     return () => {
       disconnectSession();
     };
   }, [disconnectSession]);
 
+  const assistantState: AssistantUiState =
+    status === 'idle'
+      ? 'DESCONECTADO'
+      : status === 'connecting'
+      ? 'CONECTANDO'
+      : status === 'error'
+      ? 'ERRO'
+      : status === 'speaking'
+      ? 'FALANDO'
+      : isProcessing
+      ? 'PROCESSANDO'
+      : 'OUVINDO';
+
   return {
     status,
+    assistantState,
     errorMessage,
     hasMicPermission,
     isMuted,
@@ -1357,6 +1464,11 @@ DIRETRIZES FUNDAMENTAIS:
     aiResponseText,
     lastTurnMessage,
     voiceHistory,
+    volume,
+    setVolume,
+    voiceAnnouncements,
+    setVoiceAnnouncements,
+    isProcessing,
     sendTextMessage,
     interruptSpeech,
     startLiveConversation,

@@ -46,6 +46,7 @@ export class SignalEngine {
     latestConfirmed: SignalRecord | null
   ) => void) | null = null;
   private onSignalEventCallback: ((signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => void) | null = null;
+  private signalEventListeners: ((signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => void)[] = [];
 
   constructor() {
     this.loadHistory();
@@ -68,6 +69,19 @@ export class SignalEngine {
 
   public setOnSignalEvent(cb: (signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => void) {
     this.onSignalEventCallback = cb;
+  }
+
+  public addOnSignalEvent(cb: (signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => void) {
+    this.signalEventListeners.push(cb);
+  }
+
+  public dispatchSignalEvent(signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') {
+    if (this.onSignalEventCallback) {
+      try { this.onSignalEventCallback(signal, event); } catch {}
+    }
+    this.signalEventListeners.forEach((listener) => {
+      try { listener(signal, event); } catch {}
+    });
   }
 
   public getHistory(): SignalRecord[] {
@@ -256,9 +270,7 @@ export class SignalEngine {
             }
           }
 
-          if (this.onSignalEventCallback) {
-            this.onSignalEventCallback(confirmed, 'CONFIRMED');
-          }
+          this.dispatchSignalEvent(confirmed, 'CONFIRMED');
 
           this.pendingTrades.push(confirmed);
           this.signalHistory.unshift(confirmed);
@@ -303,9 +315,7 @@ export class SignalEngine {
           }
         }
 
-        if (this.onSignalEventCallback) {
-          this.onSignalEventCallback(confirmed, 'CONFIRMED');
-        }
+        this.dispatchSignalEvent(confirmed, 'CONFIRMED');
 
         this.pendingTrades.push(confirmed);
         this.signalHistory.unshift(confirmed);
@@ -327,9 +337,7 @@ export class SignalEngine {
       this.lastCancelledTime = Date.now();
       this.activePreAlert = null;
       audioAlerts.playCancelAlert();
-      if (this.onSignalEventCallback) {
-        this.onSignalEventCallback(cancelled, 'CANCELLED');
-      }
+      this.dispatchSignalEvent(cancelled, 'CANCELLED');
       this.notify();
       return;
     }
@@ -377,9 +385,7 @@ export class SignalEngine {
       if (settings.preAlertSound) {
         audioAlerts.playPreAlert();
       }
-      if (this.onSignalEventCallback) {
-        this.onSignalEventCallback(preAlert, 'PRE_ALERT');
-      }
+      this.dispatchSignalEvent(preAlert, 'PRE_ALERT');
       this.notify();
       return;
     }
@@ -403,9 +409,7 @@ export class SignalEngine {
         this.lastCancelledTime = Date.now();
         this.activePreAlert = null;
         audioAlerts.playCancelAlert();
-        if (this.onSignalEventCallback) {
-          this.onSignalEventCallback(cancelled, 'CANCELLED');
-        }
+        this.dispatchSignalEvent(cancelled, 'CANCELLED');
         this.notify();
         return;
       }
@@ -507,9 +511,7 @@ export class SignalEngine {
     this.lastCancelledSignal = null;
 
     audioAlerts.playPreAlert();
-    if (this.onSignalEventCallback) {
-      this.onSignalEventCallback(preAlert, 'PRE_ALERT');
-    }
+    this.dispatchSignalEvent(preAlert, 'PRE_ALERT');
     this.notify();
     return preAlert;
   }
@@ -529,9 +531,7 @@ export class SignalEngine {
       this.lastCancelledTime = Date.now();
       this.activePreAlert = null;
       audioAlerts.playCancelAlert();
-      if (this.onSignalEventCallback) {
-        this.onSignalEventCallback(cancelled, 'CANCELLED');
-      }
+      this.dispatchSignalEvent(cancelled, 'CANCELLED');
       this.notify();
     }
   }
@@ -575,9 +575,7 @@ export class SignalEngine {
 
     this.activePreAlert = preAlert;
     audioAlerts.playPreAlert();
-    if (this.onSignalEventCallback) {
-      this.onSignalEventCallback(preAlert, 'PRE_ALERT');
-    }
+    this.dispatchSignalEvent(preAlert, 'PRE_ALERT');
     this.notify();
 
     // 2. Após 5 segundos: Confirmar entrada e iniciar contagem regressiva da expiração
@@ -599,9 +597,7 @@ export class SignalEngine {
       if (direction === 'CALL') audioAlerts.playCallSignal();
       else audioAlerts.playPutSignal();
 
-      if (this.onSignalEventCallback) {
-        this.onSignalEventCallback(confirmed, 'CONFIRMED');
-      }
+      this.dispatchSignalEvent(confirmed, 'CONFIRMED');
 
       this.pendingTrades.push(confirmed);
       this.signalHistory.unshift(confirmed);
