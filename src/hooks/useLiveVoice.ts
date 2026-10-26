@@ -120,6 +120,8 @@ export function useLiveVoice({
   // Supressão de eco acústico e controle estrito de turnos
   const isAiSpeakingRef = useRef<boolean>(false);
   const speechCooldownTimeoutRef = useRef<any>(null);
+  const resumeHeartbeatIntervalRef = useRef<any>(null);
+  const watchdogTimeoutRef = useRef<any>(null);
   const currentAiTurnTextRef = useRef<string>('');
   const activeEngineRef = useRef<VoiceEngine>('gemini_live');
 
@@ -250,12 +252,31 @@ export function useLiveVoice({
   // Interromper fala em tempo real
   const interruptSpeech = useCallback(() => {
     stopAudioPlayback();
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
+    if (resumeHeartbeatIntervalRef.current) {
+      clearInterval(resumeHeartbeatIntervalRef.current);
+      resumeHeartbeatIntervalRef.current = null;
+    }
     if (speechCooldownTimeoutRef.current) {
       clearTimeout(speechCooldownTimeoutRef.current);
       speechCooldownTimeoutRef.current = null;
     }
+    if (typeof window !== 'undefined') {
+      (window as any).__candlex_active_utterance = null;
+      try {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      } catch {}
+    }
+    activeUtteranceRef.current = null;
+    setAiSpeechLevel(0);
     isAiSpeakingRef.current = false;
     turnDispatchedRef.current = false;
+    accumulatedSpeechRef.current = '';
     setStatus('listening');
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
@@ -617,8 +638,12 @@ export function useLiveVoice({
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
+    let clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
     if (!clean) return;
+
+    // Garante respostas estritamente concisas (no máximo 2 frases para fala limpa sem engasgos)
+    const sentences = clean.split(/(?<=[.?!])\s+/);
+    clean = sentences.slice(0, 2).join(' ');
 
     // Registra a fala da IA para o filtro anti-eco acústico
     currentAiTurnTextRef.current = clean;
@@ -637,19 +662,43 @@ export function useLiveVoice({
       } catch {}
     }
 
-    stopAudioPlayback();
+    // Limpa timers anteriores
+    if (speechCooldownTimeoutRef.current) {
+      clearTimeout(speechCooldownTimeoutRef.current);
+      speechCooldownTimeoutRef.current = null;
+    }
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
+    if (resumeHeartbeatIntervalRef.current) {
+      clearInterval(resumeHeartbeatIntervalRef.current);
+      resumeHeartbeatIntervalRef.current = null;
+    }
+    if (speechAnimIntervalRef.current) {
+      clearInterval(speechAnimIntervalRef.current);
+      speechAnimIntervalRef.current = null;
+    }
+
+    // Cancela com segurança qualquer reprodução anterior
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+
     isAiSpeakingRef.current = true;
     setStatus('speaking');
 
     const utterance = new SpeechSynthesisUtterance(clean);
-    activeUtteranceRef.current = utterance; // Previne garbage collection prematuro no Chrome/Edge
+    // CRÍTICO: Previne garbage collection prematuro do V8 no Chrome/Edge que corta a fala no meio
+    activeUtteranceRef.current = utterance;
+    (window as any).__candlex_active_utterance = utterance;
+
     utterance.lang = 'pt-BR';
-    utterance.rate = 1.08; // Fala rápida, fluida e natural
-    // Timbre feminino nítido, claro e agradável
-    utterance.pitch = 1.18;
+    utterance.rate = 1.05; // Fala fluida e natural
+    utterance.pitch = 1.1;  // Timbre feminino nítido e agradável
     utterance.volume = Math.max(0, Math.min(1, volumeRef.current / 100));
 
-    // Seleção estrita de voz feminina em Português (eliminando completamente vozes masculinas como Daniel)
+    // Seleção estrita de voz feminina em Português
     const pickFemaleVoice = (): SpeechSynthesisVoice | null => {
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return null;
@@ -660,13 +709,11 @@ export function useLiveVoice({
         'man', 'david', 'jorge'
       ];
 
-      // 1. Filtrar vozes brasileiras e portuguesas
       const ptVoices = voices.filter((v) => {
         const lang = (v.lang || '').toLowerCase();
         return lang.startsWith('pt') || lang.includes('br');
       });
 
-      // 2. Nomes femininos prioritários no Windows, Android, Chrome, Edge, iOS
       const femaleKeywords = [
         'francisca', 'maria', 'brenda', 'thalita', 'leticia', 'letícia',
         'heloisa', 'heloísa', 'yara', 'camila', 'luciana', 'joana',
@@ -674,7 +721,6 @@ export function useLiveVoice({
         'mulher', 'woman'
       ];
 
-      // 2.1 Busca por voz em PT com nome feminino explícito e sem termos masculinos
       for (const kw of femaleKeywords) {
         const found = ptVoices.find((v) => {
           const lower = v.name.toLowerCase();
@@ -683,7 +729,6 @@ export function useLiveVoice({
         if (found) return found;
       }
 
-      // 2.2 Busca por voz Natural ou Google em português (sem termos masculinos)
       const naturalPt = ptVoices.find((v) => {
         const lower = v.name.toLowerCase();
         return (lower.includes('google') || lower.includes('natural') || lower.includes('online')) &&
@@ -691,14 +736,12 @@ export function useLiveVoice({
       });
       if (naturalPt) return naturalPt;
 
-      // 2.3 Qualquer voz em português sem termos masculinos
       const nonMalePt = ptVoices.find((v) => {
         const lower = v.name.toLowerCase();
         return !maleExclusions.some((m) => lower.includes(m));
       });
       if (nonMalePt) return nonMalePt;
 
-      // 2.4 Fallback: primeira voz em português
       return ptVoices[0] || null;
     };
 
@@ -711,13 +754,23 @@ export function useLiveVoice({
     const finishPlayback = () => {
       if (hasEnded) return;
       hasEnded = true;
-      activeUtteranceRef.current = null;
 
+      if (watchdogTimeoutRef.current) {
+        clearTimeout(watchdogTimeoutRef.current);
+        watchdogTimeoutRef.current = null;
+      }
+      if (resumeHeartbeatIntervalRef.current) {
+        clearInterval(resumeHeartbeatIntervalRef.current);
+        resumeHeartbeatIntervalRef.current = null;
+      }
       if (speechAnimIntervalRef.current) {
         clearInterval(speechAnimIntervalRef.current);
         speechAnimIntervalRef.current = null;
       }
+
       setAiSpeechLevel(0);
+      activeUtteranceRef.current = null;
+      (window as any).__candlex_active_utterance = null;
       accumulatedSpeechRef.current = '';
 
       if (speechCooldownTimeoutRef.current) {
@@ -725,45 +778,67 @@ export function useLiveVoice({
         speechCooldownTimeoutRef.current = null;
       }
 
-      // Cooldown de 650ms após fala para dissipar o som ambiente antes de reabrir o microfone
+      // Cooldown de 500ms após o fim completo da fala para dissipar o som ambiente
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
         accumulatedSpeechRef.current = '';
         setStatus('listening');
-        // REINICIA A ESCUTA DO USUÁRIO APENAS APÓS DISSIPAÇÃO DO SOM
+
+        // Reabre o microfone com segurança apenas após o término total da fala
         if (sessionActiveRef.current) {
           try {
             startSpeechRecognitionRef.current();
           } catch {}
         }
-      }, 650);
+      }, 500);
     };
 
     utterance.onstart = () => {
+      isAiSpeakingRef.current = true;
+      setStatus('speaking');
+
+      // Animação da boca do avatar 3D no ritmo da fala
+      if (speechAnimIntervalRef.current) clearInterval(speechAnimIntervalRef.current);
       let phase = 0;
       speechAnimIntervalRef.current = setInterval(() => {
         phase += 0.35;
         const baseLevel = 45 + Math.sin(phase * 4.2) * 25 + Math.sin(phase * 8.5) * 15;
         setAiSpeechLevel(Math.max(25, Math.min(95, Math.round(baseLevel))));
       }, 70);
+
+      // Heartbeat contra o bug do Chromium (Chrome pausa áudio silenciosamente após ~10-15s)
+      if (resumeHeartbeatIntervalRef.current) clearInterval(resumeHeartbeatIntervalRef.current);
+      resumeHeartbeatIntervalRef.current = setInterval(() => {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          if (window.speechSynthesis.speaking && !hasEnded) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+          }
+        }
+      }, 3500);
     };
 
-    utterance.onend = () => finishPlayback();
-    utterance.onerror = () => finishPlayback();
+    utterance.onend = () => {
+      finishPlayback();
+    };
 
-    const maxSafetyMs = Math.max(2500, Math.ceil((clean.length / 10) * 1000) + 1500);
-    setTimeout(() => {
+    utterance.onerror = (e) => {
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.warn('[CandleX-IA] Erro na síntese de voz:', e.error);
+      }
+      finishPlayback();
+    };
+
+    // Watchdog de 30s apenas caso a API de fala do navegador trave
+    watchdogTimeoutRef.current = setTimeout(() => {
       if (!hasEnded && isAiSpeakingRef.current) {
+        console.warn('[CandleX-IA] Watchdog: liberando estado travado de fala');
         finishPlayback();
       }
-    }, maxSafetyMs);
+    }, 30000);
 
-    // Cancelamento limpo com breve timeout para compatibilidade do Chromium
-    try {
-      window.speechSynthesis.cancel();
-    } catch {}
-
+    // Timeout seguro de 70ms após cancel() para dar tempo do Chrome reiniciar o pipeline de áudio
     setTimeout(() => {
       try {
         if (window.speechSynthesis.paused) {
@@ -771,10 +846,10 @@ export function useLiveVoice({
         }
         window.speechSynthesis.speak(utterance);
       } catch (err) {
-        console.warn('Erro ao reproduzir voz feminina:', err);
+        console.warn('[CandleX-IA] Erro ao reproduzir fala:', err);
         finishPlayback();
       }
-    }, 15);
+    }, 70);
   }, [stopAudioPlayback]);
 
   /**
