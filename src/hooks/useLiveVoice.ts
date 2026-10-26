@@ -27,6 +27,13 @@ const getEffectiveGeminiKey = (): string => {
       envKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
     }
   } catch {}
+  if (!envKey) {
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        envKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+      }
+    } catch {}
+  }
 
   let localKey = '';
   if (typeof window !== 'undefined') {
@@ -278,32 +285,80 @@ export function useLiveVoice({
   }, []);
 
   /**
-   * Resposta local especializada em Opções Binárias e SMC (Português do Brasil)
-   * Cobre saudações, conceitos técnicos, confluências, notícias e gerenciamento.
+   * Resposta local inteligente e especializada em Opções Binárias e SMC (Português do Brasil)
+   * Compreende intenções naturais: audição/presença, opiniões de mercado, entradas,
+   * direção de candles, notícias, conselhos de risco e síntese dinâmica de perguntas.
    */
   const answerQuestionLocally = useCallback((questionText: string): string => {
-    const q = questionText.toLowerCase();
+    const cleanPrompt = (questionText || '').trim();
+    const q = cleanPrompt.toLowerCase();
     const ctx = contextRef.current;
     const isClosedWeekendForex = ctx.asset.category === 'FOREX' && !isForexMarketOpen();
     const { upcomingHighImpact } = getRelevantEconomicEvents(ctx.asset.symbol);
     const realNews = getRealMarketNews(ctx.asset.symbol);
+    const dir = ctx.confluences.direction === 'CALL' ? 'COMPRA' : ctx.confluences.direction === 'PUT' ? 'VENDA' : 'NEUTRO';
+    const score = ctx.confluences.totalScore;
+    const trend = ctx.marketAnalysis.trend;
 
-    // 1. Saudações e Conversa Natural
+    // 1. Reclamação de repetição ou pergunta sobre não responder o que foi perguntado
     if (
-      q.includes('oi') ||
-      q.includes('olá') ||
-      q.includes('ola') ||
+      q.includes('só fala uma coisa') ||
+      q.includes('so fala uma coisa') ||
+      q.includes('não me responde') ||
+      q.includes('nao me responde') ||
+      q.includes('não responde o que') ||
+      q.includes('nao responde o que') ||
+      q.includes('só repete') ||
+      q.includes('so repete') ||
+      q.includes('mesma coisa') ||
+      q.includes('para de repetir') ||
+      q.includes('não perguntei isso') ||
+      q.includes('nao perguntei isso') ||
+      q.includes('não foi isso') ||
+      q.includes('nao foi isso')
+    ) {
+      return `Peço desculpas pela repetição anterior! O sistema de voz foi totalmente atualizado. Agora estou conectada e pronta para responder diretamente qualquer dúvida sua sobre o gráfico de ${ctx.asset.symbol}, tendência, suportes ou conselhos operacionais. Pode me perguntar!`;
+    }
+
+    // 2. Presença, microfone e audição ("tá me ouvindo?")
+    if (
+      q.includes('tá me ouvindo') ||
+      q.includes('ta me ouvindo') ||
+      q.includes('está me ouvindo') ||
+      q.includes('esta me ouvindo') ||
+      q.includes('consegue me ouvir') ||
+      q.includes('tá aí') ||
+      q.includes('ta ai') ||
+      q.includes('fala comigo') ||
+      q.includes('alô') ||
+      q.includes('alo') ||
+      q.includes('me ouve') ||
+      q.includes('ouviu')
+    ) {
+      return `Estou te ouvindo perfeitamente e em alto e bom som! Pode mandar sua pergunta sobre o mercado.`;
+    }
+
+    // 3. Saudações, bem-estar e conversa casual
+    if (
+      q.includes('como você está') ||
+      q.includes('como voce esta') ||
+      q.includes('tudo bem') ||
+      q.includes('como vai') ||
+      q.includes('beleza') ||
+      q.includes('tranquilo') ||
       q.includes('bom dia') ||
       q.includes('boa tarde') ||
       q.includes('boa noite') ||
-      q.includes('tudo bem') ||
-      q.includes('como vai') ||
+      q.includes('oi') ||
+      q.includes('olá') ||
+      q.includes('ola') ||
       q.includes('e aí') ||
       q.includes('e ai')
     ) {
-      return `Olá! Estou pronta com o gráfico de ${ctx.asset.symbol}. O que você quer analisar agora?`;
+      return `Tudo ótimo por aqui! Estou com o gráfico de ${ctx.asset.symbol} na tela e 100% focada nas confluências. O que você quer analisar agora?`;
     }
 
+    // 4. Agradecimentos e confirmações
     if (
       q.includes('obrigado') ||
       q.includes('obrigada') ||
@@ -312,11 +367,14 @@ export function useLiveVoice({
       q.includes('top') ||
       q.includes('perfeito') ||
       q.includes('excelente') ||
-      q.includes('entendi')
+      q.includes('entendi') ||
+      q.includes('tchau') ||
+      q.includes('até mais')
     ) {
       return 'Tamo junto! Mantenha sempre a disciplina e o gerenciamento de risco. Estou atenta ao gráfico para o que você precisar.';
     }
 
+    // 5. Identidade da IA
     if (
       q.includes('quem é você') ||
       q.includes('quem e voce') ||
@@ -327,7 +385,140 @@ export function useLiveVoice({
       return 'Sou a ClandeX-IA, sua mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove. Analiso Smart Money Concepts, confluências e notícias para orientar seus trades com segurança.';
     }
 
-    // 2. Conceitos de SMC e Educação Técnica
+    // 6. Opinião geral e visão do mercado ("o que você acha?", "como tá o mercado?")
+    if (
+      q.includes('o que você acha') ||
+      q.includes('o que voce acha') ||
+      q.includes('como tá o mercado') ||
+      q.includes('como ta o mercado') ||
+      q.includes('como está o mercado') ||
+      q.includes('como esta o mercado') ||
+      q.includes('como tá o gráfico') ||
+      q.includes('como ta o grafico') ||
+      q.includes('qual sua visão') ||
+      q.includes('qual sua visao') ||
+      q.includes('qual sua opinião') ||
+      q.includes('qual sua opiniao') ||
+      q.includes('como estão as coisas')
+    ) {
+      return `O par ${ctx.asset.symbol} está em tendência de ${trend} no timeframe ${ctx.timeframe}. A força compradora está em ${ctx.marketAnalysis.buyerStrength} e vendedora em ${ctx.marketAnalysis.sellerStrength}, com confluência geral em ${score}%.`;
+    }
+
+    // 7. Direção de Candles e Previsão ("vai subir ou descer?")
+    if (
+      q.includes('vai subir') ||
+      q.includes('vai descer') ||
+      q.includes('vai cair') ||
+      q.includes('sobe ou desce') ||
+      q.includes('alta ou baixa')
+    ) {
+      const pred = trend === 'ALTA' ? 'continuidade de alta' : trend === 'BAIXA' ? 'continuidade de baixa' : 'movimento lateral';
+      return `Pelo fluxo institucional dos candles, a maior probabilidade técnica aponta para ${pred}, com ${score}% de confluência para ${dir}.`;
+    }
+
+    // 8. Dicas e Estratégia ("o que fazer?", "me dá uma dica")
+    if (
+      q.includes('me dá uma dica') ||
+      q.includes('me da uma dica') ||
+      q.includes('o que fazer') ||
+      q.includes('ajuda') ||
+      q.includes('qual o conselho') ||
+      q.includes('dica')
+    ) {
+      return `Minha principal dica agora: opere a favor da tendência de ${trend} e nunca arrisque mais de 2 por cento da sua banca em uma única entrada.`;
+    }
+
+    // 9. Timeframe e Velas
+    if (
+      q.includes('tempo gráfico') ||
+      q.includes('tempo grafico') ||
+      q.includes('timeframe') ||
+      q.includes('qual vela') ||
+      q.includes('m1') ||
+      q.includes('m5')
+    ) {
+      return `Estamos analisando o timeframe ${ctx.timeframe} do par ${ctx.asset.symbol}. Para opções binárias, aguarde a expiração coincidir exatamente com o fim da vela.`;
+    }
+
+    // 10. Avisos de Mercado Fechado (Forex no fim de semana)
+    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put') || q.includes('operar'))) {
+      return `Aviso do TradingView: O mercado Forex à vista está fechado neste fim de semana para ${ctx.asset.symbol}. Para operar com sinais ao vivo agora, selecione uma Criptomoeda como Bitcoin ou Ethereum.`;
+    }
+
+    // 11. Sinais e Recomendações de Entrada
+    if (
+      q.includes('entrar') ||
+      q.includes('entrada') ||
+      q.includes('sinal') ||
+      q.includes('compro') ||
+      q.includes('vendo') ||
+      q.includes('comprar') ||
+      q.includes('vender') ||
+      q.includes('call') ||
+      q.includes('put') ||
+      q.includes('vale a pena') ||
+      q.includes('devo entrar') ||
+      q.includes('posso entrar') ||
+      q.includes('entro') ||
+      q.includes('entro agora')
+    ) {
+      if (score >= 75) {
+        return `Confluência forte de ${score}% para ${dir} em ${ctx.asset.symbol}. Principais gatilhos: ${ctx.confluences.reasons.slice(0, 2).join(' e ')}. Aguarde a confirmação da vela e respeite seu gerenciamento.`;
+      } else if (score >= 60) {
+        return `Oportunidade moderada com probabilidade de ${score}% para ${dir}. Aguarde a validação do candle antes de executar.`;
+      }
+      return `Sem confluência suficiente no momento, score de apenas ${score}%. Mercado em ruído ou lateral. Preserve sua banca.`;
+    }
+
+    // 12. Notícias e Calendário Econômico
+    if (
+      q.includes('notícia') ||
+      q.includes('noticia') ||
+      q.includes('calendário') ||
+      q.includes('calendario') ||
+      q.includes('impacto') ||
+      q.includes('evento') ||
+      q.includes('payroll')
+    ) {
+      if (realNews.length > 0) {
+        return `Notícia do TradingView: ${realNews[0].title}. O sentimento macroeconômico está ativo para ${ctx.asset.symbol}.`;
+      }
+      if (upcomingHighImpact) {
+        return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo pausar operações nos minutos próximos.`;
+      }
+      return `Sem notícias críticas de alto impacto agendadas para os próximos minutos em ${ctx.asset.symbol}. O fluxo técnico está limpo.`;
+    }
+
+    // 13. Tendência e Força
+    if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo') || q.includes('direção') || q.includes('direcao')) {
+      return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
+    }
+
+    // 14. Suportes e Resistências
+    if (
+      q.includes('suporte') ||
+      q.includes('resistência') ||
+      q.includes('resistencia') ||
+      q.includes('taxa') ||
+      q.includes('preço') ||
+      q.includes('preco') ||
+      q.includes('nível') ||
+      q.includes('nivel')
+    ) {
+      const keyLevels = ctx.marketAnalysis.keyLevels || [];
+      const sup = keyLevels
+        .filter((k) => k.type === 'SUPPORT')
+        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+      const res = keyLevels
+        .filter((k) => k.type === 'RESISTANCE')
+        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+      let msg = `O preço atual de ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
+      if (sup.length > 0) msg += `Suporte em ${sup[0]}. `;
+      if (res.length > 0) msg += `Resistência em ${res[0]}.`;
+      return msg;
+    }
+
+    // 15. Conceitos de SMC e Educação Técnica
     if (q.includes('smc') || q.includes('smart money')) {
       return 'Smart Money Concepts rastreia as movimentações dos grandes bancos institucionais, operando nas regiões de liquidez em vez de ruídos do mercado.';
     }
@@ -356,86 +547,15 @@ export function useLiveVoice({
       if (isClosedWeekendForex) {
         return 'No fim de semana o Forex está fechado no mercado à vista. Recomendo operar criptomoedas como Bitcoin e Ethereum, que funcionam 24 horas por dia.';
       }
-      return `Atualmente recomendo pares com fluxo direcional limpo. O par ${ctx.asset.symbol} está com pontuação de ${ctx.confluences.totalScore}% em tendência de ${ctx.marketAnalysis.trend}.`;
+      return `Atualmente recomendo pares com fluxo direcional limpo. O par ${ctx.asset.symbol} está com pontuação de ${score}% em tendência de ${trend}.`;
     }
 
-    // 3. Avisos de Mercado Fechado (Forex no fim de semana)
-    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put'))) {
-      return `Aviso do TradingView: O mercado Forex está fechado neste fim de semana para ${ctx.asset.symbol}. Para sinais e confluências ativas agora, selecione Criptomoedas como Bitcoin ou Ethereum.`;
+    // 16. Fallback Inteligente e Dinâmico — Personalizado para o que o usuário falou (NUNCA repetitivo)
+    const cleanSubject = cleanPrompt.replace(/[?!.]/g, '').trim();
+    if (cleanSubject.length > 2) {
+      return `Sobre "${cleanSubject}": no ${ctx.asset.symbol}, a tendência é de ${trend} com score de ${score}%. Me pergunte se vale a pena entrar agora, qual o suporte mais próximo ou a previsão do próximo candle!`;
     }
-
-    // 4. Notícias e Calendário Econômico
-    if (
-      q.includes('notícia') ||
-      q.includes('noticia') ||
-      q.includes('calendário') ||
-      q.includes('calendario') ||
-      q.includes('impacto') ||
-      q.includes('evento') ||
-      q.includes('payroll')
-    ) {
-      if (realNews.length > 0) {
-        return `Notícia do TradingView: ${realNews[0].title}. O sentimento macroeconômico está ativo para ${ctx.asset.symbol}.`;
-      }
-      if (upcomingHighImpact) {
-        return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo pausar operações nos minutos próximos.`;
-      }
-      return `Sem notícias críticas de alto impacto agendadas para os próximos minutos em ${ctx.asset.symbol}. O fluxo técnico está limpo.`;
-    }
-
-    // 5. Sinais e Recomendações de Entrada
-    if (
-      q.includes('entrar') ||
-      q.includes('entrada') ||
-      q.includes('sinal') ||
-      q.includes('compro') ||
-      q.includes('vendo') ||
-      q.includes('comprar') ||
-      q.includes('vender') ||
-      q.includes('call') ||
-      q.includes('put') ||
-      q.includes('vale a pena')
-    ) {
-      if (ctx.confluences.totalScore >= 75) {
-        const dir = ctx.confluences.direction === 'CALL' ? 'COMPRA' : 'VENDA';
-        return `Confluência forte de ${ctx.confluences.totalScore}% para ${dir} em ${ctx.asset.symbol}. Principais gatilhos: ${ctx.confluences.reasons.slice(0, 2).join(' e ')}. Aguarde a confirmação da vela e respeite seu gerenciamento.`;
-      } else if (ctx.confluences.totalScore >= 60) {
-        return `Oportunidade em observação com probabilidade de ${ctx.confluences.totalScore}%. Aguarde a validação do candle antes de executar.`;
-      }
-      return `Sem confluência suficiente no momento, score de apenas ${ctx.confluences.totalScore}%. Mercado em ruído ou lateral. Preserve sua banca.`;
-    }
-
-    // 6. Tendência e Força
-    if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo') || q.includes('direção') || q.includes('direcao')) {
-      return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${ctx.marketAnalysis.trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
-    }
-
-    // 7. Suportes e Resistências
-    if (
-      q.includes('suporte') ||
-      q.includes('resistência') ||
-      q.includes('resistencia') ||
-      q.includes('taxa') ||
-      q.includes('preço') ||
-      q.includes('preco') ||
-      q.includes('nível') ||
-      q.includes('nivel')
-    ) {
-      const keyLevels = ctx.marketAnalysis.keyLevels || [];
-      const sup = keyLevels
-        .filter((k) => k.type === 'SUPPORT')
-        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-      const res = keyLevels
-        .filter((k) => k.type === 'RESISTANCE')
-        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-      let msg = `O preço atual de ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
-      if (sup.length > 0) msg += `Suporte em ${sup[0]}. `;
-      if (res.length > 0) msg += `Resistência em ${res[0]}.`;
-      return msg;
-    }
-
-    // Resposta padrão contextualizada e dinâmica
-    return `Ativo ${ctx.asset.symbol} cotado a ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. Tendência de ${ctx.marketAnalysis.trend} com confluência de ${ctx.confluences.totalScore}% para ${ctx.confluences.direction}. Pode me perguntar sobre sinais, suporte, tendência ou conselhos operacionais!`;
+    return `Estou atenta ao par ${ctx.asset.symbol}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte ou conselhos operacionais!`;
   }, []);
 
   /**
@@ -587,80 +707,84 @@ export function useLiveVoice({
   }, [stopAudioPlayback]);
 
   /**
-   * Gera resposta inteligente e ultra-rápida (com roteamento instantâneo)
+   * Gera resposta inteligente e ultra-rápida.
+   * Utiliza o modelo ativo do Gemini (gemini-3.5-flash-lite / gemini-3.5-flash) com contexto em tempo real,
+   * e fallback instantâneo para o motor local com síntese dinâmica.
    */
   const generateAiReply = useCallback(
     async (promptText: string): Promise<string> => {
-      const cleanPrompt = promptText.trim();
+      const cleanPrompt = (promptText || '').trim();
       if (!cleanPrompt) return '';
 
       const q = cleanPrompt.toLowerCase();
-      // Perguntas de mercado frequentes: resposta local com 0ms de latência
-      const isDirectQuery =
-        q.includes('entrar') ||
-        q.includes('sinal') ||
-        q.includes('compro') ||
-        q.includes('vendo') ||
-        q.includes('call') ||
-        q.includes('put') ||
-        q.includes('vale a pena') ||
-        q.includes('tendência') ||
-        q.includes('tendencia') ||
-        q.includes('suporte') ||
-        q.includes('resistência') ||
-        q.includes('resistencia') ||
-        q.includes('taxa') ||
-        q.includes('preço') ||
-        q.includes('preco') ||
-        q.includes('notícia') ||
-        q.includes('noticia') ||
-        q.includes('confluência') ||
-        q.includes('confluencia') ||
-        q.includes('oi') ||
-        q.includes('olá') ||
-        q.includes('ola') ||
-        q.includes('bom dia') ||
-        q.includes('boa tarde') ||
-        q.includes('boa noite') ||
-        q.includes('tudo bem') ||
-        q.includes('como vai') ||
-        q.includes('smc') ||
-        q.includes('gerenciamento') ||
-        q.includes('obrigado') ||
-        q.includes('valeu');
 
-      if (isDirectQuery) {
+      // Checagens de conectividade / microfone imediatas (0ms de latência)
+      if (
+        q === 'tá me ouvindo' ||
+        q === 'ta me ouvindo' ||
+        q === 'está me ouvindo' ||
+        q === 'esta me ouvindo' ||
+        q === 'alô' ||
+        q === 'alo' ||
+        q === 'fala comigo'
+      ) {
         return answerQuestionLocally(cleanPrompt);
       }
 
-      // Para outras perguntas gerais: tenta Gemini com timeout estrito de 1.2s
+      // Tenta Gemini com modelos ativos (gemini-3.5-flash-lite e gemini-3.5-flash)
       const geminiKey = getEffectiveGeminiKey();
       if (geminiKey && geminiKey.length > 15) {
         try {
           const { GoogleGenAI } = await import('@google/genai');
           const ai = new GoogleGenAI({ apiKey: geminiKey });
           const currentCtx = contextRef.current;
-          const systemInstruction = `Você é a ClandeX-IA. Responda em Português do Brasil com máxima concisão e rapidez, estritamente 1 frase curta. Sem enrolação. Ativo: ${currentCtx.asset.symbol}, confluência ${currentCtx.confluences?.totalScore}%.`;
+          const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
+          const dir = currentCtx.confluences?.direction === 'CALL' ? 'COMPRA' : currentCtx.confluences?.direction === 'PUT' ? 'VENDA' : 'NEUTRO';
 
-          const fetchPromise = ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: cleanPrompt,
-            config: {
-              systemInstruction,
-              temperature: 0.3,
-            },
-          });
+          const systemInstruction = `Você é a ClandeX-IA, mentora institucional feminina de trading em Opções Binárias e Forex, conversando por voz em tempo real com o trader.
+Você fala diretamente ao microfone com o trader.
+DIRETRIZES FUNDAMENTAIS:
+1. Ouça com atenção e responda DIRETAMENTE ao que o trader acabou de perguntar.
+2. Responda em Português do Brasil com naturalidade, segurança e máxima concisão: estritamente 1 a 2 frases faladas.
+3. NUNCA use markdown, asteriscos, numerações ou tópicos no texto de fala.
+4. Responda a qualquer pergunta do usuário com base nos dados do mercado abaixo ou em conselhos operacionais:
+- Ativo na tela: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
+- Preço Atual: ${currentCtx.asset.currentPrice.toFixed(currentCtx.asset.pipDecimals)}
+- Timeframe: ${currentCtx.timeframe}
+- Tendência Principal: ${currentCtx.marketAnalysis?.trend || 'LATERAL'}
+- Confluência do Robô: ${currentCtx.confluences?.totalScore ?? 0}% para ${dir}
+- Força Compradora: ${currentCtx.marketAnalysis?.buyerStrength || 'MODERADA'} | Vendedora: ${currentCtx.marketAnalysis?.sellerStrength || 'MODERADA'}
+- Próxima Notícia: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}.`;
 
-          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
-          const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+          const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+          for (const modelName of candidateModels) {
+            try {
+              const fetchPromise = ai.models.generateContent({
+                model: modelName,
+                contents: cleanPrompt,
+                config: {
+                  systemInstruction,
+                  temperature: 0.4,
+                },
+              });
 
-          if (response && response.text) {
-            const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
-            if (cleanText) return cleanText;
+              const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
+              const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+
+              if (response && response.text) {
+                const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
+                if (cleanText) return cleanText;
+              }
+            } catch (modelErr) {
+              console.warn(`[ClandeX-IA Voz] Falha no modelo ${modelName}:`, modelErr);
+            }
           }
-        } catch {}
+        } catch (genAiErr) {
+          console.warn('[ClandeX-IA Voz] Erro ao instanciar Gemini:', genAiErr);
+        }
       }
 
+      // Fallback local robusto caso Gemini não responda em 2.8s ou sem chave
       return answerQuestionLocally(cleanPrompt);
     },
     [answerQuestionLocally]

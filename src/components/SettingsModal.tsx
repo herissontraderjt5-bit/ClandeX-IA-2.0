@@ -83,7 +83,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: key });
       const resp = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-3.5-flash-lite',
         contents: 'Olá teste ClandeX',
       });
       if (resp && resp.text) {
