@@ -1822,18 +1822,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
-                {/* 3D Cyber Sound Frequency Visualizer Container */}
-                <div className="relative w-full h-56 rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_30px_rgba(6,182,212,0.15)] overflow-hidden flex items-center justify-center">
+                {/* 3D Cyber Sound Frequency Visualizer Container (Immersive & Large) */}
+                <div className="relative w-full h-[320px] rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_35px_rgba(6,182,212,0.18)] overflow-hidden flex items-center justify-center">
                   <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-20 pointer-events-none" />
 
                   {/* Corner Status Badge */}
-                  <div className="absolute top-2 left-2.5 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 backdrop-blur-sm">
+                  <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 backdrop-blur-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <span>AVATAR SONORO 3D</span>
+                    <span>AVATAR 3D AO VIVO</span>
                   </div>
 
                   {/* Top Right Controls & Status */}
-                  <div className="absolute top-2 right-2.5 z-10 flex items-center gap-1.5">
+                  <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
                     {liveVoice?.status === 'speaking' && (
                       <button
                         onClick={liveVoice?.interruptSpeech}
@@ -1845,7 +1845,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </button>
                     )}
 
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-neutral-900/80 border border-neutral-700/80 text-[9px] font-mono text-neutral-300 backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-neutral-900/80 border border-neutral-700/80 text-[9px] font-mono text-neutral-300 backdrop-blur-sm">
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
                           liveVoice?.status === 'speaking'
@@ -1879,14 +1879,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 </div>
 
                 {/* Voice Controls: Ligar / Desligar / Mutar */}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {(!liveVoice || liveVoice.status === 'idle') && (
                     <button
                       onClick={liveVoice?.startLiveConversation}
-                      className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
+                      className="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
                     >
                       <Radio className="w-4 h-4 text-neutral-950 animate-pulse" />
-                      <span>LIGAR VOZ IA (CONVERSAR NORMALMENTE)</span>
+                      <span>LIGAR VOZ 3D (FALE AO MICROFONE)</span>
                     </button>
                   )}
 
@@ -1894,14 +1894,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="flex items-center gap-2">
                       <button
                         disabled
-                        className="flex-1 py-2.5 px-4 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-wait"
+                        className="flex-1 py-3 px-4 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-wait"
                       >
                         <span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
                         <span>CONECTANDO À IA...</span>
                       </button>
                       <button
                         onClick={liveVoice.disconnectSession}
-                        className="py-2.5 px-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold rounded-xl text-xs cursor-pointer"
+                        className="py-3 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold rounded-xl text-xs cursor-pointer"
                       >
                         Cancelar
                       </button>
@@ -1913,7 +1913,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       {liveVoice.hasMicPermission ? (
                         <button
                           onClick={liveVoice.toggleMute}
-                          className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          className={`flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                             liveVoice.isMuted
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                               : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
@@ -1924,13 +1924,13 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           ) : (
                             <Mic className="w-4 h-4 text-emerald-400" />
                           )}
-                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo'}</span>
+                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo (Falando)'}</span>
                         </button>
                       ) : (
                         <button
                           onClick={liveVoice.requestMicrophoneAccess}
                           disabled={liveVoice.isActivatingMic}
-                          className="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                          className="flex-1 py-3 px-3 rounded-xl font-bold text-xs bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 flex items-center justify-center gap-2 transition-all cursor-pointer"
                         >
                           <Mic className="w-4 h-4 text-cyan-400 animate-pulse" />
                           <span>{liveVoice.isActivatingMic ? 'Ativando...' : 'Ativar Microfone'}</span>
@@ -1939,7 +1939,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                       <button
                         onClick={liveVoice.disconnectSession}
-                        className="py-2.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer active:scale-98"
+                        className="py-3 px-5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer active:scale-98"
                       >
                         <PhoneOff className="w-4 h-4" />
                         <span>DESLIGAR</span>
@@ -1948,10 +1948,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   )}
                 </div>
 
-                {/* Real-time VU Volume Meter & Live Transcript */}
+                {/* Real-time Dynamic Audio Feedback Strip (No Chat, Pure Audio Status) */}
                 {liveVoice && liveVoice.status === 'listening' && (
-                  <div className="space-y-1.5 p-2 bg-[#0c1220] border border-emerald-500/30 rounded-xl">
-                    <div className="flex items-center gap-2 text-[10px] font-mono">
+                  <div className="p-3 bg-[#0c1220] border border-emerald-500/30 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-[11px] font-mono">
                       <Mic className={`w-3.5 h-3.5 ${liveVoice.micLevel > 5 ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
                       <span className="text-emerald-300 font-bold">Ouvindo você:</span>
                       <div className="flex-1 h-2 bg-neutral-800 rounded-full overflow-hidden">
@@ -1960,113 +1960,50 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           style={{ width: `${Math.min(100, Math.max(4, liveVoice.micLevel))}%` }}
                         />
                       </div>
-                      <span className="text-neutral-400 text-[9px] w-7 text-right">{liveVoice.micLevel}%</span>
+                      <span className="text-neutral-400 text-[10px] font-mono w-8 text-right">{liveVoice.micLevel}%</span>
                     </div>
 
                     {liveVoice.userTranscript ? (
-                      <div className="text-[11px] font-mono text-cyan-200 bg-cyan-950/60 border border-cyan-500/30 rounded-lg px-2.5 py-1 animate-pulse">
+                      <div className="text-[11px] font-mono text-cyan-200 bg-cyan-950/60 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 animate-pulse">
                         "{liveVoice.userTranscript}"
                       </div>
                     ) : (
                       <div className="text-[10px] font-mono text-neutral-400 italic">
-                        Fale sua dúvida ou pergunta agora...
+                        Fale sua dúvida ao microfone... A IA responderá por voz.
                       </div>
                     )}
                   </div>
                 )}
 
                 {liveVoice && liveVoice.status === 'speaking' && (
-                  <div className="flex items-center gap-2 p-2 bg-cyan-950/40 border border-cyan-500/40 rounded-xl text-[10px] font-mono text-cyan-200 animate-pulse">
-                    <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span className="font-bold">ClandeX-IA falando com você...</span>
+                  <div className="p-3 bg-cyan-950/40 border border-cyan-500/40 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-cyan-200 animate-pulse">
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <span className="font-bold">ClandeX-IA falando com você...</span>
+                    </div>
+                    {/* Equalizer Bars */}
+                    <div className="flex items-center gap-0.5 h-3">
+                      {[6, 12, 18, 10, 14, 8, 16].map((h, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-cyan-400 rounded-full animate-pulse"
+                          style={{
+                            height: `${Math.max(4, Math.min(18, (h * (liveVoice.aiSpeechLevel || 40)) / 40))}px`,
+                            animationDelay: `${i * 90}ms`,
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {/* Spoken Dialogue History Container */}
-                <div className="h-[140px] overflow-y-auto space-y-2 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar text-[11px]">
-                  {liveVoice?.voiceHistory && liveVoice.voiceHistory.length > 0 ? (
-                    liveVoice.voiceHistory.map((turn: LiveTurnMessage) => (
-                      <div
-                        key={turn.id}
-                        className={`flex flex-col ${turn.role === 'user' ? 'items-end' : 'items-start'}`}
-                      >
-                        <div className="flex items-center gap-1 mb-0.5 text-[9px] text-neutral-500 font-mono">
-                          {turn.role === 'user' ? (
-                            <>
-                              <span>Você (Voz)</span>
-                              <Mic className="w-2.5 h-2.5 text-cyan-400" />
-                            </>
-                          ) : (
-                            <>
-                              <Bot className="w-2.5 h-2.5 text-emerald-400" />
-                              <span className="text-emerald-400 font-semibold">ClandeX-IA (Falou)</span>
-                            </>
-                          )}
-                          <span>{new Date(turn.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                        </div>
-                        <div
-                          className={`max-w-[90%] p-2 rounded-xl text-[11px] leading-relaxed ${
-                            turn.role === 'user'
-                              ? 'bg-cyan-950/60 border border-cyan-500/30 text-cyan-100 rounded-tr-xs'
-                              : 'bg-[#101522] border border-[#1e2a44] text-neutral-200 rounded-tl-xs'
-                          }`}
-                        >
-                          {turn.text}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center text-neutral-500 p-3">
-                      <Mic className="w-6 h-6 text-neutral-600 mb-1" />
-                      <span>Ligue a voz e fale ao microfone. A IA ouvirá e responderá falando normalmente com você.</span>
-                    </div>
-                  )}
-
-                  {/* Live spoken preview while speaking/listening */}
-                  {liveVoice?.userTranscript && liveVoice.status === 'listening' && (
-                    <div className="p-2 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 text-[10px] font-mono flex items-center gap-1.5 animate-pulse">
-                      <Mic className="w-3 h-3 text-cyan-400 shrink-0" />
-                      <span>Você falando: "{liveVoice.userTranscript}"</span>
-                    </div>
-                  )}
-                  {liveVoice?.aiResponseText && liveVoice.status === 'speaking' && (
-                    <div className="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-[10px] font-mono flex items-center gap-1.5 animate-pulse">
-                      <Volume2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                      <span>ClandeX falando: "{liveVoice.aiResponseText}"</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Perguntas Rápidas Faladas para a Voz 3D */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-mono text-neutral-400 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-cyan-400" />
-                    <span>Perguntas para a IA Responder Falando:</span>
+                {(!liveVoice || liveVoice.status === 'idle') && (
+                  <div className="p-2.5 bg-neutral-900/60 border border-neutral-800/80 rounded-xl text-center">
+                    <p className="text-[11px] text-neutral-400 font-mono">
+                      Conversa falada e natural em tempo real. Ligue a voz e fale livremente com a IA.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-mono">
-                    {[
-                      { icon: '⚡', label: 'Entrar Agora?', query: `ClandeX, vale a pena entrar em uma operação agora no ${asset.symbol}?` },
-                      { icon: '📈', label: 'Tendência Atual', query: `ClandeX, qual a tendência e força do ${asset.symbol}?` },
-                      { icon: '🎯', label: 'Suporte e Resistência', query: `ClandeX, quais são as taxas de suporte e resistência do ${asset.symbol}?` },
-                      { icon: '📢', label: 'Próxima Notícia', query: `ClandeX, tem alguma notícia de alto impacto agendada?` },
-                      { icon: '🧠', label: 'O que é SMC?', query: `ClandeX, o que significa SMC e quebra de estrutura no trading?` },
-                    ].map((chip) => (
-                      <button
-                        key={chip.label}
-                        type="button"
-                        onClick={() => {
-                          if (liveVoice?.sendTextMessage) {
-                            liveVoice.sendTextMessage(chip.query);
-                          }
-                        }}
-                        className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-[#111728] hover:bg-cyan-950/80 border border-[#1d2740] hover:border-cyan-500/50 text-neutral-300 hover:text-cyan-300 transition-all cursor-pointer flex items-center gap-1 shadow-sm shrink-0 active:scale-95"
-                      >
-                        <span>{chip.icon}</span>
-                        <span>{chip.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
