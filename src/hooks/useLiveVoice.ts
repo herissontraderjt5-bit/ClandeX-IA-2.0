@@ -97,6 +97,9 @@ export function useLiveVoice({
   const accumulatedSpeechRef = useRef<string>('');
   const hasSpokenInTurnRef = useRef<boolean>(false);
   const turnDispatchedRef = useRef<boolean>(false);
+  const sessionActiveRef = useRef<boolean>(false);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const startSpeechRecognitionRef = useRef<() => void>(() => {});
 
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
@@ -456,6 +459,7 @@ export function useLiveVoice({
     const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
 
     const utterance = new SpeechSynthesisUtterance(clean);
+    activeUtteranceRef.current = utterance; // Previne garbage collection prematuro no Chrome/Edge
     utterance.lang = 'pt-BR';
     utterance.rate = 1.0;
     // Timbre feminino nítido, claro e agradável
@@ -523,6 +527,7 @@ export function useLiveVoice({
     const finishPlayback = () => {
       if (hasEnded) return;
       hasEnded = true;
+      activeUtteranceRef.current = null;
 
       if (speechAnimIntervalRef.current) {
         clearInterval(speechAnimIntervalRef.current);
@@ -530,17 +535,18 @@ export function useLiveVoice({
       }
       setAiSpeechLevel(0);
 
-      // Cooldown de 450ms após fala para dissipar o som antes de reabrir o microfone
+      // Cooldown de 400ms após fala para dissipar o som antes de reabrir o microfone
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
         setStatus('listening');
-        try {
-          if (recognitionRef.current && statusRef.current === 'listening') {
-            recognitionRef.current.start();
-          }
-        } catch {}
-      }, 450);
+        // REINICIA A ESCUTA DO USUÁRIO IMEDIATAMENTE
+        if (sessionActiveRef.current) {
+          try {
+            startSpeechRecognitionRef.current();
+          } catch {}
+        }
+      }, 400);
     };
 
     utterance.onstart = () => {
@@ -739,11 +745,18 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
 
   // Iniciar reconhecimento de voz contínuo do navegador (PT-BR)
   const startSpeechRecognition = useCallback(() => {
-    stopSpeechRecognition();
     if (typeof window === 'undefined') return;
     const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
       console.warn('[ClandeX-IA] Web SpeechRecognition não disponível neste navegador.');
+      return;
+    }
+
+    // Se a instância já existir, apenas garante que está gravando
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch {}
       return;
     }
 
@@ -779,6 +792,7 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
 
         const display = (accumulatedSpeechRef.current + ' ' + interim).trim();
         if (display) {
+          console.log('[ClandeX-IA] Escutou do usuário:', display);
           setUserTranscript(display);
           turnDispatchedRef.current = false;
           hasSpokenInTurnRef.current = true;
@@ -789,14 +803,14 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda 750ms após término da fala para enviar a pergunta final
+        // Aguarda 650ms de pausa após a fala para enviar a pergunta final
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
           if (fullQuestion && fullQuestion.length > 1) {
             dispatchTurn(fullQuestion);
           }
-        }, 750);
+        }, 650);
       };
 
       recognition.onerror = (e: any) => {
@@ -806,20 +820,29 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       };
 
       recognition.onend = () => {
-        // Reinício automático para conversação contínua sempre que em listening
-        if (statusRef.current === 'listening' && !isAiSpeakingRef.current) {
-          try {
-            recognition.start();
-          } catch {}
+        // Reinício automático para conversação contínua sempre que a sessão estiver ativa e em listening
+        if (sessionActiveRef.current && !isAiSpeakingRef.current) {
+          setTimeout(() => {
+            if (sessionActiveRef.current && !isAiSpeakingRef.current) {
+              try {
+                recognition.start();
+              } catch {}
+            }
+          }, 150);
         }
       };
 
-      recognition.start();
+      try {
+        recognition.start();
+      } catch {}
       recognitionRef.current = recognition;
     } catch (err) {
       console.warn('[ClandeX-IA] Falha ao iniciar reconhecimento de voz:', err);
     }
-  }, [stopSpeechRecognition, dispatchTurn, interruptSpeech]);
+  }, [dispatchTurn]);
+
+  // Mantém a ref sincronizada para finishPlayback
+  startSpeechRecognitionRef.current = startSpeechRecognition;
 
   // Request Microphone Permissions & Audio Processing com Resampler 16kHz
   const requestMicrophoneAccess = useCallback(async () => {
@@ -1052,8 +1075,12 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       }
 
       // 4. Modo Vercel / Direto no Navegador (Autônomo com IA neural e síntese de voz)
+      sessionActiveRef.current = true;
       setActiveEngine(geminiKey && geminiKey.length > 15 ? 'gemini_live' : 'browser_speech');
       activeEngineRef.current = geminiKey && geminiKey.length > 15 ? 'gemini_live' : 'browser_speech';
+
+      // Inicializa o reconhecimento de voz do microfone no gesto de clique do usuário
+      startSpeechRecognition();
 
       const greeting = `ClandeX-IA conectada por voz. Estou monitorando ${currentCtx.asset.symbol} em tempo real. Pode falar comigo!`;
       const greetingMsg: LiveTurnMessage = {
@@ -1067,6 +1094,8 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       speakBrowserText(greeting);
     } catch (err: any) {
       console.warn('[ClandeX-IA Voz] Inicializando com fallback direto:', err);
+      sessionActiveRef.current = true;
+      startSpeechRecognition();
       const greeting = `ClandeX-IA conectada por voz. Monitorando ${contextRef.current.asset.symbol}. Pode falar comigo!`;
       const greetingMsg: LiveTurnMessage = {
         id: `model-voice-${Date.now()}`,
@@ -1082,6 +1111,8 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
 
   // Disconnect session and release media streams
   const disconnectSession = useCallback(() => {
+    sessionActiveRef.current = false;
+    activeUtteranceRef.current = null;
     stopAudioPlayback();
     stopSpeechRecognition();
     hasSpokenInTurnRef.current = false;

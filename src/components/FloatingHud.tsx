@@ -1948,6 +1948,40 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   )}
                 </div>
 
+                {/* Real-time VU Volume Meter & Live Transcript */}
+                {liveVoice && liveVoice.status === 'listening' && (
+                  <div className="space-y-1.5 p-2 bg-[#0c1220] border border-emerald-500/30 rounded-xl">
+                    <div className="flex items-center gap-2 text-[10px] font-mono">
+                      <Mic className={`w-3.5 h-3.5 ${liveVoice.micLevel > 5 ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
+                      <span className="text-emerald-300 font-bold">Ouvindo você:</span>
+                      <div className="flex-1 h-2 bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-75 rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(4, liveVoice.micLevel))}%` }}
+                        />
+                      </div>
+                      <span className="text-neutral-400 text-[9px] w-7 text-right">{liveVoice.micLevel}%</span>
+                    </div>
+
+                    {liveVoice.userTranscript ? (
+                      <div className="text-[11px] font-mono text-cyan-200 bg-cyan-950/60 border border-cyan-500/30 rounded-lg px-2.5 py-1 animate-pulse">
+                        "{liveVoice.userTranscript}"
+                      </div>
+                    ) : (
+                      <div className="text-[10px] font-mono text-neutral-400 italic">
+                        Fale sua dúvida ou pergunta agora...
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {liveVoice && liveVoice.status === 'speaking' && (
+                  <div className="flex items-center gap-2 p-2 bg-cyan-950/40 border border-cyan-500/40 rounded-xl text-[10px] font-mono text-cyan-200 animate-pulse">
+                    <Volume2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span className="font-bold">ClandeX-IA falando com você...</span>
+                  </div>
+                )}
+
                 {/* Spoken Dialogue History Container */}
                 <div className="h-[140px] overflow-y-auto space-y-2 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar text-[11px]">
                   {liveVoice?.voiceHistory && liveVoice.voiceHistory.length > 0 ? (
