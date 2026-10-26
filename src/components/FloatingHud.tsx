@@ -471,6 +471,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     // Compute active economic calendar events for the asset
     const { upcomingHighImpact, relevantEvents } = getRelevantEconomicEvents(asset.symbol);
     const marketSession = getCurrentMarketSession();
+    const isForexClosed = asset.category === 'FOREX' && !isForexMarketOpen();
+    const realNewsList = getRealMarketNews(asset.symbol);
+    const lower = textToSend.toLowerCase();
+    let fallbackText = '';
 
     try {
       let replyText = '';
@@ -522,16 +526,21 @@ Pergunta do Trader: "${textToSend}"
 Responda em português brasileiro de forma direta, clara, profissional e motivadora. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7. Seja concisa e objetiva.
           `;
 
-          const resp = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
-            contents: prompt,
-            config: {
-              temperature: 0.4,
-            },
-          });
-
-          if (resp && resp.text) {
-            replyText = resp.text;
+          const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.8-flash'];
+          for (const modelName of candidateModels) {
+            try {
+              const resp = await ai.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: {
+                  temperature: 0.4,
+                },
+              });
+              if (resp && resp.text) {
+                replyText = resp.text;
+                break;
+              }
+            } catch {}
           }
         } catch (directClientErr) {
           console.warn('[ClandeX-IA Chat] Tentativa direta falhou, tentando fallback:', directClientErr);
@@ -582,7 +591,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           speakText(replyText);
         }
       } else {
-        throw new Error(data.error || 'Erro na resposta');
+        throw new Error('Falha ao obter resposta');
       }
     } catch {
       if (isForexClosed) {
@@ -785,8 +794,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         <div className="flex items-center gap-1.5 text-neutral-400">
           {/* Real-Time Live Voice with 3D Technological Avatar */}
           <button
-            onClick={onOpenVoice}
-            title="Conversar por Voz com a IA (Avatar Tecnológico 3D • Gemini Live)"
+            onClick={() => {
+              setActiveTab('chat');
+              setIsMinimized(false);
+              if (onOpenVoice) onOpenVoice();
+              if (liveVoice && liveVoice.status === 'idle') {
+                liveVoice.startLiveConversation();
+              }
+            }}
+            title="Conversar por Voz com a IA (Avatar Tecnológico 3D)"
             className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/50 text-cyan-300 rounded-lg text-[10px] font-mono font-bold transition-all shadow-[0_0_12px_rgba(6,182,212,0.25)] cursor-pointer"
           >
             <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />

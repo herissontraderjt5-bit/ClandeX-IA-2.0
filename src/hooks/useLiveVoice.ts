@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Asset, TimeFrame, MarketAnalysis, ConfluenceBreakdown } from '../types/trading';
 import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews } from '../services/economicCalendar';
 import { isForexMarketOpen } from '../services/marketData';
@@ -180,6 +179,7 @@ export function useLiveVoice({
       speechCooldownTimeoutRef.current = null;
     }
     isAiSpeakingRef.current = false;
+    turnDispatchedRef.current = false;
     setStatus('listening');
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
@@ -187,7 +187,7 @@ export function useLiveVoice({
       } catch {}
     }
     try {
-      if (recognitionRef.current && statusRef.current === 'listening') {
+      if (recognitionRef.current) {
         recognitionRef.current.start();
       }
     } catch {}
@@ -241,7 +241,7 @@ export function useLiveVoice({
         state.activeSources = state.activeSources.filter((s) => s !== source);
         if (state.activeSources.length === 0) {
           setAiSpeechLevel(0);
-          // Cooldown de 600ms após o fim do áudio para que todo o som ambiente dissipe antes de reabrir o microfone
+          // Cooldown de 500ms após o fim do áudio para que todo o som ambiente dissipe antes de reabrir o microfone
           speechCooldownTimeoutRef.current = setTimeout(() => {
             isAiSpeakingRef.current = false;
             turnDispatchedRef.current = false;
@@ -251,7 +251,7 @@ export function useLiveVoice({
                 recognitionRef.current.start();
               }
             } catch {}
-          }, 600);
+          }, 500);
         }
       };
     } catch (err) {
@@ -261,6 +261,7 @@ export function useLiveVoice({
 
   /**
    * Resposta local especializada em Opções Binárias e SMC (Português do Brasil)
+   * Cobre saudações, conceitos técnicos, confluências, notícias e gerenciamento.
    */
   const answerQuestionLocally = useCallback((questionText: string): string => {
     const q = questionText.toLowerCase();
@@ -269,55 +270,138 @@ export function useLiveVoice({
     const { upcomingHighImpact } = getRelevantEconomicEvents(ctx.asset.symbol);
     const realNews = getRealMarketNews(ctx.asset.symbol);
 
-    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put'))) {
-      return `Aviso do TradingView: O mercado Forex está fechado neste fim de semana para ${ctx.asset.symbol}. Para sinais e operações ativas agora, recomendo usar Criptomoedas como Bitcoin ou Ethereum, que operam vinte e quatro horas por dia.`;
+    // 1. Saudações e Conversa Natural
+    if (
+      q.includes('oi') ||
+      q.includes('olá') ||
+      q.includes('ola') ||
+      q.includes('bom dia') ||
+      q.includes('boa tarde') ||
+      q.includes('boa noite') ||
+      q.includes('tudo bem') ||
+      q.includes('como vai') ||
+      q.includes('e aí') ||
+      q.includes('e ai')
+    ) {
+      return `Olá! Tudo ótimo. Estou monitorando ${ctx.asset.symbol} com confluência de ${ctx.confluences.totalScore}% para ${ctx.confluences.direction}. Como posso te orientar nos trades agora?`;
     }
 
+    if (
+      q.includes('obrigado') ||
+      q.includes('obrigada') ||
+      q.includes('valeu') ||
+      q.includes('show') ||
+      q.includes('top') ||
+      q.includes('perfeito') ||
+      q.includes('excelente') ||
+      q.includes('entendi')
+    ) {
+      return 'Tamo junto! Mantenha sempre a disciplina e o gerenciamento de risco. Estou atenta ao gráfico para o que você precisar.';
+    }
+
+    if (
+      q.includes('quem é você') ||
+      q.includes('quem e voce') ||
+      q.includes('o que você faz') ||
+      q.includes('como funciona') ||
+      q.includes('quem e clandex')
+    ) {
+      return 'Sou a ClandeX-IA, sua mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove. Analiso Smart Money Concepts, confluências e notícias para orientar seus trades com segurança.';
+    }
+
+    // 2. Conceitos de SMC e Educação Técnica
+    if (q.includes('smc') || q.includes('smart money')) {
+      return 'Smart Money Concepts rastreia as movimentações dos grandes bancos institucionais, operando nas regiões de liquidez em vez de ruídos do mercado.';
+    }
+
+    if (q.includes('bos') || q.includes('quebra de estrutura')) {
+      return 'BOS é a quebra de estrutura institucional: ocorre quando o candle rompe uma máxima ou mínima prévia confirmando a continuidade da tendência.';
+    }
+
+    if (q.includes('order block') || q.includes('bloco de ordem')) {
+      return 'Order Block é a última vela contrária antes de uma explosão de preço institucional, servindo como uma zona de alta probabilidade para novas entradas.';
+    }
+
+    if (q.includes('fvg') || q.includes('fair value') || q.includes('desbalanceamento')) {
+      return 'Fair Value Gap é uma região de desequilíbrio deixada pelo fluxo rápido dos bancos. O preço costuma retornar a essa zona para rebalancear a liquidez.';
+    }
+
+    if (q.includes('gerenciamento') || q.includes('gestão') || q.includes('gestao') || q.includes('banca') || q.includes('stop')) {
+      return 'O pilar da consistência é o gerenciamento: arrisque no máximo 1 a 2 por cento da sua banca por operação e respeite rigidamente o seu stop loss diário.';
+    }
+
+    if (q.includes('martingale') || q.includes('gale') || q.includes('soros')) {
+      return 'Evite Martingale agressivo para proteger sua banca. Dê preferência a entradas com mão fixa ou soros moderado em confluências acima de 75%.';
+    }
+
+    if (q.includes('qual o melhor ativo') || q.includes('qual par') || q.includes('qual moeda') || q.includes('cripto') || q.includes('bitcoin')) {
+      if (isClosedWeekendForex) {
+        return 'No fim de semana o Forex está fechado no mercado à vista. Recomendo operar criptomoedas como Bitcoin e Ethereum, que funcionam 24 horas por dia.';
+      }
+      return `Atualmente recomendo pares com fluxo direcional limpo. O par ${ctx.asset.symbol} está com pontuação de ${ctx.confluences.totalScore}% em tendência de ${ctx.marketAnalysis.trend}.`;
+    }
+
+    // 3. Avisos de Mercado Fechado (Forex no fim de semana)
+    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put'))) {
+      return `Aviso do TradingView: O mercado Forex está fechado neste fim de semana para ${ctx.asset.symbol}. Para sinais e confluências ativas agora, selecione Criptomoedas como Bitcoin ou Ethereum.`;
+    }
+
+    // 4. Notícias e Calendário Econômico
     if (
       q.includes('notícia') ||
       q.includes('noticia') ||
       q.includes('calendário') ||
       q.includes('calendario') ||
-      q.includes('impacto')
+      q.includes('impacto') ||
+      q.includes('evento') ||
+      q.includes('payroll')
     ) {
       if (realNews.length > 0) {
-        return `Notícia do TradingView: ${realNews[0].title}. O sentimento macroeconômico está ativo.`;
+        return `Notícia do TradingView: ${realNews[0].title}. O sentimento macroeconômico está ativo para ${ctx.asset.symbol}.`;
       }
       if (upcomingHighImpact) {
-        return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo prudência ou pausar operações.`;
+        return `Atenção: temos ${upcomingHighImpact.event} da moeda ${upcomingHighImpact.currency} às ${upcomingHighImpact.time}. Impacto alto. Recomendo pausar operações nos minutos próximos.`;
       }
-      return 'Sem notícias críticas de alto impacto agendadas para os próximos minutos nesta paridade. O fluxo técnico está limpo.';
+      return `Sem notícias críticas de alto impacto agendadas para os próximos minutos em ${ctx.asset.symbol}. O fluxo técnico está limpo.`;
     }
 
+    // 5. Sinais e Recomendações de Entrada
     if (
       q.includes('entrar') ||
       q.includes('entrada') ||
       q.includes('sinal') ||
       q.includes('compro') ||
       q.includes('vendo') ||
+      q.includes('comprar') ||
+      q.includes('vender') ||
       q.includes('call') ||
-      q.includes('put')
+      q.includes('put') ||
+      q.includes('vale a pena')
     ) {
       if (ctx.confluences.totalScore >= 75) {
         const dir = ctx.confluences.direction === 'CALL' ? 'COMPRA' : 'VENDA';
-        return `Confluência forte de ${ctx.confluences.totalScore}% para ${dir}. Principais gatilhos: ${ctx.confluences.reasons.slice(0, 2).join(' e ')}. Respeite seu gerenciamento.`;
+        return `Confluência forte de ${ctx.confluences.totalScore}% para ${dir} em ${ctx.asset.symbol}. Principais gatilhos: ${ctx.confluences.reasons.slice(0, 2).join(' e ')}. Aguarde a confirmação da vela e respeite seu gerenciamento.`;
       } else if (ctx.confluences.totalScore >= 60) {
-        return `Oportunidade em observação com probabilidade de ${ctx.confluences.totalScore}%. Aguarde a validação do candle.`;
+        return `Oportunidade em observação com probabilidade de ${ctx.confluences.totalScore}%. Aguarde a validação do candle antes de executar.`;
       }
-      return `Sem confluência suficiente no momento, pontuação de apenas ${ctx.confluences.totalScore}%. Mercado em ruído ou lateral. Preserve sua banca.`;
+      return `Sem confluência suficiente no momento, score de apenas ${ctx.confluences.totalScore}%. Mercado em ruído ou lateral. Preserve sua banca.`;
     }
 
-    if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo')) {
+    // 6. Tendência e Força
+    if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo') || q.includes('direção') || q.includes('direcao')) {
       return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${ctx.marketAnalysis.trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
     }
 
+    // 7. Suportes e Resistências
     if (
       q.includes('suporte') ||
       q.includes('resistência') ||
       q.includes('resistencia') ||
       q.includes('taxa') ||
       q.includes('preço') ||
-      q.includes('preco')
+      q.includes('preco') ||
+      q.includes('nível') ||
+      q.includes('nivel')
     ) {
       const keyLevels = ctx.marketAnalysis.keyLevels || [];
       const sup = keyLevels
@@ -326,17 +410,19 @@ export function useLiveVoice({
       const res = keyLevels
         .filter((k) => k.type === 'RESISTANCE')
         .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-      let msg = `O preço atual do ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
+      let msg = `O preço atual de ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
       if (sup.length > 0) msg += `Suporte em ${sup[0]}. `;
       if (res.length > 0) msg += `Resistência em ${res[0]}.`;
       return msg;
     }
 
-    return `Ativo ${ctx.asset.symbol} operando a ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. Tendência ${ctx.marketAnalysis.trend} com confluência ${ctx.confluences.direction} de ${ctx.confluences.totalScore}%. Pode perguntar sobre suporte, tendência ou confluências.`;
+    // Resposta padrão contextualizada e dinâmica
+    return `Ativo ${ctx.asset.symbol} cotado a ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. Tendência de ${ctx.marketAnalysis.trend} com confluência de ${ctx.confluences.totalScore}% para ${ctx.confluences.direction}. Pode me perguntar sobre sinais, suporte, tendência ou conselhos operacionais!`;
   }, []);
 
   /**
-   * Fallback de síntese caso Gemini Live não esteja disponível
+   * Síntese de fala no navegador com seleção da melhor voz em Português do Brasil
+   * e sincronização em tempo real com o visualizador 3D CyberAiAvatar3D
    */
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -345,7 +431,7 @@ export function useLiveVoice({
     isAiSpeakingRef.current = true;
     setStatus('speaking');
 
-    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(clean);
@@ -353,14 +439,26 @@ export function useLiveVoice({
     utterance.rate = 1.05;
     utterance.pitch = 1.02;
 
-    const voices = window.speechSynthesis.getVoices();
-    const ptVoice = voices.find(
-      (v) =>
-        (v.lang.startsWith('pt') || v.lang.includes('BR')) &&
-        (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Luciana') || v.name.includes('Francisca') || v.name.includes('Maria'))
-    ) || voices.find((v) => v.lang.startsWith('pt') || v.lang.includes('BR'));
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      return (
+        voices.find(
+          (v) =>
+            (v.lang.startsWith('pt') || v.lang.includes('BR')) &&
+            (v.name.includes('Google') ||
+              v.name.includes('Natural') ||
+              v.name.includes('Luciana') ||
+              v.name.includes('Francisca') ||
+              v.name.includes('Maria') ||
+              v.name.includes('Daniel'))
+        ) || voices.find((v) => v.lang.startsWith('pt') || v.lang.includes('BR'))
+      );
+    };
 
-    if (ptVoice) utterance.voice = ptVoice;
+    const chosenVoice = pickVoice();
+    if (chosenVoice) {
+      utterance.voice = chosenVoice;
+    }
 
     let hasEnded = false;
     const finishPlayback = () => {
@@ -373,10 +471,17 @@ export function useLiveVoice({
       }
       setAiSpeechLevel(0);
 
+      // Cooldown de 500ms para evitar eco no microfone
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
+        turnDispatchedRef.current = false;
         setStatus('listening');
-      }, 700);
+        try {
+          if (recognitionRef.current && statusRef.current === 'listening') {
+            recognitionRef.current.start();
+          }
+        } catch {}
+      }, 500);
     };
 
     utterance.onstart = () => {
@@ -404,6 +509,79 @@ export function useLiveVoice({
     window.speechSynthesis.speak(utterance);
   }, [stopAudioPlayback]);
 
+  /**
+   * Gera resposta inteligente via Google Gemini (com fallback para motor local)
+   */
+  const generateAiReply = useCallback(
+    async (promptText: string): Promise<string> => {
+      const cleanPrompt = promptText.trim();
+      if (!cleanPrompt) return '';
+
+      const geminiKey = getEffectiveGeminiKey();
+      const currentCtx = contextRef.current;
+      const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
+      const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
+      const supports = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price.toFixed(currentCtx.asset.pipDecimals));
+      const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price.toFixed(currentCtx.asset.pipDecimals));
+      const isClosedForex = currentCtx.asset.category === 'FOREX' && !isForexMarketOpen();
+
+      if (geminiKey && geminiKey.length > 15) {
+        try {
+          const { GoogleGenAI } = await import('@google/genai');
+          const ai = new GoogleGenAI({ apiKey: geminiKey });
+
+          const systemInstruction = `
+Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, especialista e mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove.
+Você está conversando diretamente por voz com o trader humano.
+
+DADOS EM TEMPO REAL:
+- Ativo na tela: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
+- Preço Atual: ${currentCtx.asset.currentPrice} | Timeframe: ${currentCtx.timeframe}
+- Tendência: ${currentCtx.marketAnalysis?.trend || 'LATERAL'} (Força Compra: ${currentCtx.marketAnalysis?.buyerStrength || 'MODERADA'}, Venda: ${currentCtx.marketAnalysis?.sellerStrength || 'MODERADA'})
+- Confluência Técnica: ${currentCtx.confluences?.totalScore ?? 0}% (${currentCtx.confluences?.direction ?? 'NEUTRO'})
+- Suportes: ${supports.slice(0, 2).join(', ') || 'Zonas dinâmicas'}
+- Resistências: ${resistances.slice(0, 2).join(', ') || 'Zonas dinâmicas'}
+- Calendário: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}
+- Status Forex: ${isClosedForex ? 'FECHADO FIM DE SEMANA (oriente criptos 24/7 como BTC ou ETH)' : 'ABERTO EM TEMPO REAL'}
+
+DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
+1. Responda em Português do Brasil com tom natural, firme, confiante e extremamente amigável.
+2. Responda diretamente e de forma concisa (estritamente 1 a 2 frases faladas). Como o trader está operando, nunca faça discursos longos.
+3. Não use formatação markdown, asteriscos, tópicos ou listas — sua resposta será lida diretamente por voz.
+4. Se o trader fizer uma saudação casual (ex: 'oi', 'tudo bem?', 'boa tarde'), cumprimente com simpatia e prontidão para analisar o mercado.
+5. Se perguntar sobre entrar no trade, sinal, compra ou venda, baseie-se na confluência de ${currentCtx.confluences?.totalScore ?? 0}% e no gerenciamento de risco.
+6. Se perguntar sobre suporte, resistência, tendência, notícias ou conceitos como SMC e Price Action, explique com clareza imediata.
+7. Nunca prometa lucros garantidos.
+`;
+
+          const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.8-flash'];
+          for (const model of modelsToTry) {
+            try {
+              const response = await ai.models.generateContent({
+                model,
+                contents: cleanPrompt,
+                config: {
+                  systemInstruction,
+                  temperature: 0.4,
+                },
+              });
+              if (response && response.text) {
+                const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
+                if (cleanText) return cleanText;
+              }
+            } catch {}
+          }
+        } catch (geminiErr) {
+          console.warn('[ClandeX-IA Gemini Voice] Falha ao consultar Gemini, usando motor local:', geminiErr);
+        }
+      }
+
+      // Fallback inteligente para o motor local especializado
+      return answerQuestionLocally(cleanPrompt);
+    },
+    [answerQuestionLocally]
+  );
+
   // Parar reconhecimento de voz do navegador
   const stopSpeechRecognition = useCallback(() => {
     if (speechSilenceTimeoutRef.current) {
@@ -421,14 +599,19 @@ export function useLiveVoice({
     }
   }, []);
 
-  // Disparo atômico e único de conclusão de turno do usuário (evita corridas e repetições)
-  const dispatchTurn = useCallback((textQuery?: string) => {
-    if (turnDispatchedRef.current || isAiSpeakingRef.current) return;
-    turnDispatchedRef.current = true;
-    hasSpokenInTurnRef.current = false;
+  // Disparo atômico e único de conclusão de turno do usuário
+  const dispatchTurn = useCallback(
+    async (textQuery?: string) => {
+      if (turnDispatchedRef.current || isAiSpeakingRef.current) return;
+      turnDispatchedRef.current = true;
+      hasSpokenInTurnRef.current = false;
 
-    const q = textQuery?.trim();
-    if (q && q.length > 1) {
+      const q = textQuery?.trim();
+      if (!q || q.length < 2) {
+        turnDispatchedRef.current = false;
+        return;
+      }
+
       console.log('[ClandeX-IA Voz] Turno concluído do trader:', q);
       setUserTranscript(q);
       setLastTurnMessage({
@@ -437,24 +620,53 @@ export function useLiveVoice({
         text: q,
         timestamp: Date.now(),
       });
+
+      // Se houver WebSocket ativo (modo servidor local), envia pelo canal:
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'turn_complete', text: q }));
+        return;
       }
-    } else {
-      console.log('[ClandeX-IA Voz] Turno concluído por áudio de microfone.');
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
-      }
-    }
-  }, []);
 
-  // Iniciar reconhecimento de voz paralelo do navegador (PT-BR)
+      // No Vercel ou modo cliente direto: processa a resposta imediatamente
+      setStatus('speaking');
+      try {
+        const reply = await generateAiReply(q);
+        if (reply) {
+          setAiResponseText(reply);
+          setLastTurnMessage({
+            id: `model-voice-${Date.now()}`,
+            role: 'model',
+            text: reply,
+            timestamp: Date.now(),
+          });
+          speakBrowserText(reply);
+        } else {
+          setStatus('listening');
+          turnDispatchedRef.current = false;
+        }
+      } catch (err) {
+        console.warn('[ClandeX-IA Voz] Erro ao responder:', err);
+        const fallbackReply = answerQuestionLocally(q);
+        setAiResponseText(fallbackReply);
+        setLastTurnMessage({
+          id: `model-voice-${Date.now()}`,
+          role: 'model',
+          text: fallbackReply,
+          timestamp: Date.now(),
+        });
+        speakBrowserText(fallbackReply);
+      }
+    },
+    [generateAiReply, answerQuestionLocally, speakBrowserText]
+  );
+
+  // Iniciar reconhecimento de voz contínuo do navegador (PT-BR)
   const startSpeechRecognition = useCallback(() => {
     stopSpeechRecognition();
     if (typeof window === 'undefined') return;
     const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
-      console.warn('[ClandeX-IA] Web SpeechRecognition não disponível, transmitindo áudio direto 16kHz.');
+      console.warn('[ClandeX-IA] Web SpeechRecognition não disponível neste navegador.');
       return;
     }
 
@@ -466,7 +678,7 @@ export function useLiveVoice({
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, interrompe a fala dela imediatamente
+        // Se a IA estiver falando e o usuário começar a falar, interrompe a fala da IA imediatamente
         if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
           interruptSpeech();
         }
@@ -517,7 +729,8 @@ export function useLiveVoice({
       };
 
       recognition.onend = () => {
-        if (statusRef.current === 'listening' && !isAiSpeakingRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+        // Reinício automático para conversação contínua sempre que em listening
+        if (statusRef.current === 'listening' && !isAiSpeakingRef.current) {
           try {
             recognition.start();
           } catch {}
@@ -527,7 +740,7 @@ export function useLiveVoice({
       recognition.start();
       recognitionRef.current = recognition;
     } catch (err) {
-      console.warn('[ClandeX-IA] Falha ao iniciar reconhecimento:', err);
+      console.warn('[ClandeX-IA] Falha ao iniciar reconhecimento de voz:', err);
     }
   }, [stopSpeechRecognition, dispatchTurn, interruptSpeech]);
 
@@ -596,26 +809,24 @@ export function useLiveVoice({
           turnDispatchedRef.current = false;
         }
 
-        // Permite envio contínuo enquanto o usuário fala e mantém hangover de 1.0s após pausas
         const isVoiceActive = now - lastVoiceActiveTimeRef.current < 1000;
 
         // 1. Resample nativo para 16kHz Little-Endian
         const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
         const base64Pcm = pcmToBase64(resampled);
 
-        // 2. Envio via WebSocket (/api/live)
+        // 2. Envio via WebSocket (se conectado ao servidor local)
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           if (isVoiceActive) {
             wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
           }
 
-          // Fallback de silêncio para áudio puro:
           if (hasSpokenInTurnRef.current && !turnDispatchedRef.current && now - lastVoiceActiveTimeRef.current > 1100) {
             dispatchTurn();
           }
         }
 
-        // 3. Envio direto via Gemini Live Session (caso conectado diretamente)
+        // 3. Envio direto via Gemini Live Session (se ativo)
         if (geminiLiveSessionRef.current) {
           if (isVoiceActive) {
             try {
@@ -640,10 +851,11 @@ export function useLiveVoice({
     } finally {
       setIsActivatingMic(false);
     }
-  }, []);
+  }, [dispatchTurn, interruptSpeech]);
 
   /**
-   * Conecta à Voz em Tempo Real oficial Gemini Live (gemini-3.8-live) com voz Zephyr
+   * Conecta à Voz em Tempo Real oficial da ClandeX-IA
+   * 100% compatível com Vercel (cliente autônomo) e servidor local
    */
   const startLiveConversation = useCallback(async () => {
     try {
@@ -664,219 +876,113 @@ export function useLiveVoice({
       await requestMicrophoneAccess();
 
       const currentCtx = contextRef.current;
-      const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
-      const marketSession = getCurrentMarketSession();
-      const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
-      const supports = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price);
-      const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price);
+      const geminiKey = getEffectiveGeminiKey();
 
-      const marketContextPayload = {
-        asset: currentCtx.asset.symbol,
-        assetName: currentCtx.asset.name,
-        currentPrice: currentCtx.asset.currentPrice,
-        timeframe: currentCtx.timeframe,
-        marketAnalysis: currentCtx.marketAnalysis,
-        confluences: currentCtx.confluences,
-        upcomingHighImpact,
-        marketSession,
-      };
-
-      // 3. Tenta conexão via WebSocket local (/api/live)
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let hostToUse = window.location.host;
-      if (
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
-        window.location.port !== '3000' &&
-        window.location.port !== ''
-      ) {
-        hostToUse = `${window.location.hostname}:3000`;
-      }
-      const wsUrl = `${protocol}//${hostToUse}/api/live`;
+      // 3. Tenta conexão WebSocket SOMENTE se estiver rodando localmente (localhost ou 127.0.0.1)
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
       let wsConnected = false;
 
-      try {
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+      if (isLocalhost) {
+        try {
+          const wsPort = window.location.port === '3000' || window.location.port === '' ? '3000' : '3000';
+          const wsUrl = `ws://${window.location.hostname}:${wsPort}/api/live`;
+          const ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
-          wsConnected = true;
-          setActiveEngine('gemini_live');
-          activeEngineRef.current = 'gemini_live';
-          ws.send(
-            JSON.stringify({
-              type: 'start',
-              voiceName: 'Zephyr',
-              marketContext: marketContextPayload,
-            })
-          );
-        };
+          const connectPromise = new Promise<boolean>((resolve) => {
+            const timeout = setTimeout(() => resolve(false), 500);
+            ws.onopen = () => {
+              clearTimeout(timeout);
+              resolve(true);
+            };
+            ws.onerror = () => {
+              clearTimeout(timeout);
+              resolve(false);
+            };
+          });
 
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
+          wsConnected = await connectPromise;
+          if (wsConnected) {
+            wsRef.current = ws;
+            setActiveEngine('gemini_live');
+            activeEngineRef.current = 'gemini_live';
 
-            if (msg.type === 'ready') {
-              setStatus('listening');
-              turnDispatchedRef.current = false;
-              startSpeechRecognition();
-            } else if (msg.type === 'audio') {
-              scheduleAudioChunk(msg.audio);
-            } else if (msg.type === 'text') {
-              currentAiTurnTextRef.current += (currentAiTurnTextRef.current ? ' ' : '') + msg.text.trim();
-              setAiResponseText(currentAiTurnTextRef.current);
-            } else if (msg.type === 'user_text') {
-              setUserTranscript(msg.userText);
-              setLastTurnMessage({
-                id: `user-voice-${Date.now()}`,
-                role: 'user',
-                text: msg.userText,
-                timestamp: Date.now(),
-              });
-            } else if (msg.type === 'turn_complete') {
-              turnDispatchedRef.current = false;
-              if (currentAiTurnTextRef.current.trim()) {
-                setLastTurnMessage({
-                  id: `model-voice-${Date.now()}`,
-                  role: 'model',
-                  text: currentAiTurnTextRef.current.trim(),
-                  timestamp: Date.now(),
-                });
-                currentAiTurnTextRef.current = '';
-              }
-            } else if (msg.type === 'interrupted') {
-              setStatus('listening');
-              stopAudioPlayback();
-            } else if (msg.type === 'error') {
-              console.warn('[Gemini Live WS Aviso]:', msg.error);
-            }
-          } catch (parseErr) {
-            console.error('Error handling ws message:', parseErr);
-          }
-        };
+            const { upcomingHighImpact } = getRelevantEconomicEvents(currentCtx.asset.symbol);
+            const marketSession = getCurrentMarketSession();
+            const keyLevels = Array.isArray(currentCtx.marketAnalysis?.keyLevels) ? currentCtx.marketAnalysis.keyLevels : [];
+            const supports = keyLevels.filter((k: any) => k.type === 'SUPPORT').map((k: any) => k.price);
+            const resistances = keyLevels.filter((k: any) => k.type === 'RESISTANCE').map((k: any) => k.price);
 
-        ws.onerror = (e) => {
-          console.warn('[Gemini Live WS] Erro de conexão WebSocket, tentando Gemini Live direto...');
-        };
+            ws.send(
+              JSON.stringify({
+                type: 'start',
+                voiceName: 'Zephyr',
+                marketContext: {
+                  asset: currentCtx.asset.symbol,
+                  assetName: currentCtx.asset.name,
+                  currentPrice: currentCtx.asset.currentPrice,
+                  timeframe: currentCtx.timeframe,
+                  marketAnalysis: currentCtx.marketAnalysis,
+                  confluences: currentCtx.confluences,
+                  upcomingHighImpact,
+                  marketSession,
+                },
+              })
+            );
 
-        ws.onclose = () => {
-          if (statusRef.current !== 'idle') {
-            console.log('[Gemini Live WS] WebSocket encerrado.');
-          }
-        };
-
-        // Aguarda até 2.5s para o WebSocket abrir, senão tenta Gemini Live client-side
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        if (wsConnected) {
-          return;
-        }
-      } catch {}
-
-      // 4. Conexão direta client-side com Google GenAI Live API (gemini-3.8-live)
-      const geminiKey = getEffectiveGeminiKey();
-      if (geminiKey && geminiKey.length > 15) {
-        console.log('[ClandeX-IA] Conectando diretamente ao Gemini Live (gemini-3.8-live)...');
-        const ai = new GoogleGenAI({
-          apiKey: geminiKey,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            },
-          },
-        });
-
-        const systemInstruction = `
-Você é a ClandeX-IA em CONVERSA POR VOZ AO VIVO, especialista e mentora institucional de trading em Opções Binárias e Forex para a corretora Hiove.
-Mercado atual em tempo real:
-- Paridade: ${currentCtx.asset.symbol} (${currentCtx.asset.name})
-- Preço Atual: ${currentCtx.asset.currentPrice} | Timeframe: ${currentCtx.timeframe}
-- Tendência: ${currentCtx.marketAnalysis?.trend || 'LATERAL'} (Força Compra: ${currentCtx.marketAnalysis?.buyerStrength || 'MODERADA'}, Venda: ${currentCtx.marketAnalysis?.sellerStrength || 'MODERADA'})
-- Confluência Técnica: ${currentCtx.confluences?.totalScore ?? 0}% (${currentCtx.confluences?.direction ?? 'NEUTRO'})
-- Suportes Técnicos: ${supports.join(', ') || 'dinâmicos'}
-- Resistências Técnicas: ${resistances.join(', ') || 'dinâmicas'}
-- Calendário: ${upcomingHighImpact ? `${upcomingHighImpact.event} às ${upcomingHighImpact.time}` : 'Sem notícias críticas próximas'}
-
-Diretrizes obrigatórias:
-1. Responda em Português do Brasil com tom natural, firme, confiante e amigável.
-2. Responda diretamente e de forma concisa (máximo 1 a 2 frases faladas).
-3. Não use formatação markdown ou asteriscos, fale de forma limpa como uma pessoa ao microfone.
-        `;
-
-        const session = await ai.live.connect({
-          model: 'gemini-3.8-live',
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-              },
-            },
-            systemInstruction,
-            outputAudioTranscription: {},
-            inputAudioTranscription: {},
-          },
-          callbacks: {
-            onmessage: (message: LiveServerMessage) => {
-              const parts = message.serverContent?.modelTurn?.parts || [];
-              for (const part of parts) {
-                if (part.inlineData?.data) {
-                  scheduleAudioChunk(part.inlineData.data);
-                }
-              }
-
-              const aiTxt = (message.serverContent as any)?.outputAudioTranscription?.text;
-              if (aiTxt) {
-                currentAiTurnTextRef.current += (currentAiTurnTextRef.current ? ' ' : '') + aiTxt.trim();
-                setAiResponseText(currentAiTurnTextRef.current);
-              }
-
-              const userTxt = (message.serverContent as any)?.inputAudioTranscription?.text;
-              if (userTxt) {
-                setUserTranscript(userTxt);
-                setLastTurnMessage({
-                  id: `user-voice-${Date.now()}`,
-                  role: 'user',
-                  text: userTxt,
-                  timestamp: Date.now(),
-                });
-              }
-
-              if (message.serverContent?.turnComplete) {
-                if (currentAiTurnTextRef.current.trim()) {
+            ws.onmessage = (event) => {
+              try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'ready') {
+                  setStatus('listening');
+                  turnDispatchedRef.current = false;
+                  startSpeechRecognition();
+                } else if (msg.type === 'audio') {
+                  scheduleAudioChunk(msg.audio);
+                } else if (msg.type === 'text') {
+                  currentAiTurnTextRef.current += (currentAiTurnTextRef.current ? ' ' : '') + msg.text.trim();
+                  setAiResponseText(currentAiTurnTextRef.current);
+                } else if (msg.type === 'user_text') {
+                  setUserTranscript(msg.userText);
                   setLastTurnMessage({
-                    id: `model-voice-${Date.now()}`,
-                    role: 'model',
-                    text: currentAiTurnTextRef.current.trim(),
+                    id: `user-voice-${Date.now()}`,
+                    role: 'user',
+                    text: msg.userText,
                     timestamp: Date.now(),
                   });
-                  currentAiTurnTextRef.current = '';
+                } else if (msg.type === 'turn_complete') {
+                  turnDispatchedRef.current = false;
+                  if (currentAiTurnTextRef.current.trim()) {
+                    setLastTurnMessage({
+                      id: `model-voice-${Date.now()}`,
+                      role: 'model',
+                      text: currentAiTurnTextRef.current.trim(),
+                      timestamp: Date.now(),
+                    });
+                    currentAiTurnTextRef.current = '';
+                  }
+                } else if (msg.type === 'interrupted') {
+                  setStatus('listening');
+                  stopAudioPlayback();
                 }
-              }
+              } catch {}
+            };
 
-              if (message.serverContent?.interrupted) {
-                setStatus('listening');
-                stopAudioPlayback();
-              }
-            },
-            onclose: () => {
-              setStatus('idle');
-            },
-            onerror: (err: any) => {
-              console.warn('[Gemini Live Direct] Erro:', err);
-            },
-          },
-        });
-
-        geminiLiveSessionRef.current = session;
-        setActiveEngine('gemini_live');
-        activeEngineRef.current = 'gemini_live';
-        setStatus('listening');
-        console.log('[ClandeX-IA] Gemini Live (gemini-3.8-live) conectado diretamente com sucesso!');
-        return;
+            return;
+          } else {
+            ws.close();
+            wsRef.current = null;
+          }
+        } catch {}
       }
 
-      // 5. Fallback seguro caso tudo falhe: Saudação e escuta local
-      const greeting = `ClandeX-IA conectada por voz. Monitorando ${currentCtx.asset.symbol}. Pode falar comigo!`;
+      // 4. Modo Vercel / Direto no Navegador (Autônomo com IA neural e síntese de voz)
+      setActiveEngine(geminiKey && geminiKey.length > 15 ? 'gemini_live' : 'browser_speech');
+      activeEngineRef.current = geminiKey && geminiKey.length > 15 ? 'gemini_live' : 'browser_speech';
+
+      const greeting = `ClandeX-IA conectada por voz. Estou monitorando ${currentCtx.asset.symbol} em tempo real. Pode falar comigo!`;
       setLastTurnMessage({
         id: `model-voice-${Date.now()}`,
         role: 'model',
@@ -884,12 +990,16 @@ Diretrizes obrigatórias:
         timestamp: Date.now(),
       });
       speakBrowserText(greeting);
+
+      // Inicia a escuta por voz no navegador imediatamente
+      startSpeechRecognition();
     } catch (err: any) {
-      console.warn('[ClandeX-IA Voz] Ativando fallback de voz:', err);
+      console.warn('[ClandeX-IA Voz] Inicializando com fallback direto:', err);
       const greeting = `ClandeX-IA conectada por voz. Monitorando ${contextRef.current.asset.symbol}. Pode falar comigo!`;
       speakBrowserText(greeting);
+      startSpeechRecognition();
     }
-  }, [requestMicrophoneAccess, scheduleAudioChunk, stopAudioPlayback, speakBrowserText]);
+  }, [requestMicrophoneAccess, scheduleAudioChunk, stopAudioPlayback, speakBrowserText, startSpeechRecognition]);
 
   // Disconnect session and release media streams
   const disconnectSession = useCallback(() => {
@@ -906,10 +1016,12 @@ Diretrizes obrigatórias:
     currentAiTurnTextRef.current = '';
 
     if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'stop' }));
-      }
-      wsRef.current.close();
+      try {
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'stop' }));
+        }
+        wsRef.current.close();
+      } catch {}
       wsRef.current = null;
     }
 
@@ -941,40 +1053,50 @@ Diretrizes obrigatórias:
     setErrorMessage(null);
   }, [stopAudioPlayback, stopSpeechRecognition]);
 
-  // Enviar pergunta de texto diretamente para o Gemini Live responder por voz
-  const sendTextMessage = useCallback((textToSend: string) => {
-    const clean = textToSend.trim();
-    if (!clean) return;
+  // Enviar pergunta de texto diretamente para a IA responder por voz
+  const sendTextMessage = useCallback(
+    async (textToSend: string) => {
+      const clean = textToSend.trim();
+      if (!clean) return;
 
-    setUserTranscript(clean);
-    setLastTurnMessage({
-      id: `user-voice-${Date.now()}`,
-      role: 'user',
-      text: clean,
-      timestamp: Date.now(),
-    });
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'client_content', text: clean }));
-    } else if (geminiLiveSessionRef.current) {
-      try {
-        geminiLiveSessionRef.current.sendClientContent({
-          turns: [{ role: 'user', parts: [{ text: clean }] }],
-          turnComplete: true,
-        });
-      } catch {}
-    } else {
-      const localReply = answerQuestionLocally(clean);
-      setAiResponseText(localReply);
+      setUserTranscript(clean);
       setLastTurnMessage({
-        id: `model-voice-${Date.now()}`,
-        role: 'model',
-        text: localReply,
+        id: `user-voice-${Date.now()}`,
+        role: 'user',
+        text: clean,
         timestamp: Date.now(),
       });
-      speakBrowserText(localReply);
-    }
-  }, [answerQuestionLocally, speakBrowserText]);
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'client_content', text: clean }));
+        return;
+      }
+
+      setStatus('speaking');
+      try {
+        const reply = await generateAiReply(clean);
+        setAiResponseText(reply);
+        setLastTurnMessage({
+          id: `model-voice-${Date.now()}`,
+          role: 'model',
+          text: reply,
+          timestamp: Date.now(),
+        });
+        speakBrowserText(reply);
+      } catch {
+        const localReply = answerQuestionLocally(clean);
+        setAiResponseText(localReply);
+        setLastTurnMessage({
+          id: `model-voice-${Date.now()}`,
+          role: 'model',
+          text: localReply,
+          timestamp: Date.now(),
+        });
+        speakBrowserText(localReply);
+      }
+    },
+    [generateAiReply, answerQuestionLocally, speakBrowserText]
+  );
 
   const toggleMute = () => {
     setIsMuted((prev) => {
