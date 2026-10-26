@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
 
-interface CyberAiAvatar3DProps {
+export interface CyberAiAvatar3DProps {
   status: 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
   speechLevel: number; // 0 to 100 (live audio level when AI is speaking)
   micLevel?: number;   // 0 to 100 (user mic level)
@@ -9,14 +10,13 @@ interface CyberAiAvatar3DProps {
 }
 
 /**
- * CyberAiAvatar3D: Futuristic Cybernetic Audio Frequency Visualizer
- * Replaces human face with high-tech real-time sound frequency spectrum:
- * - 64-band radial cyber frequency equalizer with neon glowing bars & falling peak indicators
- * - Multi-layer harmonic oscilloscope audio waveform responding dynamically to voice syllables
- * - Central AI neural core pulsating with speech decibels and vocal resonance
- * - Concentric sonic shockwave rings expanding outwards on voice peaks
- * - Real-time telemetry readouts: dynamic Hz, spectral resonance, audio flux & status mode
- * - Ambient sound-reactive nano-particles
+ * CyberAiAvatar3D: Three.js 3D Futuristic Cybernetic Avatar with Articulated Jaw (Lip-Sync)
+ * - Three.js WebGL Scene, Camera, and Cyberpunk Lighting
+ * - Sleek Metallic Cranium & Android Facial Armor Plates
+ * - Articulated Mandible (Jaw Pivot Group) dynamically driven by audio RMS speech level & syllable frequency
+ * - Vocal Cavity PointLight synchronized with vocal intensity
+ * - High-tech Holographic Orbital Rings responding to soundwaves
+ * - Dynamic Status Colors: Cyan (Speaking/Idle), Emerald (Listening), Rose (Interrupted/Error)
  */
 export const CyberAiAvatar3D: React.FC<CyberAiAvatar3DProps> = ({
   status,
@@ -25,446 +25,320 @@ export const CyberAiAvatar3D: React.FC<CyberAiAvatar3DProps> = ({
   className = '',
   isAnalyzing = false,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const speechLevelRef = useRef(speechLevel);
-  speechLevelRef.current = speechLevel;
+  const speechRef = useRef(speechLevel);
+  speechRef.current = speechLevel;
+
+  const micRef = useRef(micLevel);
+  micRef.current = micLevel;
 
   const statusRef = useRef(status);
   statusRef.current = status;
 
-  const micLevelRef = useRef(micLevel);
-  micLevelRef.current = micLevel;
-
-  const isAnalyzingRef = useRef(isAnalyzing);
-  isAnalyzingRef.current = isAnalyzing;
+  const analyzingRef = useRef(isAnalyzing);
+  analyzingRef.current = isAnalyzing;
 
   useEffect(() => {
-    const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!container) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // 1. Scene, Camera & WebGL Renderer
+    const scene = new THREE.Scene();
+    const width = container.clientWidth || 340;
+    const height = container.clientHeight || 280;
 
-    let animationFrameId: number;
-    let width = 0;
-    let height = 0;
-    let dpr = 1;
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+    camera.position.set(0, 0.1, 4.3);
 
-    // Handle high-DPI scaling
-    const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = container.clientWidth || 360;
-      height = container.clientHeight || 360;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    container.appendChild(renderer.domElement);
+
+    // 2. Cyberpunk Lighting Setup
+    // Key Light (Cyan)
+    const keyLight = new THREE.DirectionalLight(0x06b6d4, 3.5);
+    keyLight.position.set(2.5, 3.0, 3.0);
+    scene.add(keyLight);
+
+    // Rim / Backlight (Cyber Magenta)
+    const rimLight = new THREE.DirectionalLight(0xd946ef, 2.8);
+    rimLight.position.set(-2.5, 2.0, -2.5);
+    scene.add(rimLight);
+
+    // Ambient / Fill Light
+    const fillLight = new THREE.DirectionalLight(0x3b82f6, 1.2);
+    fillLight.position.set(-2.0, -1.5, 2.5);
+    scene.add(fillLight);
+
+    // Vocal Cavity Mouth Glow Light (reacts to Lip-Sync)
+    const mouthGlowLight = new THREE.PointLight(0x06b6d4, 0, 3.5);
+    mouthGlowLight.position.set(0, -0.4, 0.65);
+    scene.add(mouthGlowLight);
+
+    // Optic Sensor Light
+    const opticLight = new THREE.PointLight(0x06b6d4, 1.2, 2.5);
+    opticLight.position.set(0, 0.12, 1.1);
+    scene.add(opticLight);
+
+    // 3. Materials
+    const skullMat = new THREE.MeshStandardMaterial({
+      color: 0x090e1a,
+      metalness: 0.92,
+      roughness: 0.18,
+    });
+
+    const platingMat = new THREE.MeshStandardMaterial({
+      color: 0x111c30,
+      metalness: 0.85,
+      roughness: 0.28,
+    });
+
+    const earPlateMat = new THREE.MeshStandardMaterial({
+      color: 0x172545,
+      metalness: 0.95,
+      roughness: 0.12,
+    });
+
+    const visorMat = new THREE.MeshStandardMaterial({
+      color: 0x06b6d4,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 0.85,
+      roughness: 0.1,
+      metalness: 0.6,
+    });
+
+    const haloRingMat = new THREE.MeshBasicMaterial({
+      color: 0x06b6d4,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.35,
+    });
+
+    const innerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x22d3ee,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.2,
+    });
+
+    // 4. Head Group (Floating Master Group)
+    const headGroup = new THREE.Group();
+    scene.add(headGroup);
+
+    // Cranium / Upper Head
+    const craniumGeo = new THREE.SphereGeometry(1.0, 36, 32);
+    const cranium = new THREE.Mesh(craniumGeo, skullMat);
+    cranium.scale.set(0.92, 1.05, 0.95);
+    headGroup.add(cranium);
+
+    // Forehead Armor Plate
+    const foreheadGeo = new THREE.BoxGeometry(0.85, 0.42, 0.3);
+    const foreheadPlate = new THREE.Mesh(foreheadGeo, platingMat);
+    foreheadPlate.position.set(0, 0.52, 0.78);
+    foreheadPlate.rotation.x = -0.22;
+    headGroup.add(foreheadPlate);
+
+    // Cyber Visor / Optic Sensor Strip
+    const visorGeo = new THREE.BoxGeometry(0.78, 0.13, 0.32);
+    const visor = new THREE.Mesh(visorGeo, visorMat);
+    visor.position.set(0, 0.12, 0.9);
+    headGroup.add(visor);
+
+    // Left & Right Cheek Armor Plates
+    const cheekGeo = new THREE.BoxGeometry(0.28, 0.45, 0.4);
+    const leftCheek = new THREE.Mesh(cheekGeo, platingMat);
+    leftCheek.position.set(-0.62, -0.15, 0.68);
+    leftCheek.rotation.y = 0.25;
+    headGroup.add(leftCheek);
+
+    const rightCheek = new THREE.Mesh(cheekGeo, platingMat);
+    rightCheek.position.set(0.62, -0.15, 0.68);
+    rightCheek.rotation.y = -0.25;
+    headGroup.add(rightCheek);
+
+    // Cyber Ear / Neural Audio Receivers
+    const earGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.18, 24);
+    const leftEar = new THREE.Mesh(earGeo, earPlateMat);
+    leftEar.position.set(-0.95, 0.05, 0);
+    leftEar.rotation.z = Math.PI / 2;
+    headGroup.add(leftEar);
+
+    const rightEar = new THREE.Mesh(earGeo, earPlateMat);
+    rightEar.position.set(0.95, 0.05, 0);
+    rightEar.rotation.z = Math.PI / 2;
+    headGroup.add(rightEar);
+
+    // 5. Articulated Jaw Rig (Mouth Pivot for Lip-Sync)
+    const jawPivotGroup = new THREE.Group();
+    jawPivotGroup.position.set(0, -0.22, 0.3); // Rotation pivot for mouth opening
+    headGroup.add(jawPivotGroup);
+
+    // Mandible / Chin Box Mesh
+    const jawGeo = new THREE.BoxGeometry(0.55, 0.38, 0.65);
+    const jawMesh = new THREE.Mesh(jawGeo, skullMat);
+    jawMesh.position.set(0, -0.26, 0.22);
+    jawPivotGroup.add(jawMesh);
+
+    // Chin Accent Plate
+    const chinPlateGeo = new THREE.BoxGeometry(0.38, 0.22, 0.2);
+    const chinPlate = new THREE.Mesh(chinPlateGeo, platingMat);
+    chinPlate.position.set(0, -0.32, 0.52);
+    jawPivotGroup.add(chinPlate);
+
+    // 6. Holographic Sonic Orbit Rings
+    const haloRingGeo = new THREE.TorusGeometry(1.58, 0.016, 16, 80);
+    const haloRing = new THREE.Mesh(haloRingGeo, haloRingMat);
+    haloRing.rotation.x = Math.PI / 3;
+    scene.add(haloRing);
+
+    const innerRingGeo = new THREE.TorusGeometry(1.85, 0.012, 16, 80);
+    const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+    innerRing.rotation.x = -Math.PI / 4;
+    innerRing.rotation.y = Math.PI / 6;
+    scene.add(innerRing);
+
+    // 7. Dynamic Color Mapping based on Live Status
+    const updateColors = (currentStatus: string) => {
+      let mainHex = 0x06b6d4; // Cyan (Speaking/Idle)
+      let lightHex = 0x06b6d4;
+
+      if (currentStatus === 'listening') {
+        mainHex = 0x10b981; // Emerald Green
+        lightHex = 0x34d399;
+      } else if (currentStatus === 'interrupted' || currentStatus === 'error') {
+        mainHex = 0xf43f5e; // Rose / Red
+        lightHex = 0xfb7185;
+      } else if (currentStatus === 'connecting') {
+        mainHex = 0x38bdf8; // Sky Blue
+        lightHex = 0x7dd3fc;
+      }
+
+      visorMat.color.setHex(mainHex);
+      visorMat.emissive.setHex(mainHex);
+      mouthGlowLight.color.setHex(lightHex);
+      opticLight.color.setHex(lightHex);
+      haloRingMat.color.setHex(mainHex);
+      keyLight.color.setHex(lightHex);
     };
 
-    resize();
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(container);
+    // 8. Animation Loop with Lip-Sync
+    let animationFrameId: number;
+    let currentMouthOpen = 0;
+    let targetMouthOpen = 0;
 
-    // Spectrum Bars state (64 radial bars)
-    const numBars = 64;
-    const barHeights = new Float32Array(numBars);
-    const barPeaks = new Float32Array(numBars);
-    const barSpeeds = new Float32Array(numBars);
+    const animate = () => {
+      animationFrameId = requestAnimationFrame(animate);
 
-    // Shockwave rings
-    interface Shockwave {
-      radius: number;
-      maxRadius: number;
-      opacity: number;
-      color: string;
-    }
-    const shockwaves: Shockwave[] = [];
-
-    // Ambient sonic particles
-    const particleCount = 40;
-    const particles = Array.from({ length: particleCount }, () => ({
-      angle: Math.random() * Math.PI * 2,
-      dist: 50 + Math.random() * 120,
-      baseDist: 50 + Math.random() * 120,
-      size: 1 + Math.random() * 2,
-      speed: 0.2 + Math.random() * 0.6,
-      opacity: 0.2 + Math.random() * 0.6,
-      hue: Math.random() > 0.5 ? 190 : 160,
-    }));
-
-    let lastTime = performance.now();
-    let smoothedSpeech = 0;
-    let waveOffset = 0;
-    let rotationAngle = 0;
-
-    const render = (now: number) => {
-      animationFrameId = requestAnimationFrame(render);
-
-      const dt = Math.min((now - lastTime) / 1000, 0.1);
-      lastTime = now;
-
-      const curSpeech = speechLevelRef.current;
-      const curMic = micLevelRef.current;
+      const time = performance.now() * 0.001;
       const curStatus = statusRef.current;
-      const curAnalyzing = isAnalyzingRef.current;
+      const curSpeech = speechRef.current;
+      const curMic = micRef.current;
+      const curAnalyzing = analyzingRef.current;
+
+      updateColors(curStatus);
 
       const isSpeaking = curStatus === 'speaking' || curSpeech > 4;
       const isListening = curStatus === 'listening';
 
-      // Smooth speech level with quick attack and gentle release
-      const targetSpeech = isSpeaking ? Math.max(curSpeech, 8) : isListening ? curMic * 0.8 : 0;
-      smoothedSpeech += (targetSpeech - smoothedSpeech) * (targetSpeech > smoothedSpeech ? 0.35 : 0.12);
-
-      const normSpeech = Math.min(1.0, smoothedSpeech / 70);
-      rotationAngle += dt * (0.3 + normSpeech * 0.8);
-      waveOffset += dt * (2.5 + normSpeech * 6.0);
-
-      // Trigger sonic shockwaves on speech spikes
-      if (isSpeaking && normSpeech > 0.45 && Math.random() < 0.2) {
-        shockwaves.push({
-          radius: 35,
-          maxRadius: Math.min(width, height) * 0.48,
-          opacity: 0.8,
-          color: normSpeech > 0.75 ? '#67e8f9' : '#00f0ff',
-        });
-      }
-
-      // Clear frame
-      ctx.clearRect(0, 0, width, height);
-
-      const cx = width / 2;
-      const cy = height / 2;
-      const baseRadius = Math.min(width, height) * 0.22;
-
-      // 1. Background Cybernetic Glow & Radar Grid
-      const bgGlow = ctx.createRadialGradient(cx, cy, 10, cx, cy, baseRadius * 1.8);
+      // Lip-Sync Calculation: Volume RMS + Syllabic Pulse
       if (isSpeaking) {
-        bgGlow.addColorStop(0, `rgba(0, 240, 255, ${0.15 + normSpeech * 0.25})`);
-        bgGlow.addColorStop(0.5, `rgba(2, 132, 199, ${0.08 + normSpeech * 0.12})`);
-        bgGlow.addColorStop(1, 'rgba(2, 6, 23, 0)');
-      } else if (isListening) {
-        bgGlow.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
-        bgGlow.addColorStop(0.5, 'rgba(6, 95, 70, 0.12)');
-        bgGlow.addColorStop(1, 'rgba(2, 6, 23, 0)');
-      } else if (curAnalyzing) {
-        bgGlow.addColorStop(0, 'rgba(56, 189, 248, 0.18)');
-        bgGlow.addColorStop(0.5, 'rgba(3, 105, 161, 0.08)');
-        bgGlow.addColorStop(1, 'rgba(2, 6, 23, 0)');
+        // Normalize speechLevel (0 - 100) to (0.0 - 1.0)
+        const normalized = Math.min(1.0, Math.max(0, curSpeech / 60));
+        // High-frequency syllable oscillations simulating spoken vowels and consonants
+        const syllablePulse = Math.sin(time * 24) * 0.35 + Math.cos(time * 14) * 0.15;
+        targetMouthOpen = Math.max(0.06, normalized * (0.75 + syllablePulse * 0.25));
+
+        // Smooth Lerp
+        currentMouthOpen += (targetMouthOpen - currentMouthOpen) * 0.32;
+        mouthGlowLight.intensity = 1.0 + normalized * 4.2;
+        visorMat.emissiveIntensity = 0.9 + normalized * 1.6;
+        opticLight.intensity = 1.4 + normalized * 2.0;
       } else {
-        bgGlow.addColorStop(0, 'rgba(14, 116, 144, 0.12)');
-        bgGlow.addColorStop(0.6, 'rgba(8, 47, 73, 0.05)');
-        bgGlow.addColorStop(1, 'rgba(2, 6, 23, 0)');
-      }
-      ctx.fillStyle = bgGlow;
-      ctx.fillRect(0, 0, width, height);
+        targetMouthOpen = 0;
+        currentMouthOpen += (0 - currentMouthOpen) * 0.2;
+        mouthGlowLight.intensity = 0.05;
 
-      // 2. Shockwave Rings Expansion
-      for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const sw = shockwaves[i];
-        sw.radius += dt * 140;
-        sw.opacity -= dt * 1.2;
-
-        if (sw.opacity <= 0 || sw.radius >= sw.maxRadius) {
-          shockwaves.splice(i, 1);
-          continue;
-        }
-
-        ctx.strokeStyle = sw.color;
-        ctx.globalAlpha = sw.opacity;
-        ctx.lineWidth = 1.8;
-        ctx.shadowColor = sw.color;
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        ctx.arc(cx, cy, sw.radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0;
-
-      // 3. Orbital Concentric HUD Rings with Tick Marks
-      ctx.save();
-      ctx.translate(cx, cy);
-
-      // Static inner guide ring
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(0, 0, baseRadius - 12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Rotating dashed outer ring
-      ctx.rotate(rotationAngle * 0.3);
-      ctx.strokeStyle = isSpeaking ? 'rgba(0, 240, 255, 0.45)' : 'rgba(56, 189, 248, 0.25)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 8]);
-      ctx.beginPath();
-      ctx.arc(0, 0, baseRadius + 44, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Counter-rotating segmented arcs
-      ctx.rotate(-rotationAngle * 0.7);
-      ctx.strokeStyle = isSpeaking ? '#38bdf8' : '#0284c7';
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([24, 48]);
-      ctx.beginPath();
-      ctx.arc(0, 0, baseRadius + 50, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      // 4. Ambient Sonic Nano-Particles
-      particles.forEach((p) => {
-        p.angle += dt * p.speed * (1 + normSpeech * 2);
-        const speechExpansion = normSpeech * 35;
-        p.dist = p.baseDist + speechExpansion + Math.sin(now * 0.003 + p.angle) * 8;
-
-        const px = cx + Math.cos(p.angle) * p.dist;
-        const py = cy + Math.sin(p.angle) * p.dist;
-
-        ctx.fillStyle = isListening
-          ? `hsla(150, 90%, 65%, ${p.opacity})`
-          : `hsla(${p.hue}, 95%, 65%, ${p.opacity})`;
-        ctx.shadowColor = isListening ? '#10b981' : '#00f0ff';
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.arc(px, py, p.size * (1 + normSpeech * 0.6), 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.shadowBlur = 0;
-
-      // 5. Radial Equalizer Bars (64 Spectrum Frequencies)
-      const maxBarLength = Math.min(width, height) * 0.2;
-
-      for (let i = 0; i < numBars; i++) {
-        // Multi-frequency synthesis for realistic audio harmonics
-        const freqRatio = i / numBars;
-        const harmonic1 = Math.sin(now * 0.009 * (1 + freqRatio * 3) + i * 0.35);
-        const harmonic2 = Math.cos(now * 0.014 * (2 + freqRatio * 2) - i * 0.2);
-        const harmonic3 = Math.sin(waveOffset + i * 0.5);
-
-        let targetH = 0;
-        if (isSpeaking) {
-          // Dynamic speech spectrum curve (higher energy in vocal mid-range)
-          const voiceProfile = Math.sin(freqRatio * Math.PI) * 0.8 + 0.3;
-          const energy = Math.abs(harmonic1 * 0.4 + harmonic2 * 0.4 + harmonic3 * 0.2);
-          targetH = (6 + energy * maxBarLength * normSpeech * 1.4) * voiceProfile;
-        } else if (isListening) {
-          const micEnergy = Math.abs(harmonic1 * 0.6 + harmonic2 * 0.4);
-          targetH = 4 + micEnergy * maxBarLength * (curMic / 100) * 0.9;
-        } else if (curAnalyzing) {
-          // Scanning wave pulse
-          const scanPos = (now * 0.003) % 1;
-          const distToScan = Math.abs(freqRatio - scanPos);
-          const scanEnergy = Math.max(0, 1 - distToScan * 4);
-          targetH = 6 + scanEnergy * 24 + Math.abs(harmonic1) * 8;
+        if (isListening) {
+          const micNorm = Math.min(1.0, curMic / 60);
+          visorMat.emissiveIntensity = 1.0 + micNorm * 1.2;
+          opticLight.intensity = 1.2 + Math.sin(time * 6) * 0.4;
         } else {
-          // Gentle idle breathing wave
-          targetH = 4 + Math.abs(harmonic1) * 10;
+          visorMat.emissiveIntensity = 0.75 + Math.sin(time * 2) * 0.2;
+          opticLight.intensity = 1.0;
         }
-
-        // Interpolate bar height
-        barHeights[i] += (targetH - barHeights[i]) * 0.3;
-
-        // Falling Peak Dots
-        if (barHeights[i] >= barPeaks[i]) {
-          barPeaks[i] = barHeights[i];
-          barSpeeds[i] = 0;
-        } else {
-          barSpeeds[i] += dt * 35;
-          barPeaks[i] = Math.max(0, barPeaks[i] - barSpeeds[i]);
-        }
-
-        const angle = (i / numBars) * Math.PI * 2 - Math.PI / 2;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
-
-        const x1 = cx + cos * baseRadius;
-        const y1 = cy + sin * baseRadius;
-        const x2 = cx + cos * (baseRadius + barHeights[i]);
-        const y2 = cy + sin * (baseRadius + barHeights[i]);
-
-        // Bar Color Gradient
-        const barGrad = ctx.createLinearGradient(x1, y1, x2, y2);
-        if (isSpeaking) {
-          barGrad.addColorStop(0, '#00e5ff');
-          barGrad.addColorStop(0.7, '#38bdf8');
-          barGrad.addColorStop(1, normSpeech > 0.6 ? '#ffffff' : '#818cf8');
-        } else if (isListening) {
-          barGrad.addColorStop(0, '#10b981');
-          barGrad.addColorStop(1, '#6ee7b7');
-        } else if (curAnalyzing) {
-          barGrad.addColorStop(0, '#06b6d4');
-          barGrad.addColorStop(1, '#38bdf8');
-        } else {
-          barGrad.addColorStop(0, 'rgba(6, 182, 212, 0.4)');
-          barGrad.addColorStop(1, 'rgba(56, 189, 248, 0.7)');
-        }
-
-        ctx.strokeStyle = barGrad;
-        ctx.lineWidth = Math.max(2, (2 * Math.PI * baseRadius) / (numBars * 1.6));
-        ctx.lineCap = 'round';
-        ctx.shadowColor = isListening ? '#10b981' : '#00f0ff';
-        ctx.shadowBlur = isSpeaking ? 8 + normSpeech * 8 : 4;
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-
-        // Peak Dot
-        const px = cx + cos * (baseRadius + barPeaks[i] + 3);
-        const py = cy + sin * (baseRadius + barPeaks[i] + 3);
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.arc(px, py, 1.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.shadowBlur = 0;
-
-      // 6. Central AI Neural Sound Core
-      const coreRadius = baseRadius * 0.72;
-      const corePulse = isSpeaking ? 1.0 + normSpeech * 0.22 : 1.0 + Math.sin(now * 0.003) * 0.04;
-
-      // Core Outer Halo
-      const coreHalo = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadius * corePulse);
-      if (isSpeaking) {
-        coreHalo.addColorStop(0, '#ffffff');
-        coreHalo.addColorStop(0.3, '#38bdf8');
-        coreHalo.addColorStop(0.7, '#0284c7');
-        coreHalo.addColorStop(1, 'rgba(2, 132, 199, 0)');
-      } else if (isListening) {
-        coreHalo.addColorStop(0, '#ffffff');
-        coreHalo.addColorStop(0.4, '#34d399');
-        coreHalo.addColorStop(0.8, '#059669');
-        coreHalo.addColorStop(1, 'rgba(5, 150, 105, 0)');
-      } else {
-        coreHalo.addColorStop(0, '#e0f2fe');
-        coreHalo.addColorStop(0.4, '#0284c7');
-        coreHalo.addColorStop(0.9, 'rgba(8, 47, 73, 0.8)');
-        coreHalo.addColorStop(1, 'rgba(8, 47, 73, 0)');
       }
 
-      ctx.fillStyle = coreHalo;
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreRadius * corePulse, 0, Math.PI * 2);
-      ctx.fill();
+      // Articulate Mandible (Jaw Rotation & Vertical Displacement)
+      jawPivotGroup.rotation.x = currentMouthOpen * 0.45;
+      jawPivotGroup.position.y = -0.22 - currentMouthOpen * 0.08;
 
-      // Core Inner Dark Plate with Cyber Border
-      ctx.fillStyle = '#030712';
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreRadius * 0.7, 0, Math.PI * 2);
-      ctx.fill();
+      // Natural Breathing & Subtle Floating Physics
+      const swaySpeed = curAnalyzing ? 3.0 : 1.8;
+      headGroup.position.y = Math.sin(time * swaySpeed) * 0.045;
+      headGroup.rotation.y = Math.sin(time * 0.9) * 0.06;
+      headGroup.rotation.x = Math.sin(time * 1.2) * 0.03;
 
-      ctx.strokeStyle = isSpeaking ? '#00f0ff' : isListening ? '#10b981' : '#0284c7';
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = ctx.strokeStyle;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreRadius * 0.7, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      // Rotate Holographic Rings
+      haloRing.rotation.z = time * 0.25;
+      innerRing.rotation.z = -time * 0.18;
+      haloRing.scale.setScalar(1.0 + Math.sin(time * 2.5) * 0.02 + (curSpeech / 100) * 0.08);
 
-      // 7. Horizontal Oscilloscope Waveform through the Core
-      const waveWidth = coreRadius * 1.1;
-      const waveStartX = cx - waveWidth / 2;
-      const wavePoints = 32;
-
-      ctx.strokeStyle = isSpeaking ? '#ffffff' : isListening ? '#6ee7b7' : '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = ctx.strokeStyle;
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-
-      for (let j = 0; j <= wavePoints; j++) {
-        const wx = waveStartX + (j / wavePoints) * waveWidth;
-        const progress = j / wavePoints;
-        const envelope = Math.sin(progress * Math.PI); // Pinches at edges
-        const waveAmp = (isSpeaking ? 16 * normSpeech + 6 : isListening ? 12 * (curMic / 100) + 4 : 4);
-        const wy = cy + Math.sin(waveOffset * 1.5 + progress * 12) * waveAmp * envelope;
-
-        if (j === 0) ctx.moveTo(wx, wy);
-        else ctx.lineTo(wx, wy);
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // 8. High-Tech Telemetry & Frequency Readouts
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // Top frequency readout
-      ctx.font = 'bold 9px monospace';
-      ctx.fillStyle = isSpeaking ? '#67e8f9' : '#94a3b8';
-      const currentHz = isSpeaking
-        ? (24.2 + Math.sin(now * 0.01) * 3.8).toFixed(1)
-        : curAnalyzing
-        ? (14.5 + Math.sin(now * 0.005) * 1.2).toFixed(1)
-        : '12.0';
-      ctx.fillText(`${currentHz} kHz`, cx, cy - coreRadius * 0.35);
-
-      // Bottom Status badge
-      ctx.font = 'bold 8px monospace';
-      if (isSpeaking) {
-        ctx.fillStyle = '#00f0ff';
-        ctx.fillText('IA FALANDO', cx, cy + coreRadius * 0.38);
-      } else if (isListening) {
-        ctx.fillStyle = '#34d399';
-        ctx.fillText('OUVINDO VOZ', cx, cy + coreRadius * 0.38);
-      } else if (curAnalyzing) {
-        ctx.fillStyle = '#38bdf8';
-        ctx.fillText('VARREDURA ATIVA', cx, cy + coreRadius * 0.38);
-      } else {
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('FREQUÊNCIA OK', cx, cy + coreRadius * 0.38);
-      }
+      renderer.render(scene, camera);
     };
 
-    animationFrameId = requestAnimationFrame(render);
+    animate();
 
+    // 9. Resize Handling via ResizeObserver
+    const handleResize = () => {
+      if (!container) return;
+      const w = container.clientWidth || 340;
+      const h = container.clientHeight || 280;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
+
+    // 10. Clean Cleanup on Unmount
     return () => {
       cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
+
+      // Dispose Geometries
+      craniumGeo.dispose();
+      foreheadGeo.dispose();
+      visorGeo.dispose();
+      cheekGeo.dispose();
+      earGeo.dispose();
+      jawGeo.dispose();
+      chinPlateGeo.dispose();
+      haloRingGeo.dispose();
+      innerRingGeo.dispose();
+
+      // Dispose Materials
+      skullMat.dispose();
+      platingMat.dispose();
+      earPlateMat.dispose();
+      visorMat.dispose();
+      haloRingMat.dispose();
+      innerRingMat.dispose();
+
+      // Dispose Renderer
+      renderer.dispose();
+      if (renderer.domElement && container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
     };
   }, []);
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full h-full min-h-[300px] flex items-center justify-center overflow-hidden pointer-events-auto bg-neutral-950/60 rounded-2xl border border-cyan-500/10 ${className}`}
-    >
-      {/* Real-time Frequency Spectrum Canvas */}
-      <canvas ref={canvasRef} className="block w-full h-full" />
-
-      {/* Cyber Corner HUD Brackets */}
-      <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-cyan-500/40 pointer-events-none" />
-      <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-cyan-500/40 pointer-events-none" />
-      <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-500/40 pointer-events-none" />
-      <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-cyan-500/40 pointer-events-none" />
-
-      {/* Top Banner Tag */}
-      <div className="absolute top-2.5 inset-x-0 flex justify-center pointer-events-none">
-        <span className="px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-[9px] font-mono font-bold tracking-widest text-cyan-300 uppercase shadow-[0_0_12px_rgba(6,182,212,0.25)] flex items-center gap-1.5 backdrop-blur-md">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-          ESPECTRO DE FREQUÊNCIA DA IA
-        </span>
-      </div>
-
-      {/* Bottom Audio Telemetry Info */}
-      <div className="absolute bottom-2.5 inset-x-3 flex items-center justify-between pointer-events-none text-[8px] font-mono text-neutral-400">
-        <span className="flex items-center gap-1">
-          <span className="text-cyan-400 font-bold">FLUXO:</span>
-          {speechLevel > 0 ? `${Math.round(speechLevel)}%` : isAnalyzing ? 'ANALISANDO' : 'STANDBY'}
-        </span>
-        <span className="text-neutral-500 uppercase tracking-wider">
-          MODULAÇÃO NEURAL 64-BANDAS
-        </span>
-      </div>
-    </div>
+      className={`relative w-full h-full min-h-[220px] flex items-center justify-center overflow-hidden select-none ${className}`}
+    />
   );
 };
