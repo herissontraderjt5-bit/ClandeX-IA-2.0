@@ -299,7 +299,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
         ws.send(
           JSON.stringify({
             type: 'start',
-            voiceName: 'Kore',
+            voiceName: 'Aoede',
             marketContext: {
               asset: asset.symbol,
               assetName: asset.name,

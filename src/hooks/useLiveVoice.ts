@@ -102,6 +102,20 @@ export function useLiveVoice({
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
   contextRef.current = { asset, timeframe, marketAnalysis, confluences };
 
+  // Pré-carrega vozes do navegador para que a voz feminina esteja disponível de imediato
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      const onVoicesChanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+      window.speechSynthesis.addEventListener('voiceschanged', onVoicesChanged);
+      return () => {
+        window.speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
+      };
+    }
+  }, []);
+
   // Resampler em tempo real: converte taxa nativa (ex: 44.1kHz ou 48kHz) para 16kHz Little-Endian
   const resampleTo16k = (inputData: Float32Array, inputSampleRate: number): Float32Array => {
     if (inputSampleRate === 16000) return inputData;
@@ -428,35 +442,79 @@ export function useLiveVoice({
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
+    // Pausa reconhecimento do microfone enquanto a IA fala para evitar eco acústico
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+    }
+
     stopAudioPlayback();
     isAiSpeakingRef.current = true;
     setStatus('speaking');
 
     const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
-    window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'pt-BR';
-    utterance.rate = 1.05;
-    utterance.pitch = 1.02;
+    utterance.rate = 1.0;
+    // Timbre feminino nítido, claro e agradável
+    utterance.pitch = 1.18;
 
-    const pickVoice = () => {
+    // Seleção estrita de voz feminina em Português (eliminando completamente vozes masculinas como Daniel)
+    const pickFemaleVoice = (): SpeechSynthesisVoice | null => {
       const voices = window.speechSynthesis.getVoices();
-      return (
-        voices.find(
-          (v) =>
-            (v.lang.startsWith('pt') || v.lang.includes('BR')) &&
-            (v.name.includes('Google') ||
-              v.name.includes('Natural') ||
-              v.name.includes('Luciana') ||
-              v.name.includes('Francisca') ||
-              v.name.includes('Maria') ||
-              v.name.includes('Daniel'))
-        ) || voices.find((v) => v.lang.startsWith('pt') || v.lang.includes('BR'))
-      );
+      if (!voices || voices.length === 0) return null;
+
+      const maleExclusions = [
+        'daniel', 'antonio', 'antônio', 'felipe', 'fabio', 'fábio',
+        'ricardo', 'thiago', 'tiago', 'julio', 'júlio', 'male', 'masculino',
+        'man', 'david', 'jorge'
+      ];
+
+      // 1. Filtrar vozes brasileiras e portuguesas
+      const ptVoices = voices.filter((v) => {
+        const lang = (v.lang || '').toLowerCase();
+        return lang.startsWith('pt') || lang.includes('br');
+      });
+
+      // 2. Nomes femininos prioritários no Windows, Android, Chrome, Edge, iOS
+      const femaleKeywords = [
+        'francisca', 'maria', 'brenda', 'thalita', 'leticia', 'letícia',
+        'heloisa', 'heloísa', 'yara', 'camila', 'luciana', 'joana',
+        'fernanda', 'raquel', 'vitória', 'vitoria', 'female', 'feminino',
+        'mulher', 'woman'
+      ];
+
+      // 2.1 Busca por voz em PT com nome feminino explícito e sem termos masculinos
+      for (const kw of femaleKeywords) {
+        const found = ptVoices.find((v) => {
+          const lower = v.name.toLowerCase();
+          return lower.includes(kw) && !maleExclusions.some((m) => lower.includes(m));
+        });
+        if (found) return found;
+      }
+
+      // 2.2 Busca por voz Natural ou Google em português (sem termos masculinos)
+      const naturalPt = ptVoices.find((v) => {
+        const lower = v.name.toLowerCase();
+        return (lower.includes('google') || lower.includes('natural') || lower.includes('online')) &&
+          !maleExclusions.some((m) => lower.includes(m));
+      });
+      if (naturalPt) return naturalPt;
+
+      // 2.3 Qualquer voz em português sem termos masculinos
+      const nonMalePt = ptVoices.find((v) => {
+        const lower = v.name.toLowerCase();
+        return !maleExclusions.some((m) => lower.includes(m));
+      });
+      if (nonMalePt) return nonMalePt;
+
+      // 2.4 Fallback: primeira voz em português
+      return ptVoices[0] || null;
     };
 
-    const chosenVoice = pickVoice();
+    const chosenVoice = pickFemaleVoice();
     if (chosenVoice) {
       utterance.voice = chosenVoice;
     }
@@ -472,7 +530,7 @@ export function useLiveVoice({
       }
       setAiSpeechLevel(0);
 
-      // Cooldown de 500ms para evitar eco no microfone
+      // Cooldown de 450ms após fala para dissipar o som antes de reabrir o microfone
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
@@ -482,7 +540,7 @@ export function useLiveVoice({
             recognitionRef.current.start();
           }
         } catch {}
-      }, 500);
+      }, 450);
     };
 
     utterance.onstart = () => {
@@ -504,10 +562,22 @@ export function useLiveVoice({
       }
     }, maxSafetyMs);
 
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
-    window.speechSynthesis.speak(utterance);
+    // Cancelamento limpo com breve timeout para compatibilidade do Chromium
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+
+    setTimeout(() => {
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn('Erro ao reproduzir voz feminina:', err);
+        finishPlayback();
+      }
+    }, 40);
   }, [stopAudioPlayback]);
 
   /**
@@ -685,9 +755,9 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando e o usuário começar a falar, interrompe a fala da IA imediatamente
+        // Se a IA estiver falando, ignoramos resultados do microfone para evitar eco e autointerrupção
         if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          interruptSpeech();
+          return;
         }
 
         let interim = '';
@@ -791,12 +861,8 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
         const rms = Math.sqrt(sum / (inputData.length / 8));
         const currentLevel = Math.min(100, Math.round(rms * 280));
 
-        // Se a IA estiver falando: verifica se o usuário começou a falar no microfone para interromper
+        // Se a IA estiver falando, silencia o medidor para evitar eco das caixas de som
         if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          if (!isMutedRef.current && rms > 0.04) {
-            console.log('[ClandeX-IA] Usuário começou a falar -> Interrompendo fala da IA imediatamente!');
-            interruptSpeech();
-          }
           setMicLevel(0);
           return;
         }
@@ -925,7 +991,7 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
             ws.send(
               JSON.stringify({
                 type: 'start',
-                voiceName: 'Zephyr',
+                voiceName: 'Aoede',
                 marketContext: {
                   asset: currentCtx.asset.symbol,
                   assetName: currentCtx.asset.name,
@@ -999,9 +1065,6 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       setLastTurnMessage(greetingMsg);
       setVoiceHistory((prev) => [...prev, greetingMsg]);
       speakBrowserText(greeting);
-
-      // Inicia a escuta por voz no navegador imediatamente
-      startSpeechRecognition();
     } catch (err: any) {
       console.warn('[ClandeX-IA Voz] Inicializando com fallback direto:', err);
       const greeting = `ClandeX-IA conectada por voz. Monitorando ${contextRef.current.asset.symbol}. Pode falar comigo!`;
@@ -1014,7 +1077,6 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       setLastTurnMessage(greetingMsg);
       setVoiceHistory((prev) => [...prev, greetingMsg]);
       speakBrowserText(greeting);
-      startSpeechRecognition();
     }
   }, [requestMicrophoneAccess, scheduleAudioChunk, stopAudioPlayback, speakBrowserText, startSpeechRecognition]);
 

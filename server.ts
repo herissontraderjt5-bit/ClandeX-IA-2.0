@@ -46,7 +46,7 @@ wss.on('connection', (clientWs: WebSocket) => {
         if (session || isConnecting) return;
         isConnecting = true;
 
-        const { marketContext, voiceName = 'Zephyr' } = msg;
+        const { marketContext, voiceName = 'Aoede' } = msg;
         const asset = marketContext?.asset || 'EUR/USD';
         const currentPrice = marketContext?.currentPrice ?? 'N/A';
         const timeframe = marketContext?.timeframe || 'M1';
@@ -126,7 +126,7 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSAÇÃO NATURAL POR VOZ:
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                   voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
+                    prebuiltVoiceConfig: { voiceName: voiceName || 'Aoede' },
                   },
                 },
                 systemInstruction,
