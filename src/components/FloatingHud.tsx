@@ -92,12 +92,14 @@ interface FloatingHudProps {
     userTranscript?: string;
     aiResponseText?: string;
     lastTurnMessage?: LiveTurnMessage | null;
+    voiceHistory?: LiveTurnMessage[];
     startLiveConversation: () => Promise<void>;
     disconnectSession: () => void;
     toggleMute: () => void;
     requestMicrophoneAccess: () => Promise<void>;
     sendTextMessage?: (text: string) => void;
     interruptSpeech?: () => void;
+    clearVoiceHistory?: () => void;
   };
   onSelectAsset: (symbol: string) => void;
   onSelectTimeframe: (tf: TimeFrame) => void;
@@ -301,8 +303,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [isDragging, position]);
 
-  // HUD Tabs: 'sinal' | 'analise' | 'chat'
-  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'chat'>('sinal');
+  // HUD Tabs: 'sinal' | 'analise' | 'voz' | 'chat'
+  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'voz' | 'chat'>('sinal');
   const [copiedSignal, setCopiedSignal] = useState(false);
 
   // Market status (TradingView Weekend Forex closure check)
@@ -329,132 +331,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-Speech & TTS Audio Engine for ClandeX-IA
-  const [isAutoSpeechEnabled, setIsAutoSpeechEnabled] = useState(true);
-  const [isSpeakingText, setIsSpeakingText] = useState(false);
-  const [ttsSpeechLevel, setTtsSpeechLevel] = useState(0);
-  const ttsIntervalRef = useRef<any>(null);
-  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
-
-  // Pre-load browser voices for Portuguese (pt-BR)
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const loadVoices = () => {
-      const v = window.speechSynthesis.getVoices();
-      availableVoicesRef.current = v;
-    };
-
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-
-    return () => {
-      if (ttsIntervalRef.current) clearInterval(ttsIntervalRef.current);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  const cleanTextForSpeech = (rawText: string): string => {
-    return rawText
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/\*(.*?)\*/g, '$1')
-      .replace(/`(.*?)`/g, '$1')
-      .replace(/#{1,6}\s+/g, '')
-      .replace(/[•▪▫-]\s+/g, '')
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}]/gu, '')
-      .replace(/\n+/g, '. ')
-      .trim();
-  };
-
-  const stopSpeaking = useCallback(() => {
-    if (ttsIntervalRef.current) {
-      clearInterval(ttsIntervalRef.current);
-      ttsIntervalRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeakingText(false);
-    setTtsSpeechLevel(0);
-  }, []);
-
-  const speakText = useCallback((textToSpeak: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    stopSpeaking();
-
-    const clean = cleanTextForSpeech(textToSpeak);
-    if (!clean) return;
-
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 1.05;
-    utterance.pitch = 1.05;
-
-    const voices = availableVoicesRef.current.length > 0
-      ? availableVoicesRef.current
-      : window.speechSynthesis.getVoices();
-
-    const ptVoices = voices.filter((v) => v.lang.startsWith('pt') || v.lang.includes('BR'));
-    const preferredVoice = ptVoices.find((v) =>
-      /female|mulher|luciana|francisca|maria|leticia|google/i.test(v.name)
-    ) || ptVoices[0];
-
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
-
-    utterance.onstart = () => {
-      setIsSpeakingText(true);
-      let phase = 0;
-      ttsIntervalRef.current = setInterval(() => {
-        phase += 0.35;
-        const baseLevel = 45 + Math.sin(phase * 4.2) * 25 + Math.sin(phase * 8.5) * 15;
-        setTtsSpeechLevel(Math.max(25, Math.min(95, Math.round(baseLevel))));
-      }, 70);
-    };
-
-    utterance.onend = () => {
-      stopSpeaking();
-    };
-
-    utterance.onerror = (e) => {
-      console.warn('SpeechSynthesis error:', e);
-      stopSpeaking();
-    };
-
-    window.speechSynthesis.speak(utterance);
-  }, [stopSpeaking]);
-
   useEffect(() => {
     if (activeTab === 'chat') {
       chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, activeTab, isChatLoading]);
 
-  // Sincroniza perguntas e respostas da conversa por voz no chat (apenas 1 vez por turno concluído, sem repetição de fragmentos)
-  useEffect(() => {
-    if (liveVoice?.lastTurnMessage) {
-      const turnMsg = liveVoice.lastTurnMessage;
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === turnMsg.id)) return prev;
-        return [...prev, turnMsg];
-      });
-    }
-  }, [liveVoice?.lastTurnMessage]);
-
+  // Envio de mensagem puramente textual no Chat (a IA responde em texto sem falar em voz alta)
   const handleSendChatMessage = async (customPrompt?: string) => {
     const textToSend = (customPrompt || chatInput).trim();
     if (!textToSend || isChatLoading) return;
-
-    // Se a IA de Voz estiver conectada, envia diretamente para o Gemini Live responder por voz com Zephyr
-    if (liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && liveVoice.sendTextMessage) {
-      liveVoice.sendTextMessage(textToSend);
-      setChatInput('');
-      return;
-    }
 
     const userMsg = {
       id: `user-${Date.now()}`,
@@ -586,10 +472,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             timestamp: Date.now(),
           },
         ]);
-
-        if (isAutoSpeechEnabled && (!liveVoice || liveVoice.status === 'idle')) {
-          speakText(replyText);
-        }
       } else {
         throw new Error('Falha ao obter resposta');
       }
@@ -620,10 +502,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           timestamp: Date.now(),
         },
       ]);
-
-      if (isAutoSpeechEnabled && (!liveVoice || liveVoice.status === 'idle')) {
-        speakText(fallbackText);
-      }
     } finally {
       setIsChatLoading(false);
     }
@@ -884,10 +762,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         /* Expanded HUD Content with Clean Separate Tabs */
         <div>
           {/* Navigation Tabs Bar */}
-          <div className="flex items-center px-3 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1.5">
+          <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1">
             <button
               onClick={() => setActiveTab('sinal')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'sinal'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
@@ -902,7 +780,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
             <button
               onClick={() => setActiveTab('analise')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'analise'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
@@ -913,20 +791,32 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             </button>
 
             <button
+              onClick={() => setActiveTab('voz')}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                activeTab === 'voz'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Voz 3D</span>
+              {liveVoice && liveVoice.status !== 'idle' ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60" />
+              )}
+            </button>
+
+            <button
               onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
                 activeTab === 'chat'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
               }`}
             >
-              <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Chat IA</span>
-              {liveVoice && liveVoice.status !== 'idle' ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              )}
+              <MessageSquare className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Chat</span>
             </button>
           </div>
 
@@ -1897,64 +1787,56 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               </div>
             )}
 
-            {/* TAB 3: Interactive Real-Time AI Chat */}
-            {activeTab === 'chat' && (
+            {/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo */}
+            {activeTab === 'voz' && (
               <div className="space-y-3">
-                {/* Chat Top Banner with active Asset context */}
+                {/* Voz 3D Top Banner */}
                 <div className="p-2.5 bg-[#0f1422] border border-[#1b253d] rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
-                      <Bot className="w-4 h-4 text-cyan-400" />
+                      <Mic className="w-4 h-4 text-cyan-400 animate-pulse" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-white text-xs">ClandeX-IA</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        <span className="font-bold text-white text-xs">ClandeX-IA Voz 3D</span>
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            liveVoice?.status === 'speaking'
+                              ? 'bg-cyan-400 animate-ping'
+                              : liveVoice?.status === 'listening'
+                              ? 'bg-emerald-400 animate-pulse'
+                              : liveVoice?.status === 'connecting'
+                              ? 'bg-amber-400 animate-ping'
+                              : 'bg-neutral-500'
+                          }`}
+                        />
                       </div>
                       <div className="text-[10px] text-neutral-400 font-mono">
-                        {asset.symbol} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)} • {timeframe}
+                        {asset.symbol} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)} • Conversa Falada
                       </div>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() =>
-                      setChatMessages([
-                        {
-                          id: `welcome-${Date.now()}`,
-                          role: 'model',
-                          text: `Chat reiniciado para ${asset.symbol}. Estou pronta para conversar por voz ou texto. O que deseja analisar?`,
-                          timestamp: Date.now(),
-                        },
-                      ])
-                    }
-                    title="Reiniciar chat com IA"
-                    className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300">
+                    {liveVoice?.activeEngine === 'gemini_live' ? 'Gemini Neural' : 'Voz PT-BR'}
+                  </div>
                 </div>
 
-                {/* 3D Female Robotic Face Embedded Directly on the Page */}
+                {/* 3D Cyber Sound Frequency Visualizer Container */}
                 <div className="relative w-full h-56 rounded-2xl bg-gradient-to-b from-[#0a1020]/90 via-[#050811] to-[#0a1020]/90 border border-cyan-500/30 shadow-[inset_0_0_30px_rgba(6,182,212,0.15)] overflow-hidden flex items-center justify-center">
-                  {/* Holographic background cyber grid */}
                   <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-20 pointer-events-none" />
 
                   {/* Corner Status Badge */}
                   <div className="absolute top-2 left-2.5 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 backdrop-blur-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <span>IA VOZ & ROSTO 3D</span>
+                    <span>AVATAR SONORO 3D</span>
                   </div>
 
                   {/* Top Right Controls & Status */}
                   <div className="absolute top-2 right-2.5 z-10 flex items-center gap-1.5">
-                    {/* Interromper Fala em Tempo Real (Gemini Live ou TTS) */}
-                    {(liveVoice?.status === 'speaking' || isSpeakingText) && (
+                    {liveVoice?.status === 'speaking' && (
                       <button
-                        onClick={() => {
-                          if (liveVoice?.interruptSpeech) liveVoice.interruptSpeech();
-                          if (isSpeakingText) stopSpeaking();
-                        }}
+                        onClick={liveVoice?.interruptSpeech}
                         className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-600/90 hover:bg-rose-500 border border-rose-400 text-[9px] font-mono font-bold text-white transition-all cursor-pointer shadow-md shadow-rose-900/50 animate-pulse"
                         title="Interromper fala da IA em tempo real"
                       >
@@ -1963,28 +1845,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </button>
                     )}
 
-                    {/* Auto Speech Toggle Button */}
-                    <button
-                      onClick={() => {
-                        if (isSpeakingText) stopSpeaking();
-                        setIsAutoSpeechEnabled(!isAutoSpeechEnabled);
-                      }}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-mono transition-all cursor-pointer backdrop-blur-sm ${
-                        isAutoSpeechEnabled
-                          ? 'bg-cyan-950/80 border-cyan-500/50 text-cyan-300'
-                          : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
-                      }`}
-                      title={isAutoSpeechEnabled ? 'Voz Automática da ClandeX Ativada (Clique para silenciar)' : 'Voz Automática Silenciada (Clique para falar)'}
-                    >
-                      {isAutoSpeechEnabled ? <Volume2 className="w-2.5 h-2.5 text-cyan-400" /> : <VolumeX className="w-2.5 h-2.5 text-neutral-500" />}
-                      <span>{isAutoSpeechEnabled ? 'VOZ ATIVA' : 'MUDO'}</span>
-                    </button>
-
-                    {/* Live / TTS Status Pill */}
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-neutral-900/80 border border-neutral-700/80 text-[9px] font-mono text-neutral-300 backdrop-blur-sm">
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          (liveVoice?.status === 'speaking' || isSpeakingText)
+                          liveVoice?.status === 'speaking'
                             ? 'bg-cyan-400 animate-ping'
                             : liveVoice?.status === 'listening'
                             ? 'bg-emerald-400 animate-pulse'
@@ -1996,38 +1860,25 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <span>
                         {liveVoice?.status === 'speaking'
                           ? 'FALANDO AO VIVO'
-                          : isSpeakingText
-                          ? 'FALANDO RESPOSTA'
                           : liveVoice?.status === 'listening'
-                          ? 'OUVINDO'
+                          ? 'OUVINDO VOCÊ'
                           : liveVoice?.status === 'connecting'
                           ? 'CONECTANDO'
-                          : 'STANDBY'}
+                          : 'DESLIGADO'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Cyber Sound Frequency Visualizer Component */}
                   <CyberAiAvatar3D
-                    status={
-                      liveVoice && (liveVoice.status === 'speaking' || liveVoice.status === 'listening' || liveVoice.status === 'connecting')
-                        ? liveVoice.status
-                        : isSpeakingText
-                        ? 'speaking'
-                        : 'idle'
-                    }
-                    speechLevel={
-                      liveVoice && liveVoice.aiSpeechLevel > 0
-                        ? liveVoice.aiSpeechLevel
-                        : ttsSpeechLevel
-                    }
+                    status={liveVoice?.status || 'idle'}
+                    speechLevel={liveVoice?.aiSpeechLevel || 0}
                     micLevel={liveVoice?.micLevel || 0}
                     isAnalyzing={isAnalyzing}
                     className="w-full h-full"
                   />
                 </div>
 
-                {/* Embedded Controls: LIGAR / DESLIGAR / MUTAR */}
+                {/* Voice Controls: Ligar / Desligar / Mutar */}
                 <div className="space-y-1.5">
                   {(!liveVoice || liveVoice.status === 'idle') && (
                     <button
@@ -2035,7 +1886,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
                     >
                       <Radio className="w-4 h-4 text-neutral-950 animate-pulse" />
-                      <span>LIGAR VOZ IA</span>
+                      <span>LIGAR VOZ IA (CONVERSAR NORMALMENTE)</span>
                     </button>
                   )}
 
@@ -2059,7 +1910,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                   {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && (
                     <div className="flex items-center gap-2">
-                      {/* Microphone Control */}
                       {liveVoice.hasMicPermission ? (
                         <button
                           onClick={liveVoice.toggleMute}
@@ -2087,7 +1937,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </button>
                       )}
 
-                      {/* Desligar Button */}
                       <button
                         onClick={liveVoice.disconnectSession}
                         className="py-2.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer active:scale-98"
@@ -2097,32 +1946,147 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </button>
                     </div>
                   )}
+                </div>
 
-                  {liveVoice && (liveVoice.status === 'listening' || liveVoice.status === 'speaking') && (
-                    <div className="text-[10px] font-mono text-center text-cyan-400/80 py-0.5">
-                      {liveVoice.activeEngine === 'gemini_live'
-                        ? '⚡ Conectado: Google Gemini Live Neural'
-                        : '🎙️ Conectado: Voz Local Especializada (PT-BR)'}
+                {/* Spoken Dialogue History Container */}
+                <div className="h-[140px] overflow-y-auto space-y-2 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar text-[11px]">
+                  {liveVoice?.voiceHistory && liveVoice.voiceHistory.length > 0 ? (
+                    liveVoice.voiceHistory.map((turn: LiveTurnMessage) => (
+                      <div
+                        key={turn.id}
+                        className={`flex flex-col ${turn.role === 'user' ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className="flex items-center gap-1 mb-0.5 text-[9px] text-neutral-500 font-mono">
+                          {turn.role === 'user' ? (
+                            <>
+                              <span>Você (Voz)</span>
+                              <Mic className="w-2.5 h-2.5 text-cyan-400" />
+                            </>
+                          ) : (
+                            <>
+                              <Bot className="w-2.5 h-2.5 text-emerald-400" />
+                              <span className="text-emerald-400 font-semibold">ClandeX-IA (Falou)</span>
+                            </>
+                          )}
+                          <span>{new Date(turn.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        </div>
+                        <div
+                          className={`max-w-[90%] p-2 rounded-xl text-[11px] leading-relaxed ${
+                            turn.role === 'user'
+                              ? 'bg-cyan-950/60 border border-cyan-500/30 text-cyan-100 rounded-tr-xs'
+                              : 'bg-[#101522] border border-[#1e2a44] text-neutral-200 rounded-tl-xs'
+                          }`}
+                        >
+                          {turn.text}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-neutral-500 p-3">
+                      <Mic className="w-6 h-6 text-neutral-600 mb-1" />
+                      <span>Ligue a voz e fale ao microfone. A IA ouvirá e responderá falando normalmente com você.</span>
                     </div>
                   )}
 
-                  {liveVoice?.errorMessage && (
-                    <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-[10px] font-mono flex flex-col gap-1 items-center text-center">
-                      <span>{liveVoice.errorMessage}</span>
-                      {onOpenSettings && (
-                        <button
-                          onClick={onOpenSettings}
-                          className="text-[10px] text-cyan-400 underline hover:text-cyan-300 font-bold cursor-pointer"
-                        >
-                          Configurar Nova Chave Gemini
-                        </button>
-                      )}
+                  {/* Live spoken preview while speaking/listening */}
+                  {liveVoice?.userTranscript && liveVoice.status === 'listening' && (
+                    <div className="p-2 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 text-[10px] font-mono flex items-center gap-1.5 animate-pulse">
+                      <Mic className="w-3 h-3 text-cyan-400 shrink-0" />
+                      <span>Você falando: "{liveVoice.userTranscript}"</span>
+                    </div>
+                  )}
+                  {liveVoice?.aiResponseText && liveVoice.status === 'speaking' && (
+                    <div className="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-[10px] font-mono flex items-center gap-1.5 animate-pulse">
+                      <Volume2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span>ClandeX falando: "{liveVoice.aiResponseText}"</span>
                     </div>
                   )}
                 </div>
 
+                {/* Perguntas Rápidas Faladas para a Voz 3D */}
+                <div className="space-y-1">
+                  <div className="text-[10px] font-mono text-neutral-400 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-cyan-400" />
+                    <span>Perguntas para a IA Responder Falando:</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-mono">
+                    {[
+                      { icon: '⚡', label: 'Entrar Agora?', query: `ClandeX, vale a pena entrar em uma operação agora no ${asset.symbol}?` },
+                      { icon: '📈', label: 'Tendência Atual', query: `ClandeX, qual a tendência e força do ${asset.symbol}?` },
+                      { icon: '🎯', label: 'Suporte e Resistência', query: `ClandeX, quais são as taxas de suporte e resistência do ${asset.symbol}?` },
+                      { icon: '📢', label: 'Próxima Notícia', query: `ClandeX, tem alguma notícia de alto impacto agendada?` },
+                      { icon: '🧠', label: 'O que é SMC?', query: `ClandeX, o que significa SMC e quebra de estrutura no trading?` },
+                    ].map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => {
+                          if (liveVoice?.sendTextMessage) {
+                            liveVoice.sendTextMessage(chip.query);
+                          }
+                        }}
+                        className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-[#111728] hover:bg-cyan-950/80 border border-[#1d2740] hover:border-cyan-500/50 text-neutral-300 hover:text-cyan-300 transition-all cursor-pointer flex items-center gap-1 shadow-sm shrink-0 active:scale-95"
+                      >
+                        <span>{chip.icon}</span>
+                        <span>{chip.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: CHAT DE TEXTO (LEITURA SILENCIOSA, SEM ÁUDIO) */}
+            {activeTab === 'chat' && (
+              <div className="space-y-3">
+                {/* Chat Top Banner with active Asset context */}
+                <div className="p-2.5 bg-[#0f1422] border border-[#1b253d] rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
+                      <MessageSquare className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-white text-xs">Chat de Texto com a IA</span>
+                        <span className="text-[9px] text-cyan-400/80 font-mono">(Leitura Silenciosa)</span>
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono">
+                        {asset.symbol} • R$ {asset.currentPrice.toFixed(asset.pipDecimals)} • {timeframe}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      setChatMessages([
+                        {
+                          id: `welcome-${Date.now()}`,
+                          role: 'model',
+                          text: `Chat reiniciado para ${asset.symbol}. Envie sua pergunta por texto abaixo para receber a análise por texto.`,
+                          timestamp: Date.now(),
+                        },
+                      ])
+                    }
+                    title="Reiniciar histórico de texto"
+                    className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Notice that voice does NOT read this chat */}
+                <div className="px-2.5 py-1 rounded-lg bg-neutral-900/60 border border-neutral-800/60 text-[10px] font-mono text-neutral-400 flex items-center justify-between">
+                  <span>💡 Respostas escritas para leitura (sem som ou leitura de voz).</span>
+                  <button
+                    onClick={() => setActiveTab('voz')}
+                    className="text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer"
+                  >
+                    Ir para Voz 3D
+                  </button>
+                </div>
+
                 {/* Chat Messages Container */}
-                <div className="h-[180px] overflow-y-auto space-y-2.5 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar">
+                <div className="h-[240px] overflow-y-auto space-y-2.5 p-2.5 bg-neutral-950/80 border border-neutral-800/80 rounded-xl custom-scrollbar">
                   {chatMessages.map((msg) => (
                     <div
                       key={msg.id}
@@ -2138,13 +2102,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <>
                             <Bot className="w-2.5 h-2.5 text-cyan-400" />
                             <span className="text-cyan-400 font-semibold">ClandeX-IA</span>
-                            <button
-                              onClick={() => speakText(msg.text)}
-                              className="ml-1 text-neutral-400 hover:text-cyan-300 transition-colors cursor-pointer"
-                              title="Ouvir esta mensagem novamente com voz e animação 3D"
-                            >
-                              <Volume2 className="w-2.5 h-2.5" />
-                            </button>
                           </>
                         )}
                         <span>
@@ -2181,7 +2138,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   <div ref={chatBottomRef} />
                 </div>
 
-                {/* Perguntas Rápidas (Chips de Consulta Imediata por Voz ou Texto) */}
+                {/* Perguntas Rápidas de Texto */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-[10px] font-mono">
                   {[
                     { icon: '📈', label: 'Tendência Maior', query: `Como está a tendência maior do ativo ${asset.symbol}?` },
@@ -2202,7 +2159,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   ))}
                 </div>
 
-                {/* Input Form */}
+                {/* Input Form de Texto */}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -2214,7 +2171,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     type="text"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Pergunte sobre próxima notícia, S/R, tendência maior, pullback..."
+                    placeholder="Digite sua dúvida sobre o mercado para receber a análise por texto..."
                     disabled={isChatLoading}
                     className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
@@ -2222,7 +2179,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     type="submit"
                     disabled={!chatInput.trim() || isChatLoading}
                     className="p-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 disabled:hover:from-cyan-600 disabled:hover:to-blue-600 text-white rounded-xl transition-all cursor-pointer shadow-md shadow-cyan-500/20"
-                    title="Enviar pergunta para a IA"
+                    title="Enviar pergunta por texto"
                   >
                     <Send className="w-3.5 h-3.5" />
                   </button>

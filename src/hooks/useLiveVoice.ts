@@ -60,6 +60,7 @@ export function useLiveVoice({
   const [userTranscript, setUserTranscript] = useState<string>('');
   const [aiResponseText, setAiResponseText] = useState<string>('');
   const [lastTurnMessage, setLastTurnMessage] = useState<LiveTurnMessage | null>(null);
+  const [voiceHistory, setVoiceHistory] = useState<LiveTurnMessage[]>([]);
 
   const statusRef = useRef<LiveVoiceStatus>('idle');
   statusRef.current = status;
@@ -613,13 +614,15 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       }
 
       console.log('[ClandeX-IA Voz] Turno concluído do trader:', q);
-      setUserTranscript(q);
-      setLastTurnMessage({
+      const userTurn: LiveTurnMessage = {
         id: `user-voice-${Date.now()}`,
         role: 'user',
         text: q,
         timestamp: Date.now(),
-      });
+      };
+      setUserTranscript(q);
+      setLastTurnMessage(userTurn);
+      setVoiceHistory((prev) => [...prev, userTurn]);
 
       // Se houver WebSocket ativo (modo servidor local), envia pelo canal:
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -632,13 +635,15 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       try {
         const reply = await generateAiReply(q);
         if (reply) {
-          setAiResponseText(reply);
-          setLastTurnMessage({
+          const modelTurn: LiveTurnMessage = {
             id: `model-voice-${Date.now()}`,
             role: 'model',
             text: reply,
             timestamp: Date.now(),
-          });
+          };
+          setAiResponseText(reply);
+          setLastTurnMessage(modelTurn);
+          setVoiceHistory((prev) => [...prev, modelTurn]);
           speakBrowserText(reply);
         } else {
           setStatus('listening');
@@ -647,13 +652,15 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       } catch (err) {
         console.warn('[ClandeX-IA Voz] Erro ao responder:', err);
         const fallbackReply = answerQuestionLocally(q);
-        setAiResponseText(fallbackReply);
-        setLastTurnMessage({
+        const modelTurn: LiveTurnMessage = {
           id: `model-voice-${Date.now()}`,
           role: 'model',
           text: fallbackReply,
           timestamp: Date.now(),
-        });
+        };
+        setAiResponseText(fallbackReply);
+        setLastTurnMessage(modelTurn);
+        setVoiceHistory((prev) => [...prev, modelTurn]);
         speakBrowserText(fallbackReply);
       }
     },
@@ -983,12 +990,14 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       activeEngineRef.current = geminiKey && geminiKey.length > 15 ? 'gemini_live' : 'browser_speech';
 
       const greeting = `ClandeX-IA conectada por voz. Estou monitorando ${currentCtx.asset.symbol} em tempo real. Pode falar comigo!`;
-      setLastTurnMessage({
+      const greetingMsg: LiveTurnMessage = {
         id: `model-voice-${Date.now()}`,
         role: 'model',
         text: greeting,
         timestamp: Date.now(),
-      });
+      };
+      setLastTurnMessage(greetingMsg);
+      setVoiceHistory((prev) => [...prev, greetingMsg]);
       speakBrowserText(greeting);
 
       // Inicia a escuta por voz no navegador imediatamente
@@ -996,6 +1005,14 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
     } catch (err: any) {
       console.warn('[ClandeX-IA Voz] Inicializando com fallback direto:', err);
       const greeting = `ClandeX-IA conectada por voz. Monitorando ${contextRef.current.asset.symbol}. Pode falar comigo!`;
+      const greetingMsg: LiveTurnMessage = {
+        id: `model-voice-${Date.now()}`,
+        role: 'model',
+        text: greeting,
+        timestamp: Date.now(),
+      };
+      setLastTurnMessage(greetingMsg);
+      setVoiceHistory((prev) => [...prev, greetingMsg]);
       speakBrowserText(greeting);
       startSpeechRecognition();
     }
@@ -1053,19 +1070,21 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
     setErrorMessage(null);
   }, [stopAudioPlayback, stopSpeechRecognition]);
 
-  // Enviar pergunta de texto diretamente para a IA responder por voz
+  // Enviar pergunta falada ou chip de voz diretamente para a IA responder por voz
   const sendTextMessage = useCallback(
     async (textToSend: string) => {
       const clean = textToSend.trim();
       if (!clean) return;
 
-      setUserTranscript(clean);
-      setLastTurnMessage({
+      const userTurn: LiveTurnMessage = {
         id: `user-voice-${Date.now()}`,
         role: 'user',
         text: clean,
         timestamp: Date.now(),
-      });
+      };
+      setUserTranscript(clean);
+      setLastTurnMessage(userTurn);
+      setVoiceHistory((prev) => [...prev, userTurn]);
 
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'client_content', text: clean }));
@@ -1075,23 +1094,27 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
       setStatus('speaking');
       try {
         const reply = await generateAiReply(clean);
-        setAiResponseText(reply);
-        setLastTurnMessage({
+        const modelTurn: LiveTurnMessage = {
           id: `model-voice-${Date.now()}`,
           role: 'model',
           text: reply,
           timestamp: Date.now(),
-        });
+        };
+        setAiResponseText(reply);
+        setLastTurnMessage(modelTurn);
+        setVoiceHistory((prev) => [...prev, modelTurn]);
         speakBrowserText(reply);
       } catch {
         const localReply = answerQuestionLocally(clean);
-        setAiResponseText(localReply);
-        setLastTurnMessage({
+        const modelTurn: LiveTurnMessage = {
           id: `model-voice-${Date.now()}`,
           role: 'model',
           text: localReply,
           timestamp: Date.now(),
-        });
+        };
+        setAiResponseText(localReply);
+        setLastTurnMessage(modelTurn);
+        setVoiceHistory((prev) => [...prev, modelTurn]);
         speakBrowserText(localReply);
       }
     },
@@ -1128,11 +1151,13 @@ DIRETRIZES FUNDAMENTAIS PARA CONVERSA POR VOZ:
     userTranscript,
     aiResponseText,
     lastTurnMessage,
+    voiceHistory,
     sendTextMessage,
     interruptSpeech,
     startLiveConversation,
     disconnectSession,
     toggleMute,
     requestMicrophoneAccess,
+    clearVoiceHistory: () => setVoiceHistory([]),
   };
 }
