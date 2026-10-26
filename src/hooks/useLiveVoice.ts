@@ -617,7 +617,20 @@ export function useLiveVoice({
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-    // Pausa reconhecimento do microfone enquanto a IA fala para evitar eco acústico
+    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
+    if (!clean) return;
+
+    // Registra a fala da IA para o filtro anti-eco acústico
+    currentAiTurnTextRef.current = clean;
+
+    // Cancela imediatamente qualquer transcrição em andamento no microfone
+    accumulatedSpeechRef.current = '';
+    if (speechSilenceTimeoutRef.current) {
+      clearTimeout(speechSilenceTimeoutRef.current);
+      speechSilenceTimeoutRef.current = null;
+    }
+
+    // Pausa e aborta reconhecimento do microfone enquanto a IA fala para evitar eco acústico
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -627,8 +640,6 @@ export function useLiveVoice({
     stopAudioPlayback();
     isAiSpeakingRef.current = true;
     setStatus('speaking');
-
-    const clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
 
     const utterance = new SpeechSynthesisUtterance(clean);
     activeUtteranceRef.current = utterance; // Previne garbage collection prematuro no Chrome/Edge
@@ -707,19 +718,26 @@ export function useLiveVoice({
         speechAnimIntervalRef.current = null;
       }
       setAiSpeechLevel(0);
+      accumulatedSpeechRef.current = '';
 
-      // Cooldown de 250ms após fala para dissipar o som antes de reabrir o microfone
+      if (speechCooldownTimeoutRef.current) {
+        clearTimeout(speechCooldownTimeoutRef.current);
+        speechCooldownTimeoutRef.current = null;
+      }
+
+      // Cooldown de 650ms após fala para dissipar o som ambiente antes de reabrir o microfone
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
+        accumulatedSpeechRef.current = '';
         setStatus('listening');
-        // REINICIA A ESCUTA DO USUÁRIO IMEDIATAMENTE
+        // REINICIA A ESCUTA DO USUÁRIO APENAS APÓS DISSIPAÇÃO DO SOM
         if (sessionActiveRef.current) {
           try {
             startSpeechRecognitionRef.current();
           } catch {}
         }
-      }, 250);
+      }, 650);
     };
 
     utterance.onstart = () => {
@@ -881,7 +899,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
   // Disparo atômico e único de conclusão de turno do usuário
   const dispatchTurn = useCallback(
     async (textQuery?: string) => {
-      if (turnDispatchedRef.current || isAiSpeakingRef.current) return;
+      if (turnDispatchedRef.current || isAiSpeakingRef.current || isProcessing) return;
       turnDispatchedRef.current = true;
       hasSpokenInTurnRef.current = false;
 
@@ -891,7 +909,22 @@ ${recentTurns || 'Início da sessão de voz.'}`;
         return;
       }
 
-      console.log('[ClandeX-IA Voz] Turno concluído do trader:', q);
+      // FILTRO ANTI-ECO ACÚSTICO:
+      // Se o que o microfone ouviu for parte da própria fala recente da IA, descarta!
+      const lastAiSpeech = (currentAiTurnTextRef.current || '').toLowerCase().trim();
+      const candidateUser = q.toLowerCase().trim();
+      if (lastAiSpeech && candidateUser.length >= 4) {
+        const cleanAi = lastAiSpeech.replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+        const cleanUser = candidateUser.replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (cleanAi && (cleanAi.includes(cleanUser) || cleanUser.includes(cleanAi))) {
+          console.warn('[CandleX-IA Anti-Eco] Descartando áudio que veio das caixas de som:', q);
+          turnDispatchedRef.current = false;
+          accumulatedSpeechRef.current = '';
+          return;
+        }
+      }
+
+      console.log('[CandleX-IA Voz] Turno concluído do trader:', q);
       const userTurn: LiveTurnMessage = {
         id: `user-voice-${Date.now()}`,
         role: 'user',
@@ -941,7 +974,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
         speakBrowserText(fallbackReply);
       }
     },
-    [generateAiReply, answerQuestionLocally, speakBrowserText]
+    [generateAiReply, answerQuestionLocally, speakBrowserText, isProcessing]
   );
 
   // Iniciar reconhecimento de voz contínuo do navegador (PT-BR)
@@ -969,10 +1002,12 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // Se a IA estiver falando, o usuário começou a falar ao microfone: BARGE-IN imediato!
-        if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
-          console.log('[CandleX-IA] Trader interrompeu a fala da IA (Barge-in instantâneo)!');
-          interruptSpeech();
+        // BLOQUEIO TOTAL DE ECO ACÚSTICO:
+        // Se a IA estiver falando, aguardando resposta ou no período de cooldown,
+        // descarta 100% de qualquer som do microfone para que a IA NUNCA ouça a si mesma!
+        if (isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing) {
+          accumulatedSpeechRef.current = '';
+          return;
         }
 
         let interim = '';
@@ -994,7 +1029,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
 
         const display = (accumulatedSpeechRef.current + ' ' + interim).trim();
         if (display) {
-          console.log('[ClandeX-IA] Escutou do usuário:', display);
+          console.log('[CandleX-IA] Escutou do usuário:', display);
           setUserTranscript(display);
           turnDispatchedRef.current = false;
           hasSpokenInTurnRef.current = true;
@@ -1005,32 +1040,32 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda 280ms de silêncio após a fala para enviar a pergunta imediatamente
+        // Aguarda 450ms de silêncio após a fala para enviar a pergunta com segurança
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
           if (fullQuestion && fullQuestion.length > 1) {
             dispatchTurn(fullQuestion);
           }
-        }, 280);
+        }, 450);
       };
 
       recognition.onerror = (e: any) => {
         if (e.error !== 'no-speech' && e.error !== 'aborted') {
-          console.warn('[ClandeX-IA SpeechRecognition] Evento:', e.error);
+          console.warn('[CandleX-IA SpeechRecognition] Evento:', e.error);
         }
       };
 
       recognition.onend = () => {
-        // Reinício automático para conversação contínua sempre que a sessão estiver ativa e em listening
-        if (sessionActiveRef.current && !isAiSpeakingRef.current) {
+        // Reinício automático para conversação contínua apenas se a IA NÃO estiver falando
+        if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
           setTimeout(() => {
-            if (sessionActiveRef.current && !isAiSpeakingRef.current) {
+            if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
               try {
                 recognition.start();
               } catch {}
             }
-          }, 150);
+          }, 250);
         }
       };
 
@@ -1039,9 +1074,9 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       } catch {}
       recognitionRef.current = recognition;
     } catch (err) {
-      console.warn('[ClandeX-IA] Falha ao iniciar reconhecimento de voz:', err);
+      console.warn('[CandleX-IA] Falha ao iniciar reconhecimento de voz:', err);
     }
-  }, [dispatchTurn]);
+  }, [dispatchTurn, isProcessing]);
 
   // Mantém a ref sincronizada para finishPlayback
   startSpeechRecognitionRef.current = startSpeechRecognition;
@@ -1417,6 +1452,10 @@ ${recentTurns || 'Início da sessão de voz.'}`;
 
     const onSignal = (signal: any, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') => {
       if (voiceAnnouncementsRef.current && sessionActiveRef.current) {
+        // Ignora aviso sonoro se a IA já estiver falando ou processando uma pergunta
+        if (isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing) {
+          return;
+        }
         if (event === 'CONFIRMED' && signal) {
           const dir = signal.direction === 'CALL' ? 'CALL, compra' : 'PUT, venda';
           const spoken = `Atenção! O CandleX-IA identificou um sinal de ${dir} no par ${signal.asset}, timeframe ${signal.timeframe}. Confluência de ${signal.confluenceScore} por cento.`;
