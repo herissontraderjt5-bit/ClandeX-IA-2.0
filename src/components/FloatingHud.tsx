@@ -419,7 +419,12 @@ Pergunta do Trader: "${textToSend}"
 Responda em português brasileiro de forma direta, clara, profissional e motivadora. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7. Seja concisa e objetiva.
           `;
 
-          const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+          const candidateModels = [
+            (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
+            'gemini-3.8-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.5-flash',
+          ];
           for (const modelName of candidateModels) {
             try {
               const resp = await ai.models.generateContent({
@@ -1827,7 +1832,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
 
                   <div className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300">
-                    {liveVoice?.activeEngine === 'gemini_live' ? 'Gemini Live' : 'Voz PT-BR'}
+                    {liveVoice?.activeEngine === 'gemini_live' ? 'Gemini 3.8 Live' : 'Voz PT-BR'}
                   </div>
                 </div>
 

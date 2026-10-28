@@ -103,7 +103,8 @@ export class TradingContextAdapter implements TradingContextContract {
   public getMarketDataTimestamp(): number {
     const candles = marketDataManager.getCandles();
     if (candles.length > 0) {
-      return candles[candles.length - 1].timestamp;
+      const lastCandle = candles[candles.length - 1];
+      return (lastCandle as any).timestamp || (lastCandle.time ? lastCandle.time * 1000 : Date.now());
     }
     return Date.now();
   }

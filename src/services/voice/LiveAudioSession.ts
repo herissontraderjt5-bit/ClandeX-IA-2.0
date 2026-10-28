@@ -105,7 +105,7 @@ export class LiveAudioSession {
     }
 
     // 2. Modo Cliente Direto (Vercel / Sem servidor WebSocket ativo)
-    console.log('[LiveAudioSession] Operando em modo cliente direto com modelo Gemini 3.5.');
+    console.log('[LiveAudioSession] Operando com modelo Gemini 3.8 Live / Gemini 3.8.');
     const micOk = await this.micManager.start();
     if (!micOk) {
       this.disconnect();
@@ -321,7 +321,12 @@ DIRETRIZES DA PERSONALIDADE CANDLEX:
 CONTEXTO ATUALIZADO DO PAINEL:\n${contextSummary}
 HISTÓRICO RECENTE:\n${recentHistory}`;
 
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+        const candidateModels = [
+          (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
+          (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_MODEL) || 'gemini-3.8-flash',
+          'gemini-3.5-flash-lite',
+          'gemini-3.5-flash',
+        ];
         for (const model of candidateModels) {
           try {
             const fetchPromise = ai.models.generateContent({

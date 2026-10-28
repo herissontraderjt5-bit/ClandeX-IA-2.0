@@ -114,6 +114,7 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
 
         const candidateModels = [
           process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
+          process.env.GEMINI_MODEL || 'gemini-3.8-flash',
           'gemini-3.5-flash-lite',
           'gemini-3.5-flash',
         ];

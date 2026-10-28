@@ -82,17 +82,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: key });
-      const resp = await ai.models.generateContent({
-        model: 'gemini-3.5-flash-lite',
-        contents: 'Olá teste ClandeX',
-      });
+      const testModels = ['gemini-3.8-flash', 'gemini-3.8-live', 'gemini-3.5-flash-lite'];
+      let resp: any = null;
+      let lastErr: any = null;
+      for (const model of testModels) {
+        try {
+          resp = await ai.models.generateContent({
+            model,
+            contents: 'Olá teste ClandeX Gemini 3.8',
+          });
+          if (resp && resp.text) break;
+        } catch (e: any) {
+          lastErr = e;
+        }
+      }
       if (resp && resp.text) {
-        setGeminiTestResult({ success: true, message: 'Chave Gemini ativa e validada com sucesso!' });
+        setGeminiTestResult({ success: true, message: 'Chave Gemini ativa e validada com Gemini 3.8!' });
         if (typeof window !== 'undefined') {
           localStorage.setItem('clandex_gemini_api_key', key);
         }
       } else {
-        setGeminiTestResult({ success: false, message: 'Resposta vazia da IA.' });
+        setGeminiTestResult({ success: false, message: lastErr?.message || 'Resposta vazia da IA.' });
       }
     } catch (err: any) {
       if (err?.message?.includes('leaked') || err?.status === 403) {

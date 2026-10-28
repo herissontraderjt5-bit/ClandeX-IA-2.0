@@ -854,7 +854,7 @@ export function useLiveVoice({
 
   /**
    * Gera resposta inteligente e ultra-rápida.
-   * Utiliza o modelo ativo do Gemini (gemini-3.5-flash-lite / gemini-3.5-flash) com contexto em tempo real,
+   * Utiliza o modelo ativo do Gemini (gemini-3.8-live / gemini-3.8-flash) com contexto em tempo real,
    * e fallback instantâneo para o motor local com síntese dinâmica.
    */
   const generateAiReply = useCallback(
@@ -877,7 +877,7 @@ export function useLiveVoice({
         return answerQuestionLocally(cleanPrompt);
       }
 
-      // Tenta Gemini com modelos ativos (gemini-3.5-flash-lite e gemini-3.5-flash)
+      // Tenta Gemini com modelos ativos (gemini-3.8-live e gemini-3.8-flash)
       setIsProcessing(true);
       try {
         const geminiKey = getEffectiveGeminiKey();
@@ -912,7 +912,12 @@ ${contextSummary}
 MEMÓRIA RECENTE DA CONVERSA:
 ${recentTurns || 'Início da sessão de voz.'}`;
 
-            const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+            const candidateModels = [
+              (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
+              (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_MODEL) || 'gemini-3.8-flash',
+              'gemini-3.5-flash-lite',
+              'gemini-3.5-flash',
+            ];
             for (const modelName of candidateModels) {
               try {
                 const fetchPromise = ai.models.generateContent({
