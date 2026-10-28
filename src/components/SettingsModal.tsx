@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types/trading';
-import { X, Sliders, Volume2, Shield, RefreshCw, Database, CheckCircle2, AlertCircle, Bot, Sparkles, ExternalLink } from 'lucide-react';
+import { X, Sliders, Volume2, Shield, RefreshCw, Database, CheckCircle2, AlertCircle, Bot, Sparkles, ExternalLink, Clock } from 'lucide-react';
+import { marketDataManager } from '../services/marketData';
 import {
   getSupabaseConfig,
   setSupabaseCredentials,
@@ -141,6 +142,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       confirmedSound: true,
       defaultExpiration: '1m',
       activeMode: 'REAL',
+      timerOffsetSeconds: 0,
     };
     setLocalSettings(defaults);
   };
@@ -199,6 +201,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 DEMO / TESTE SIMULADO
               </button>
+            </div>
+          </div>
+
+          {/* Sincronização de Cronograma com a Corretora Hiove */}
+          <div className="p-3 bg-neutral-900/60 border border-neutral-800 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-cyan-400" />
+                <span className="font-semibold text-white block text-xs">SINCRONISMO COM A HIOVE (CRONOGRAMA)</span>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await marketDataManager.syncServerTime();
+                }}
+                className="flex items-center gap-1 text-[11px] text-cyan-400 hover:underline cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" /> Calibrar Relógio
+              </button>
+            </div>
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              Corrige qualquer discrepância entre o relógio da IA e a expiração da vela na corretora Hiove (elimina atrasos ou adiantamentos).
+            </p>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px]">
+                <span className="text-neutral-400">Ajuste Fino de Segundos:</span>
+                <span className="font-mono text-cyan-400 font-bold">
+                  {(localSettings.timerOffsetSeconds || 0) > 0 ? `+${localSettings.timerOffsetSeconds || 0}` : (localSettings.timerOffsetSeconds || 0)}s
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="-15"
+                  max="15"
+                  step="1"
+                  value={localSettings.timerOffsetSeconds || 0}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setLocalSettings({ ...localSettings, timerOffsetSeconds: val });
+                    marketDataManager.setManualOffsetSec(val);
+                  }}
+                  className="flex-1 accent-cyan-400 cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocalSettings({ ...localSettings, timerOffsetSeconds: 0 });
+                    marketDataManager.setManualOffsetSec(0);
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded cursor-pointer transition-colors"
+                >
+                  Zerar
+                </button>
+              </div>
             </div>
           </div>
 

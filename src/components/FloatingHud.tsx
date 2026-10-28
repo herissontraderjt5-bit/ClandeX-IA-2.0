@@ -569,14 +569,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     ? Math.abs(asset.currentPrice - activeTrade.entryPrice) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
-  // Has recently resolved trade (within 15 seconds after expiration reached 0)
-  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 15000;
+  // Has recently resolved trade (within 3 seconds after expiration reached 0)
+  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 3000;
 
-  // Has recently cancelled signal (within 12 seconds)
-  const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 12000;
+  // Has recently cancelled signal (within 3 seconds)
+  const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 3000;
 
-  // Confirmed signal entry window (first 8 seconds after confirmation)
-  const hasConfirmed = !!latestConfirmedSignal && Date.now() - latestConfirmedSignal.timestamp < 8000;
+  // Confirmed signal entry window (first 3 seconds after confirmation)
+  const hasConfirmed = !!latestConfirmedSignal && Date.now() - latestConfirmedSignal.timestamp < 3000;
   const hasPreAlert = !!activePreAlert;
 
   // Format candle countdown string MM:SS

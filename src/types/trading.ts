@@ -193,6 +193,7 @@ export interface AppSettings {
   panelPosition: { x: number; y: number };
   panelSize: { width: number; height: number };
   activeMode: 'REAL' | 'DEMO';
+  timerOffsetSeconds?: number; // Ajuste fino de tempo em segundos com a Hiove (-15s a +15s)
   webhook: WebhookConfig;
 }
 

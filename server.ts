@@ -19,6 +19,14 @@ const wss = new WebSocketServer({ server, path: '/api/live' });
 
 app.use(express.json());
 
+// Endpoint de sincronização atômica de tempo UTC com a corretora Hiove
+app.get('/api/time', (_req: Request, res: Response) => {
+  res.json({
+    serverTimeMs: Date.now(),
+    serverSec: Math.floor(Date.now() / 1000),
+  });
+});
+
 // Initialize Gemini Client with server-side API Key
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,

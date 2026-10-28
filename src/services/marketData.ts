@@ -252,8 +252,11 @@ export class MarketDataManager {
   private isConnected = false;
   private latency = 28;
   private isDemoMode = false;
+  private serverOffsetMs = 0;
+  private manualOffsetSec = 0;
 
   constructor() {
+    this.syncServerTime();
     const liveAssets = getLiveAssets();
     // No fim de semana com Forex fechado, seleciona automaticamente Criptomoeda (BTC/USD 24/7)
     const initialAsset = isForexMarketOpen()
@@ -292,6 +295,25 @@ export class MarketDataManager {
   public setDemoMode(demo: boolean) {
     this.isDemoMode = demo;
     this.notifySource();
+  }
+
+  public setManualOffsetSec(sec: number) {
+    this.manualOffsetSec = sec;
+  }
+
+  public async syncServerTime() {
+    try {
+      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const res = await fetch('/api/time');
+      if (res.ok) {
+        const data = await res.json();
+        const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const rtt = t1 - t0;
+        const estimatedServerMs = Number(data.serverTimeMs) + Math.round(rtt / 2);
+        this.serverOffsetMs = estimatedServerMs - Date.now();
+        console.log(`[MarketData] Relógio atômico sincronizado. Offset: ${this.serverOffsetMs}ms`);
+      }
+    } catch {}
   }
 
   public getCandles(): Candle[] {
@@ -371,9 +393,11 @@ export class MarketDataManager {
 
     // Micro-tick processor
     this.tickInterval = window.setInterval(() => {
-      const now = Math.floor(Date.now() / 1000);
+      const nowMs = Date.now() + this.serverOffsetMs;
+      const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
       const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
-      const remainingSec = tfSeconds - (now % tfSeconds);
+      const elapsed = ((nowSec % tfSeconds) + tfSeconds) % tfSeconds;
+      const remainingSec = elapsed === 0 ? tfSeconds : tfSeconds - elapsed;
 
       // Se for Forex e for final de semana, o mercado está FECHADO no TradingView
       const isForexClosed = this.currentAsset.category === 'FOREX' && !isForexMarketOpen();
@@ -403,8 +427,9 @@ export class MarketDataManager {
 
   private updateCurrentCandle(price: number) {
     const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
-    const now = Math.floor(Date.now() / 1000);
-    const currentBoundary = now - (now % tfSeconds);
+    const nowMs = Date.now() + this.serverOffsetMs;
+    const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
+    const currentBoundary = nowSec - (((nowSec % tfSeconds) + tfSeconds) % tfSeconds);
 
     if (this.candles.length === 0) {
       this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);

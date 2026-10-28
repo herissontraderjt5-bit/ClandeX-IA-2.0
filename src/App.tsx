@@ -206,6 +206,7 @@ export default function App() {
       }
     );
 
+    marketDataManager.setManualOffsetSec(settings.timerOffsetSeconds || 0);
     marketDataManager.start();
 
     return () => {

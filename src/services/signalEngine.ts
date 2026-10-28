@@ -93,14 +93,14 @@ export class SignalEngine {
   }
 
   public getLastCancelledSignal(): SignalRecord | null {
-    if (this.lastCancelledSignal && Date.now() - this.lastCancelledTime < 5000) {
+    if (this.lastCancelledSignal && Date.now() - this.lastCancelledTime < 3000) {
       return this.lastCancelledSignal;
     }
     return null;
   }
 
   public getLatestConfirmedSignal(): SignalRecord | null {
-    if (this.latestConfirmedSignal && Date.now() - this.latestConfirmedTime < 5000) {
+    if (this.latestConfirmedSignal && Date.now() - this.latestConfirmedTime < 3000) {
       return this.latestConfirmedSignal;
     }
     return null;
@@ -111,7 +111,7 @@ export class SignalEngine {
   }
 
   public getLastResolvedTrade(): SignalRecord | null {
-    if (this.lastResolvedTrade && Date.now() - this.lastResolvedTime < 5000) {
+    if (this.lastResolvedTrade && Date.now() - this.lastResolvedTime < 3000) {
       return this.lastResolvedTrade;
     }
     return null;
@@ -158,14 +158,14 @@ export class SignalEngine {
     // 1. Resolve pending trades STRICTLY when trade.expirationTimestamp is reached!
     this.resolvePendingTrades(currentCandle.close, now);
 
-    // 2. Check and expire temporary states (Strict 5s duration without obstructing new analysis)
-    if (this.lastResolvedTrade && Date.now() - this.lastResolvedTime >= 5000) {
+    // 2. Limpeza de estados temporários (duração estrita de 3 segundos conforme solicitado)
+    if (this.lastResolvedTrade && Date.now() - this.lastResolvedTime >= 3000) {
       this.lastResolvedTrade = null;
     }
-    if (this.lastCancelledSignal && Date.now() - this.lastCancelledTime >= 5000) {
+    if (this.lastCancelledSignal && Date.now() - this.lastCancelledTime >= 3000) {
       this.lastCancelledSignal = null;
     }
-    if (this.latestConfirmedSignal && Date.now() - this.latestConfirmedTime >= 5000) {
+    if (this.latestConfirmedSignal && Date.now() - this.latestConfirmedTime >= 3000) {
       this.latestConfirmedSignal = null;
     }
 
@@ -183,14 +183,14 @@ export class SignalEngine {
         const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
 
         // Rejeição contra a operação:
-        // Para CALL: pavio superior maior que o corpo (vendedores rejeitaram topo)
-        // Para PUT: pavio inferior maior que o corpo (compradores rejeitaram fundo)
-        const isCallRejection = this.activePreAlert.direction === 'CALL' && upperWick > body && upperWick > 0.00005;
-        const isPutRejection = this.activePreAlert.direction === 'PUT' && lowerWick > body && lowerWick > 0.00005;
-        const hasRejectionWick = isCallRejection || isPutRejection;
+        // Regra 1 (CALL): pavio superior maior que o corpo (vendedores rejeitaram máxima)
+        // Regra 2 (PUT): pavio inferior maior que o corpo (compradores rejeitaram mínima)
+        const isCallRejection = this.activePreAlert.direction === 'CALL' && upperWick > body && upperWick > 0.00003;
+        const isPutRejection = this.activePreAlert.direction === 'PUT' && lowerWick > body && lowerWick > 0.00003;
 
-        // Proximidade de Suporte e Resistência contra a operação
+        // Proximidade de Suporte e Resistência contra a operação (Regra 3)
         let isTooCloseToOpposingSR = false;
+        let opposingSRReason = '';
         if (marketAnalysis?.keyLevels && marketAnalysis.keyLevels.length > 0) {
           const thresholdDistance = currentCandle.close * 0.00035; // ~2 a 3 pips
           for (const sr of marketAnalysis.keyLevels) {
@@ -198,10 +198,12 @@ export class SignalEngine {
             if (dist <= thresholdDistance) {
               if (this.activePreAlert.direction === 'CALL' && sr.type === 'RESISTANCE') {
                 isTooCloseToOpposingSR = true;
+                opposingSRReason = `Preço muito próximo da Resistência (${sr.price.toFixed(5)}). Risco de colisão contra compra.`;
                 break;
               }
               if (this.activePreAlert.direction === 'PUT' && sr.type === 'SUPPORT') {
                 isTooCloseToOpposingSR = true;
+                opposingSRReason = `Preço muito próximo do Suporte (${sr.price.toFixed(5)}). Risco de colisão contra venda.`;
                 break;
               }
             }
@@ -209,19 +211,26 @@ export class SignalEngine {
         } else if (marketAnalysis) {
           if (this.activePreAlert.direction === 'CALL' && marketAnalysis.nearResistance) {
             isTooCloseToOpposingSR = true;
+            opposingSRReason = 'Preço muito próximo da Resistência contra compra.';
           } else if (this.activePreAlert.direction === 'PUT' && marketAnalysis.nearSupport) {
             isTooCloseToOpposingSR = true;
+            opposingSRReason = 'Preço muito próximo do Suporte contra venda.';
           }
         }
 
-        const shouldCancel = hasRejectionWick || isTooCloseToOpposingSR;
+        let cancelReason = '';
+        if (isCallRejection) {
+          cancelReason = 'Pavio de rejeição forte na máxima (maior que o corpo da vela) contra a compra. Ordem abortada.';
+        } else if (isPutRejection) {
+          cancelReason = 'Pavio de rejeição forte na mínima (maior que o corpo da vela) contra a venda. Ordem abortada.';
+        } else if (isTooCloseToOpposingSR) {
+          cancelReason = opposingSRReason || 'Preço colado em região de S/R contrária. Risco de colisão abortado.';
+        }
+
+        const shouldCancel = !!cancelReason;
 
         if (shouldCancel) {
-          // CANCELAMENTO RESTRITO CONFORME REQUISITADO
-          const cancelReason = hasRejectionWick
-            ? `Pavio de rejeição maior que o corpo da vela detectado contra a operação. Ordem abortada.`
-            : `Preço fechou colado na região de ${this.activePreAlert.direction === 'CALL' ? 'Resistência' : 'Suporte'}. Risco de colisão. Abortado.`;
-
+          // CANCELAMENTO RESTRITO CONFORME AS 3 REGRAS ESPECIFICADAS PELO OPERADOR
           const cancelled: SignalRecord = {
             ...this.activePreAlert,
             stage: 'CANCELLED',
@@ -335,6 +344,7 @@ export class SignalEngine {
       };
       this.lastCancelledSignal = cancelled;
       this.lastCancelledTime = Date.now();
+      this.lastEvaluatedCandleTime = currentCandle.time;
       this.activePreAlert = null;
       audioAlerts.playCancelAlert();
       this.dispatchSignalEvent(cancelled, 'CANCELLED');
@@ -390,30 +400,6 @@ export class SignalEngine {
       return;
     }
 
-    // 6. Monitoramento durante o pré-alerta ativo (60s a 15s): cancela somente em reversão explícita
-    if (this.activePreAlert && remainingSec > 15) {
-      const severeInversion =
-        (confluences.direction !== 'NEUTRO' && confluences.direction !== this.activePreAlert.direction) ||
-        confluences.totalScore < 45;
-
-      if (severeInversion) {
-        const cancelled: SignalRecord = {
-          ...this.activePreAlert,
-          stage: 'CANCELLED',
-          cancelledAt: Date.now(),
-          cancelReason: confluences.direction !== this.activePreAlert.direction
-            ? `Inversão de fluxo no candle (virou para ${confluences.direction}). Abortado.`
-            : `Confluência enfraqueceu para ${confluences.totalScore}%. Abortado para proteção de capital.`,
-        };
-        this.lastCancelledSignal = cancelled;
-        this.lastCancelledTime = Date.now();
-        this.activePreAlert = null;
-        audioAlerts.playCancelAlert();
-        this.dispatchSignalEvent(cancelled, 'CANCELLED');
-        this.notify();
-        return;
-      }
-    }
   }
 
   /**
