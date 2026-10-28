@@ -38,6 +38,31 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    // 1. Bypass Imediato para o Administrador Master (Herisson)
+    // Permite logar instantaneamente sem depender de backend, conexão ou saldo
+    const MASTER_ADMIN_EMAIL = 'herisson.trader.jt5@gmail.com';
+    if (cleanEmail === MASTER_ADMIN_EMAIL) {
+      setSuccessMessage('Bem-vindo, Herisson! Acesso de Administrador Master liberado.');
+      const session: UserSession = {
+        email: cleanEmail,
+        name: 'Herisson',
+        hasAccess: true,
+        isAdmin: true,
+        validatedAt: Date.now(),
+        status: 'ACTIVE',
+        source: 'ADMIN_BYPASS',
+      };
+
+      try {
+        localStorage.setItem('clandex_user_session', JSON.stringify(session));
+      } catch {}
+
+      setTimeout(() => {
+        onSuccess(session);
+      }, 500);
+      return;
+    }
+
     try {
       const response = await fetch('/api/auth/validate-access', {
         method: 'POST',
@@ -53,9 +78,9 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         setSuccessMessage(data.message || 'Acesso validado com sucesso!');
         const session: UserSession = {
           email: cleanEmail,
-          name: data.name || (cleanEmail === 'herisson.trader.jt5@gmail.com' ? 'Herisson' : cleanEmail.split('@')[0]),
+          name: data.name || cleanEmail.split('@')[0],
           hasAccess: true,
-          isAdmin: Boolean(data.isAdmin || cleanEmail === 'herisson.trader.jt5@gmail.com'),
+          isAdmin: false,
           validatedAt: Date.now(),
           status: 'ACTIVE',
           source: data.cached ? 'CACHE' : 'HIOVE_API',
