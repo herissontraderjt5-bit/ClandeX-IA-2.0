@@ -116,6 +116,8 @@ export interface ConfluenceBreakdown {
 export type SignalStage = 'PRE_ALERT' | 'CONFIRMED' | 'CANCELLED';
 export type TradeResult = 'WIN' | 'LOSS' | 'EMPATE' | 'PENDING';
 
+export type AnalysisProfile = 'CONSERVADORA' | 'MODERADA' | 'AGRESSIVA';
+
 export interface SignalRecord {
   id: string;
   timestamp: number;
@@ -133,6 +135,7 @@ export interface SignalRecord {
   aiAnalysis?: string;
   candleCloseTime: number;
   expirationTimestamp: number;
+  entryTimestamp?: number; // Momento exato em segundos em que a ordem inicia (abertura da vela do sinal)
   isEstimatedResult: boolean;
   resolvedAt?: number;
   cancelledAt?: number;
@@ -193,8 +196,31 @@ export interface AppSettings {
   panelPosition: { x: number; y: number };
   panelSize: { width: number; height: number };
   activeMode: 'REAL' | 'DEMO';
+  analysisProfile?: AnalysisProfile; // CONSERVADORA (Sniper), MODERADA (Mediana), AGRESSIVA (Alavancagem)
   timerOffsetSeconds?: number; // Ajuste fino de tempo em segundos com a Hiove (-15s a +15s)
   webhook: WebhookConfig;
+}
+
+export interface UserSession {
+  email: string;
+  name: string;
+  hasAccess: boolean;
+  isAdmin: boolean;
+  validatedAt: number;
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
+}
+
+export interface MemberRecord {
+  email: string;
+  name?: string;
+  hasAccess: boolean;
+  isAdmin: boolean;
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
+  firstValidatedAt: number;
+  lastCheckedAt: number;
+  notes?: string;
 }
 
 export interface EconomicEvent {

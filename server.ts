@@ -6,6 +6,15 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import {
+  validateUserAccess,
+  getAllMembers,
+  grantMemberManual,
+  revokeMember,
+  deleteMember,
+  queryHioveApi,
+  ADMIN_EMAIL,
+} from './server/memberRegistry.js';
 
 dotenv.config();
 
@@ -25,6 +34,122 @@ app.get('/api/time', (_req: Request, res: Response) => {
     serverTimeMs: Date.now(),
     serverSec: Math.floor(Date.now() / 1000),
   });
+});
+
+/**
+ * =========================================================================
+ * AUTENTICAÇÃO E VALIDAÇÃO DE ACESSO DA CORRETORA HIOVE
+ * =========================================================================
+ */
+// Valida se o cliente possui cadastro e depósito ativo na corretora Hiove
+app.post('/api/auth/validate-access', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    const result = await validateUserAccess(email);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Auth API] Erro ao validar:', err);
+    res.status(500).json({
+      success: false,
+      access: false,
+      isAdmin: false,
+      message: 'Não conseguimos validar agora, tente em alguns minutos.',
+      error: err.message,
+    });
+  }
+});
+
+// Painel do Administrador: Lista de Membros e Estatísticas
+app.get('/api/admin/members', (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.query.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const members = getAllMembers();
+  const activeCount = members.filter((m) => m.hasAccess).length;
+  const pendingCount = members.filter((m) => !m.hasAccess).length;
+
+  res.json({
+    success: true,
+    adminEmail: ADMIN_EMAIL,
+    total: members.length,
+    activeCount,
+    pendingCount,
+    members,
+    hioveKeyConfigured: Boolean(process.env.HIOVE_ACCESS_KEY),
+    hioveKeyPreview: process.env.HIOVE_ACCESS_KEY
+      ? `${process.env.HIOVE_ACCESS_KEY.slice(0, 14)}...${process.env.HIOVE_ACCESS_KEY.slice(-6)}`
+      : 'NÃO CONFIGURADA',
+  });
+});
+
+// Painel do Administrador: Liberação Manual de Membro
+app.post('/api/admin/manual-grant', (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const { email, notes } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'E-mail inválido.' });
+  }
+
+  try {
+    const member = grantMemberManual(email, notes);
+    res.json({ success: true, member, message: `Acesso liberado com sucesso para ${email}.` });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Painel do Administrador: Revogar Acesso de Membro
+app.post('/api/admin/revoke', (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const { email, notes } = req.body;
+  try {
+    const member = revokeMember(email, notes);
+    res.json({ success: true, member, message: `Acesso do membro ${email} revogado.` });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Painel do Administrador: Excluir Membro
+app.post('/api/admin/delete', (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const { email } = req.body;
+  try {
+    const ok = deleteMember(email);
+    res.json({ success: ok });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Painel do Administrador: Testar e-mail diretamente contra API da Hiove
+app.post('/api/admin/test-hiove', async (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const { email } = req.body;
+  try {
+    const result = await queryHioveApi(email);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Initialize Gemini Client with server-side API Key
@@ -54,7 +179,7 @@ wss.on('connection', (clientWs: WebSocket) => {
         if (session || isConnecting) return;
         isConnecting = true;
 
-        const { marketContext, voiceName = 'Aoede' } = msg;
+        const { marketContext, voiceName = 'Aoede', userName = 'Herisson' } = msg;
         const asset = marketContext?.asset || 'EUR/USD';
         const currentPrice = marketContext?.currentPrice ?? 'N/A';
         const timeframe = marketContext?.timeframe || 'M1';
@@ -81,6 +206,12 @@ wss.on('connection', (clientWs: WebSocket) => {
         const systemInstruction = `
 Você é a CandleX, assistente inteligente e mentora de trading institucional de Opções Binárias e Forex para o aplicativo CandleX-IA.
 Você está em uma conversa falada contínua diretamente com o trader humano via microfone.
+
+MEMÓRIA PESSOAL DO TRADER (REGRA SUPREMA):
+- O nome do trader com quem você está conversando é ${userName || 'Herisson'}.
+- Você SEMPRE sabe, reconhece e lembra que ele se chama ${userName || 'Herisson'}.
+- Sempre que o ${userName || 'Herisson'} disser saudações ou cumprimentos (como "Olá", "Oi", "Bom dia", "Boa tarde", "Boa noite", "Tudo bem?", ou iniciar a conversa), cumprimente-o nominalmente de forma calorosa, acolhedora e respeitosa: "Olá, ${userName || 'Herisson'}!", "Bom dia, ${userName || 'Herisson'}!", "Boa tarde, ${userName || 'Herisson'}!" ou "Boa noite, ${userName || 'Herisson'}!".
+- Mantenha sempre esse relacionamento próximo e profissional de mentoria de alta performance.
 
 PERSONALIDADE (CANDLEX):
 Profissional, natural, objetiva e amigável. Fale como um assistente humano especializado em análise técnica.
@@ -357,7 +488,7 @@ NUNCA prometa lucros fixos ou garantias.
  */
 app.post('/api/gemini/chat', async (req: Request, res: Response) => {
   try {
-    const { messages, marketContext } = req.body;
+    const { messages, marketContext, userName = 'Herisson' } = req.body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ success: false, error: 'Lista de mensagens inválida.' });
@@ -388,6 +519,10 @@ app.post('/api/gemini/chat', async (req: Request, res: Response) => {
 
     const systemInstruction = `
 Você é a ClandeX-IA Conversacional, uma inteligência artificial institucional e mentora de alta performance para Opções Binárias e Forex, especializada em Price Action avançado, Suporte e Resistência, Força de Tendência e Smart Money Concepts (SMC) integrada à corretora Hiove.
+
+MEMÓRIA PESSOAL DO TRADER:
+- O nome do trader com quem você está conversando é ${userName || 'Herisson'}.
+- Sempre que ele enviar saudações ("Olá", "Oi", "Bom dia", "Boa tarde", "Boa noite", "Tudo bem?"), cumprimente-o nominalmente de forma amigável e profissional: "Olá, ${userName || 'Herisson'}!", "Bom dia, ${userName || 'Herisson'}!", "Boa tarde, ${userName || 'Herisson'}!" ou "Boa noite, ${userName || 'Herisson'}!".
 
 Você está conversando DIRETAMENTE com o trader humano. Ele pode tirar dúvidas, pedir análises de regiões, perguntar sobre a força da tendência, perguntar sobre a PRÓXIMA NOTÍCIA / CALENDÁRIO ECONÔMICO, perguntar se deve entrar agora ou aguardar um pullback.
 

@@ -300,6 +300,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
           JSON.stringify({
             type: 'start',
             voiceName: 'Aoede',
+            userName: 'Herisson',
             marketContext: {
               asset: asset.symbol,
               assetName: asset.name,

@@ -121,6 +121,9 @@ interface FloatingHudProps {
   onTriggerCancelTest?: () => void;
   isAiLoading: boolean;
   aiInsightText: string | null;
+  isAdmin?: boolean;
+  onOpenAdminPanel?: () => void;
+  onSelectAnalysisProfile?: (profile: 'CONSERVADORA' | 'MODERADA' | 'AGRESSIVA') => void;
 }
 
 function evaluateAiConfluences(tech: TechnicalOverviewData) {
@@ -245,6 +248,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   onTriggerCancelTest,
   isAiLoading,
   aiInsightText,
+  isAdmin,
+  onOpenAdminPanel,
+  onSelectAnalysisProfile,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
@@ -549,13 +555,20 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   const totalFinishedToday = todayWins + todayLosses;
   const todayWinRate = totalFinishedToday > 0 ? ((todayWins / totalFinishedToday) * 100).toFixed(1) : '100.0';
 
-  // Operação em andamento (aguardando estritamente a expiração!)
-  const isTradeRunning = activeTrade && activeTrade.result === 'PENDING';
   const nowSec = Math.floor(Date.now() / 1000);
+
+  // Operação em andamento (inicia estritamente a partir da abertura da vela do sinal!)
+  const isTradeRunning = !!activeTrade && activeTrade.result === 'PENDING' && (!activeTrade.entryTimestamp || nowSec >= activeTrade.entryTimestamp);
   const remainingExpSec = isTradeRunning ? Math.max(0, (activeTrade?.expirationTimestamp || 0) - nowSec) : 0;
   const expMins = Math.floor(remainingExpSec / 60);
   const expSecs = remainingExpSec % 60;
   const formattedExpCountdown = `${String(expMins).padStart(2, '0')}:${String(expSecs).padStart(2, '0')}`;
+
+  // Confirmação recente aguardando a abertura da vela do sinal
+  const isWaitingEntry = !!latestConfirmedSignal && !isTradeRunning && (
+    (latestConfirmedSignal.entryTimestamp ? nowSec < latestConfirmedSignal.entryTimestamp : Date.now() - latestConfirmedSignal.timestamp < 15000)
+  );
+  const secondsToCandleOpen = latestConfirmedSignal?.entryTimestamp ? Math.max(0, latestConfirmedSignal.entryTimestamp - nowSec) : remainingSeconds;
 
   // Live PnL check during active trade
   const isCallTrade = activeTrade?.direction === 'CALL';
@@ -569,15 +582,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     ? Math.abs(asset.currentPrice - activeTrade.entryPrice) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
-  // Has recently resolved trade (within 3 seconds after expiration reached 0)
-  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 3000;
+  // Has recently resolved trade (within 4 seconds after expiration reached 0)
+  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 4000;
 
   // Has recently cancelled signal (within 3 seconds)
   const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 3000;
 
-  // Confirmed signal entry window (first 3 seconds after confirmation)
-  const hasConfirmed = !!latestConfirmedSignal && Date.now() - latestConfirmedSignal.timestamp < 3000;
-  const hasPreAlert = !!activePreAlert;
+  // Confirmed signal entry window
+  const hasConfirmed = isWaitingEntry;
+  const hasPreAlert = !!activePreAlert && !isWaitingEntry && !isTradeRunning;
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
@@ -607,18 +620,19 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     alertBadgeClass = 'bg-rose-500/25 text-rose-300 border-rose-500/70 shadow-sm';
     glowBorderClass = 'glow-put border-rose-500/50';
   } else if (isTradeRunning && activeTrade) {
-    alertStatusText = `⏳ EXPIRAÇÃO EM ANDAMENTO: ${activeTrade.direction}`;
+    alertStatusText = `⏳ OPERAÇÃO EM ANDAMENTO: ${activeTrade.direction}`;
     alertBadgeClass = isWinning
       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse'
       : 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
     glowBorderClass = isWinning ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
   } else if (hasConfirmed && latestConfirmedSignal) {
-    alertStatusText = `🚀 CONFIRMADO [15s-10s]: ${latestConfirmedSignal.direction}`;
+    alertStatusText = `🚀 CONFIRMADO [ENTRADA EM 00:${String(secondsToCandleOpen).padStart(2, '0')}s]`;
     alertBadgeClass = latestConfirmedSignal.direction === 'CALL'
       ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 animate-pulse shadow-sm'
       : 'bg-rose-500/25 text-rose-300 border-rose-400 animate-pulse shadow-sm';
     glowBorderClass = latestConfirmedSignal.direction === 'CALL' ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
   } else if (hasPreAlert && activePreAlert) {
+
     alertStatusText = `⚡ PRÉ-ALERTA [60s-15s]: ${activePreAlert.direction}`;
     alertBadgeClass = 'bg-amber-500/25 text-amber-300 border-amber-500/70 animate-pulse shadow-sm';
     glowBorderClass = 'glow-alert border-amber-500/50';
@@ -716,6 +730,17 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0.5 right-0.5 animate-ping" />
             )}
           </button>
+          {/* BOTÃO ADM EXCLUSIVO: Visível APENAS para herisson.trader.jt5@gmail.com */}
+          {isAdmin && (
+            <button
+              onClick={onOpenAdminPanel}
+              title="Painel de Administrador Master (Membros Hiove)"
+              className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-mono font-black text-[10px] flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.5)] border border-amber-300 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            >
+              <span>👑 ADM</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenSettings}
             title="Configurações de Confluência"
@@ -1181,7 +1206,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                     </div>
                   ) : hasConfirmed && latestConfirmedSignal ? (
-                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 10s) */
+                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 10s • ENTRADA NA ABERTURA DA VELA) */
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border flex items-center justify-between ${
@@ -1203,8 +1228,9 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             )}
                           </div>
                           <div>
-                            <div className="text-[9px] uppercase font-bold tracking-wider text-emerald-300 animate-pulse">
-                              CONFIRMADO NA JANELA DE 15s A 10s!
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-emerald-300 animate-pulse flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                              <span>SINAL CONFIRMADO!</span>
                             </div>
                             <div className="text-xl font-black font-mono tracking-wide text-white">
                               {latestConfirmedSignal.direction === 'CALL' ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
@@ -1218,9 +1244,24 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
+                      {/* Contador até abertura da vela do sinal */}
+                      <div className="p-2.5 bg-black/80 rounded-xl border border-cyan-500/50 text-center space-y-1 shadow-[inset_0_0_15px_rgba(6,182,212,0.2)]">
+                        <div className="text-[10px] font-mono font-bold text-cyan-300 flex items-center justify-center gap-1.5 uppercase tracking-wider">
+                          <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                          <span>ENTRADA NA ABERTURA DA VELA EM:</span>
+                        </div>
+                        <div className="text-2xl font-black font-mono text-white tracking-widest flex items-center justify-center gap-1">
+                          <span className="text-cyan-400">00:</span>
+                          <span className="text-emerald-400">{String(secondsToCandleOpen).padStart(2, '0')}</span>
+                        </div>
+                        <div className="text-[9px] font-mono text-neutral-400">
+                          A contagem da ordem em andamento iniciará no primeiro segundo da nova vela
+                        </div>
+                      </div>
+
                       <div className="p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-neutral-300">Entrada: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
-                        <span className="text-emerald-400 font-bold">Confiança: {latestConfirmedSignal.confluenceScore}%</span>
+                        <span className="text-neutral-300">Preço Ref: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                        <span className="text-emerald-400 font-bold">Confluência: {latestConfirmedSignal.confluenceScore}%</span>
                       </div>
                     </div>
                   ) : hasPreAlert && activePreAlert ? (
@@ -1441,6 +1482,75 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         );
                       })}
                     </div>
+                  </div>
+                </div>
+
+                {/* 2. MODO OPERACIONAL / ANÁLISE TÉCNICA (CONSERVADORA / MODERADA / AGRESSIVA) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      MODO OPERACIONAL / ANÁLISE TÉCNICA
+                    </label>
+                    <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+                      {settings.analysisProfile || 'MODERADA'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {/* CONSERVADORA (Sniper) */}
+                    <button
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                        (settings.analysisProfile || 'MODERADA') === 'CONSERVADORA'
+                          ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
+                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-cyan-300">
+                        <span>🎯 Sniper</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Conservadora</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 85%+. Tiro assertivo para ganho imediato.
+                      </div>
+                    </button>
+
+                    {/* MODERADA (Mediana) */}
+                    <button
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('MODERADA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                        (settings.analysisProfile || 'MODERADA') === 'MODERADA'
+                          ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-emerald-300">
+                        <span>⚖️ Mediana</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Moderada</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 75%. Equilíbrio entre frequência e consistência.
+                      </div>
+                    </button>
+
+                    {/* AGRESSIVA (Alavancagem) */}
+                    <button
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                        (settings.analysisProfile || 'MODERADA') === 'AGRESSIVA'
+                          ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
+                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-amber-300">
+                        <span>⚡ Alavancagem</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Agressiva</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 62%+. Fluxo rápido para alavancar banca.
+                      </div>
+                    </button>
                   </div>
                 </div>
 

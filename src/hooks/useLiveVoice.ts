@@ -1374,6 +1374,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
               JSON.stringify({
                 type: 'start',
                 voiceName: 'Aoede',
+                userName: 'Herisson',
                 marketContext: {
                   asset: currentCtx.asset.symbol,
                   assetName: currentCtx.asset.name,

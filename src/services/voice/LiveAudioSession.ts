@@ -236,6 +236,7 @@ export class LiveAudioSession {
             JSON.stringify({
               type: 'start',
               voiceName: 'Aoede',
+              userName: 'Herisson',
               marketContext: {
                 asset: currentAsset.symbol,
                 assetName: currentAsset.name,

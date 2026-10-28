@@ -9,6 +9,8 @@ import {
   TimeFrame,
   AppSettings,
   ConfluenceBreakdown,
+  AnalysisProfile,
+  UserSession,
 } from './types/trading';
 import { INITIAL_ASSETS, getLiveAssets, marketDataManager } from './services/marketData';
 import { analyzeMarket, calculateConfluences } from './services/analysisEngine';
@@ -21,6 +23,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { ExtensionModal } from './components/ExtensionModal';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { WebhookModal } from './components/WebhookModal';
+import { AccessGateModal } from './components/AccessGateModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
 import { useLiveVoice } from './hooks/useLiveVoice';
 import {
   fetchSettingsFromSupabase,
@@ -113,6 +117,23 @@ export default function App() {
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+
+  // User Auth & Hiove Validation Session
+  const [userSession, setUserSession] = useState<UserSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('clandex_user_session');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+
+  // Master Admin Status - Exclusively for herisson.trader.jt5@gmail.com
+  const isAdmin = React.useMemo(() => {
+    if (!userSession) return false;
+    const emailClean = (userSession.email || '').trim().toLowerCase();
+    return emailClean === 'herisson.trader.jt5@gmail.com' || userSession.isAdmin === true;
+  }, [userSession]);
 
   // AI Commentary State (Gemini)
   const [aiInsightText, setAiInsightText] = useState<string | null>(null);
@@ -278,6 +299,28 @@ export default function App() {
     saveSettingsToSupabase(newSettings);
   }, []);
 
+  // Analysis Profile Selector (Conservadora, Moderada, Agressiva)
+  const handleSelectAnalysisProfile = useCallback((profile: AnalysisProfile) => {
+    const newSettings: AppSettings = {
+      ...settings,
+      analysisProfile: profile,
+    };
+    setSettings(newSettings);
+    try {
+      localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
+    } catch {}
+    saveSettingsToSupabase(newSettings);
+  }, [settings]);
+
+  // Logout / Switch User Session
+  const handleLogout = useCallback(() => {
+    try {
+      localStorage.removeItem('clandex_user_session');
+    } catch {}
+    setUserSession(null);
+    setIsAdminModalOpen(false);
+  }, []);
+
   // Clear Signals History
   const handleClearHistory = useCallback(() => {
     signalEngine.clearHistory();
@@ -371,6 +414,9 @@ export default function App() {
         isAnalyzing={isAnalyzing}
         settings={settings}
         liveVoice={liveVoice}
+        isAdmin={isAdmin}
+        onOpenAdminPanel={() => setIsAdminModalOpen(true)}
+        onSelectAnalysisProfile={handleSelectAnalysisProfile}
         onSelectAsset={handleSelectAsset}
         onSelectTimeframe={handleSelectTimeframe}
         onSelectExpiration={handleSelectExpiration}
@@ -413,6 +459,22 @@ export default function App() {
         onClose={() => setIsWebhookModalOpen(false)}
         config={settings.webhook}
         onSaveConfig={(newWebhook) => handleSaveSettings({ ...settings, webhook: newWebhook })}
+      />
+
+      {/* Access Gate Modal (Hiove Authentication Gate) */}
+      <AccessGateModal
+        isOpen={!userSession || !userSession.hasAccess}
+        onSuccess={(session) => {
+          setUserSession(session);
+        }}
+      />
+
+      {/* Master Admin Panel (Only for herisson.trader.jt5@gmail.com) */}
+      <AdminPanelModal
+        isOpen={isAdminModalOpen && isAdmin}
+        onClose={() => setIsAdminModalOpen(false)}
+        adminEmail={userSession?.email || 'herisson.trader.jt5@gmail.com'}
+        onLogout={handleLogout}
       />
     </div>
   );

@@ -215,6 +215,7 @@ export async function fetchSettingsFromSupabase(): Promise<AppSettings | null> {
       panelPosition: data.panel_position,
       panelSize: data.panel_size,
       activeMode: data.active_mode,
+      analysisProfile: data.weights?.analysisProfile || data.analysis_profile || 'MODERADA',
       webhook: data.webhook,
     };
   } catch {
@@ -231,7 +232,10 @@ export async function saveSettingsToSupabase(settings: AppSettings): Promise<voi
   try {
     const row = {
       id: 'default',
-      weights: settings.weights,
+      weights: {
+        ...settings.weights,
+        analysisProfile: settings.analysisProfile || 'MODERADA',
+      },
       thresholds: settings.thresholds,
       sound_enabled: settings.soundEnabled,
       pre_alert_sound: settings.preAlertSound,
@@ -301,5 +305,76 @@ export async function fetchWebhookLogsFromSupabase(limit = 50): Promise<WebhookL
     }));
   } catch {
     return [];
+  }
+}
+
+export interface UserProfileData {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  greetingPreference: string;
+}
+
+/**
+ * Busca perfil do usuário no Supabase (Memória da Voz 3D e Identidade)
+ */
+export async function fetchUserProfileFromSupabase(email = 'herisson.trader.jt5@gmail.com'): Promise<UserProfileData> {
+  const sb = getSupabase();
+  const defaultProfile: UserProfileData = {
+    id: 'user_profile_herisson',
+    name: 'Herisson',
+    email,
+    role: 'admin',
+    greetingPreference: 'Herisson',
+  };
+
+  if (!sb) return defaultProfile;
+
+  try {
+    const { data } = await sb
+      .from('app_settings')
+      .select('*')
+      .eq('id', 'user_profile_herisson')
+      .maybeSingle();
+
+    if (data && data.weights) {
+      return {
+        id: data.id,
+        name: data.weights.name || 'Herisson',
+        email: data.weights.email || email,
+        role: data.weights.role || 'admin',
+        greetingPreference: data.weights.greetingPreference || 'Herisson',
+      };
+    }
+  } catch (err) {
+    console.warn('[Supabase] Falha ao carregar perfil do usuário:', err);
+  }
+
+  return defaultProfile;
+}
+
+/**
+ * Salva perfil do usuário no Supabase (Atualização do nome do trader para a Voz 3D)
+ */
+export async function saveUserProfileToSupabase(profile: Partial<UserProfileData>): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+
+  try {
+    const row = {
+      id: 'user_profile_herisson',
+      weights: {
+        name: profile.name || 'Herisson',
+        email: profile.email || 'herisson.trader.jt5@gmail.com',
+        role: profile.role || 'admin',
+        greetingPreference: profile.greetingPreference || profile.name || 'Herisson',
+      },
+      updated_at: new Date().toISOString(),
+    };
+
+    await sb.from('app_settings').upsert(row, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('[Supabase] Falha ao salvar perfil do usuário:', err);
   }
 }

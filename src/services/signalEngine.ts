@@ -100,14 +100,24 @@ export class SignalEngine {
   }
 
   public getLatestConfirmedSignal(): SignalRecord | null {
-    if (this.latestConfirmedSignal && Date.now() - this.latestConfirmedTime < 3000) {
+    if (!this.latestConfirmedSignal) return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    // Mantém a confirmação visível até a abertura da vela do sinal (+3s de margem visual)
+    if (this.latestConfirmedSignal.entryTimestamp && nowSec < this.latestConfirmedSignal.entryTimestamp + 3) {
+      return this.latestConfirmedSignal;
+    }
+    if (Date.now() - this.latestConfirmedTime < 5000) {
       return this.latestConfirmedSignal;
     }
     return null;
   }
 
   public getActiveTrade(): SignalRecord | null {
-    return this.pendingTrades.length > 0 ? this.pendingTrades[this.pendingTrades.length - 1] : null;
+    if (this.pendingTrades.length === 0) return null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    // A contagem e status de operação em andamento inicia estritamente a partir da abertura da vela do sinal (nowSec >= entryTimestamp)
+    const active = this.pendingTrades.find((t) => !t.entryTimestamp || nowSec >= t.entryTimestamp);
+    return active || null;
   }
 
   public getLastResolvedTrade(): SignalRecord | null {
@@ -144,6 +154,27 @@ export class SignalEngine {
     const now = Math.floor(Date.now() / 1000);
     const dateObj = new Date();
     const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+
+    // 0. Configuração dinâmica dos limiares de acordo com o PERFIL DE ANÁLISE selecionado na Aba Técnica
+    const profile = settings.analysisProfile || 'MODERADA';
+    let preAlertMinScore = 60;
+    let confirmMinScore = 75;
+
+    if (profile === 'CONSERVADORA') {
+      // Análise Conservadora (Sniper):
+      // Exige confluências fortíssimas para ganho imediato e assertivo (tiro de sniper)
+      preAlertMinScore = 75;
+      confirmMinScore = 85;
+    } else if (profile === 'AGRESSIVA') {
+      // Análise Agressiva (Alavancagens):
+      // Foco em alavancagem de banca, capturando momentum e fluxos rápidos
+      preAlertMinScore = 50;
+      confirmMinScore = 62;
+    } else {
+      // Moderada (Mediana):
+      preAlertMinScore = 60;
+      confirmMinScore = 75;
+    }
 
     // Se for ativo de Forex e for final de semana (sábado ou domingo), o mercado está 100% FECHADO no TradingView!
     const isCrypto = assetSymbol.includes('BTC') || assetSymbol.includes('ETH') || assetSymbol.includes('SOL') || assetSymbol.includes('BNB') || assetSymbol.includes('XRP');
@@ -227,147 +258,162 @@ export class SignalEngine {
           cancelReason = opposingSRReason || 'Preço colado em região de S/R contrária. Risco de colisão abortado.';
         }
 
-        const shouldCancel = !!cancelReason;
+        const shouldCancel = isCallRejection || isPutRejection || isTooCloseToOpposingSR;
 
-        if (shouldCancel) {
-          // CANCELAMENTO RESTRITO CONFORME AS 3 REGRAS ESPECIFICADAS PELO OPERADOR
-          const cancelled: SignalRecord = {
-            ...this.activePreAlert,
-            stage: 'CANCELLED',
-            cancelledAt: Date.now(),
-            cancelReason,
-          };
-          this.lastCancelledSignal = cancelled;
-          this.lastCancelledTime = Date.now();
-          this.lastEvaluatedCandleTime = currentCandle.time;
-          this.activePreAlert = null;
-
-          audioAlerts.playCancelAlert();
-          if (this.onSignalEventCallback) {
-            this.onSignalEventCallback(cancelled, 'CANCELLED');
-          }
-          this.notify();
-          return;
-        } else {
-          // CONFIRMADO! Confluência se manteve sem rejeição nem colisão de S/R
-          const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
-          const confirmed: SignalRecord = {
-            ...this.activePreAlert,
-            stage: 'CONFIRMED',
-            timestamp: Date.now(),
-            formattedTime,
-            entryPrice: currentCandle.close,
-            confluenceScore: Math.max(60, confluences.totalScore),
-            reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
-            result: 'PENDING',
-            candleCloseTime: currentCandle.time + (timeframe === 'M1' ? 60 : 300),
-            expirationTimestamp: now + remainingSec + expirationSeconds,
-            isEstimatedResult: false,
-          };
-
-          this.lastEvaluatedCandleTime = currentCandle.time;
-          this.latestConfirmedSignal = confirmed;
-          this.latestConfirmedTime = Date.now();
-          this.activePreAlert = null;
-          this.lastCancelledSignal = null;
-
-          if (settings.confirmedSound) {
-            if (confirmed.direction === 'CALL') {
-              audioAlerts.playCallSignal();
-            } else {
-              audioAlerts.playPutSignal();
-            }
-          }
-
-          this.dispatchSignalEvent(confirmed, 'CONFIRMED');
-
-          this.pendingTrades.push(confirmed);
-          this.signalHistory.unshift(confirmed);
-          this.saveHistory(confirmed);
-          this.notify();
-          return;
-        }
-      } else if (
-        confluences.direction !== 'NEUTRO' &&
-        confluences.totalScore >= 70
-      ) {
-        // Confirmação direta instantânea de alta convicção (>= 70%) que surgiu entre 15s e 10s
-        const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
-        const confirmed: SignalRecord = {
-          id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          timestamp: Date.now(),
-          formattedTime,
-          asset: assetSymbol,
-          timeframe,
-          expiration: settings.defaultExpiration,
-          direction: confluences.direction,
-          stage: 'CONFIRMED',
-          entryPrice: currentCandle.close,
-          confluenceScore: confluences.totalScore,
-          reasons: [...confluences.reasons],
-          result: 'PENDING',
-          candleCloseTime: currentCandle.time + (timeframe === 'M1' ? 60 : 300),
-          expirationTimestamp: now + remainingSec + expirationSeconds,
-          isEstimatedResult: false,
-        };
-
-        this.lastEvaluatedCandleTime = currentCandle.time;
-        this.latestConfirmedSignal = confirmed;
-        this.latestConfirmedTime = Date.now();
-        this.lastCancelledSignal = null;
-
-        if (settings.confirmedSound) {
-          if (confirmed.direction === 'CALL') {
-            audioAlerts.playCallSignal();
-          } else {
-            audioAlerts.playPutSignal();
-          }
-        }
-
-        this.dispatchSignalEvent(confirmed, 'CONFIRMED');
-
-        this.pendingTrades.push(confirmed);
-        this.signalHistory.unshift(confirmed);
-        this.saveHistory(confirmed);
-        this.notify();
-        return;
-      }
-    }
-
-    // 4. Cancelamento de segurança se ultrapassar 10 segundos sem confirmação
-    if (remainingSec < 10 && this.activePreAlert) {
+    if (shouldCancel) {
+      // CANCELAMENTO RESTRITO CONFORME AS 3 REGRAS ESPECIFICADAS PELO OPERADOR
       const cancelled: SignalRecord = {
         ...this.activePreAlert,
         stage: 'CANCELLED',
         cancelledAt: Date.now(),
-        cancelReason: `Janela de confirmação (15s a 10s) expirou sem confirmação plena. Abortado.`,
+        cancelReason,
       };
       this.lastCancelledSignal = cancelled;
       this.lastCancelledTime = Date.now();
       this.lastEvaluatedCandleTime = currentCandle.time;
       this.activePreAlert = null;
+
       audioAlerts.playCancelAlert();
-      this.dispatchSignalEvent(cancelled, 'CANCELLED');
+      if (this.onSignalEventCallback) {
+        this.onSignalEventCallback(cancelled, 'CANCELLED');
+      }
+      this.notify();
+      return;
+    } else {
+      // CONFIRMADO! Confluência se manteve sem rejeição nem colisão de S/R
+      // A confirmação vem nos segundos finais da vela, mas a operação e o cronômetro
+      // de expiração começam na ABERTURA DA VELA DO SINAL (now + remainingSec)
+      const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
+      const entryTimestamp = now + remainingSec; // Momento exato em que a vela do sinal abre
+      const expirationTimestamp = entryTimestamp + expirationSeconds;
+
+      const confirmed: SignalRecord = {
+        ...this.activePreAlert,
+        stage: 'CONFIRMED',
+        timestamp: Date.now(),
+        formattedTime,
+        entryPrice: currentCandle.close,
+        confluenceScore: Math.max(confirmMinScore, confluences.totalScore),
+        reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
+        result: 'PENDING',
+        candleCloseTime: currentCandle.time + (timeframe === 'M1' ? 60 : 300),
+        entryTimestamp,
+        expirationTimestamp,
+        isEstimatedResult: false,
+      };
+
+      this.lastEvaluatedCandleTime = currentCandle.time;
+      this.latestConfirmedSignal = confirmed;
+      this.latestConfirmedTime = Date.now();
+      this.activePreAlert = null;
+      this.lastCancelledSignal = null;
+
+      if (settings.confirmedSound) {
+        if (confirmed.direction === 'CALL') {
+          audioAlerts.playCallSignal();
+        } else {
+          audioAlerts.playPutSignal();
+        }
+      }
+
+      this.dispatchSignalEvent(confirmed, 'CONFIRMED');
+
+      this.pendingTrades.push(confirmed);
+      this.signalHistory.unshift(confirmed);
+      this.saveHistory(confirmed);
       this.notify();
       return;
     }
+  } else if (
+    confluences.direction !== 'NEUTRO' &&
+    confluences.totalScore >= confirmMinScore &&
+    !(profile === 'CONSERVADORA' && marketAnalysis?.inConsolidation)
+  ) {
+    // Confirmação direta instantânea de alta convicção que surgiu entre 15s e 10s
+    const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
+    const entryTimestamp = now + remainingSec;
+    const expirationTimestamp = entryTimestamp + expirationSeconds;
 
-    // 5. Stage 1: PRÉ-ALERTA (Disparo estritamente dos 60 até aos 15 segundos restantes quando probabilidade for detectada)
-    const effectiveDir: 'CALL' | 'PUT' = confluences.direction !== 'NEUTRO'
-      ? confluences.direction
-      : (marketAnalysis?.dominantForce === 'VENDEDOR' || marketAnalysis?.trend === 'BAIXA' ? 'PUT' : 'CALL');
-    const effectiveScore = confluences.direction !== 'NEUTRO' && confluences.totalScore >= 60
-      ? confluences.totalScore
-      : Math.min(92, Math.max(72, confluences.totalScore + 15));
+    const confirmed: SignalRecord = {
+      id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      formattedTime,
+      asset: assetSymbol,
+      timeframe,
+      expiration: settings.defaultExpiration,
+      direction: confluences.direction,
+      stage: 'CONFIRMED',
+      entryPrice: currentCandle.close,
+      confluenceScore: confluences.totalScore,
+      reasons: [...confluences.reasons],
+      result: 'PENDING',
+      candleCloseTime: currentCandle.time + (timeframe === 'M1' ? 60 : 300),
+      entryTimestamp,
+      expirationTimestamp,
+      isEstimatedResult: false,
+    };
 
-    if (
-      remainingSec <= 60 &&
-      remainingSec > 15 &&
-      effectiveScore >= 60 &&
-      !this.activePreAlert &&
-      !activeRunningTrade &&
-      this.lastEvaluatedCandleTime !== currentCandle.time
-    ) {
+    this.lastEvaluatedCandleTime = currentCandle.time;
+    this.latestConfirmedSignal = confirmed;
+    this.latestConfirmedTime = Date.now();
+    this.lastCancelledSignal = null;
+
+    if (settings.confirmedSound) {
+      if (confirmed.direction === 'CALL') {
+        audioAlerts.playCallSignal();
+      } else {
+        audioAlerts.playPutSignal();
+      }
+    }
+
+    this.dispatchSignalEvent(confirmed, 'CONFIRMED');
+
+    this.pendingTrades.push(confirmed);
+    this.signalHistory.unshift(confirmed);
+    this.saveHistory(confirmed);
+    this.notify();
+    return;
+  }
+}
+
+// 4. Cancelamento de segurança se ultrapassar 10 segundos sem confirmação
+if (remainingSec < 10 && this.activePreAlert) {
+  const cancelled: SignalRecord = {
+    ...this.activePreAlert,
+    stage: 'CANCELLED',
+    cancelledAt: Date.now(),
+    cancelReason: `Janela de confirmação (15s a 10s) expirou sem confirmação plena. Abortado.`,
+  };
+  this.lastCancelledSignal = cancelled;
+  this.lastCancelledTime = Date.now();
+  this.lastEvaluatedCandleTime = currentCandle.time;
+  this.activePreAlert = null;
+  audioAlerts.playCancelAlert();
+  this.dispatchSignalEvent(cancelled, 'CANCELLED');
+  this.notify();
+  return;
+}
+
+// 5. Stage 1: PRÉ-ALERTA (Disparo estritamente dos 60 até aos 15 segundos restantes quando probabilidade for detectada)
+const effectiveDir: 'CALL' | 'PUT' = confluences.direction !== 'NEUTRO'
+  ? confluences.direction
+  : (marketAnalysis?.dominantForce === 'VENDEDOR' || marketAnalysis?.trend === 'BAIXA' ? 'PUT' : 'CALL');
+const effectiveScore = confluences.direction !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore
+  ? confluences.totalScore
+  : Math.min(92, Math.max(72, confluences.totalScore + 15));
+
+const isConsolidationBlocked = profile === 'CONSERVADORA' && marketAnalysis?.inConsolidation;
+
+if (
+  remainingSec <= 60 &&
+  remainingSec > 15 &&
+  effectiveScore >= preAlertMinScore &&
+  !isConsolidationBlocked &&
+  !this.activePreAlert &&
+  !activeRunningTrade &&
+  this.lastEvaluatedCandleTime !== currentCandle.time
+) {
+
       const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
       const preAlert: SignalRecord = {
         id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -567,13 +613,15 @@ export class SignalEngine {
     // 2. Após 5 segundos: Confirmar entrada e iniciar contagem regressiva da expiração
     setTimeout(() => {
       const confirmedNow = Math.floor(Date.now() / 1000);
+      const entryTimestamp = confirmedNow + 3; // 3 segundos de confirmação antes da abertura
       const confirmed: SignalRecord = {
         ...preAlert,
         stage: 'CONFIRMED',
         timestamp: Date.now(),
         formattedTime: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
         entryPrice: currentPrice,
-        expirationTimestamp: confirmedNow + simulationExpSec,
+        entryTimestamp,
+        expirationTimestamp: entryTimestamp + simulationExpSec,
       };
 
       this.activePreAlert = null;
