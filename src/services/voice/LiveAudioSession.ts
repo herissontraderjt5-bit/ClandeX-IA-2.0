@@ -1,6 +1,7 @@
 import { tradingContextAdapter } from './TradingContextAdapter';
 import { MicrophoneManager } from './MicrophoneManager';
 import { AudioPlaybackManager } from './AudioPlaybackManager';
+import { normalizeTradingPronunciation } from './pronunciationNormalizer';
 
 export type AssistantState =
   | 'DESCONECTADO'
@@ -318,6 +319,7 @@ DIRETRIZES DA PERSONALIDADE CANDLEX:
 4. Mantenha a memória da conversa (entenda perguntas como "e no gráfico de cinco minutos?").
 5. Domine Price Action, Suporte/Resistência, Tendência, SMC, Rompimento, Rejeição, CALL, PUT, M1 e M5.
 6. Nunca invente dados e nunca prometa lucros.
+7. PRONÚNCIA OBRIGATÓRIA DE ATIVOS: NUNCA soletre pares de moedas ou ativos (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens ao citar o par.
 CONTEXTO ATUALIZADO DO PAINEL:\n${contextSummary}
 HISTÓRICO RECENTE:\n${recentHistory}`;
 
@@ -340,7 +342,7 @@ HISTÓRICO RECENTE:\n${recentHistory}`;
             const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
             const response: any = await Promise.race([fetchPromise, timeoutPromise]);
             if (response && response.text) {
-              const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
+              const cleanText = normalizeTradingPronunciation(response.text);
               if (cleanText) return cleanText;
             }
           } catch {}

@@ -78,7 +78,7 @@ PERSONALIDADE (CANDLEX):
 Profissional, natural, objetiva e amigável. Fale como um assistente humano especializado em análise técnica.
 
 DADOS EM TEMPO REAL DO MERCADO ATUAL NO PAINEL:
-- Ativo na tela: ${asset} (${marketContext?.assetName || ''})
+- Ativo na tela: ${marketContext?.assetName || asset} (${asset.replace('/', ' ')})
 - Timeframe: ${timeframe} | Preço Atual: ${currentPrice}
 - Tendência Principal: ${trend}
 - Força Compradora: ${buyerStrength} | Força Vendedora: ${sellerStrength}
@@ -97,6 +97,7 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
 6. Não invente preços ou indicadores.
 7. Não prometa lucros e não garanta resultados.
 8. Se não houver confluência ou dados suficientes, informe com clareza.
+9. PRONÚNCIA OBRIGATÓRIA DE ATIVOS E MOEDAS: NUNCA soletre pares de moedas ou ativos letra por letra (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens na sua fala ao citar o par, pois causam soletração robótica na síntese de áudio.
         `;
 
         if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY') {

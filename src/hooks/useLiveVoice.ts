@@ -5,6 +5,7 @@ import { isForexMarketOpen } from '../services/marketData';
 import { tradingContextAdapter } from '../services/voice/TradingContextAdapter';
 import { signalEventBridge } from '../services/voice/SignalEventBridge';
 import { signalEngine } from '../services/signalEngine';
+import { normalizeTradingPronunciation } from '../services/voice/pronunciationNormalizer';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
 export type AssistantUiState = 'DESCONECTADO' | 'CONECTANDO' | 'OUVINDO' | 'PROCESSANDO' | 'FALANDO' | 'ERRO';
@@ -53,6 +54,24 @@ const getEffectiveGeminiKey = (): string => {
 
   return (localKey || envKey || '').trim();
 };
+
+// Filtro de Fala Humana: Rejeita ruídos breves, murmúrios, estalos e sons não-verbais
+const NOISE_NON_SPEECH = new Set([
+  '', 'a', 'e', 'é', 'o', 'u', 'i', 'ah', 'eh', 'oh', 'uh', 'um', 'hm', 'humm', 'hmm',
+  'shh', 'psst', 'ã', 'ãn', 'éé', 'ok'
+]);
+
+export function isLegitimateHumanSpeech(text: string): boolean {
+  if (!text) return false;
+  const clean = text.trim().toLowerCase();
+  if (clean.length < 3) return false;
+  if (NOISE_NON_SPEECH.has(clean)) return false;
+  // Rejeita repetições monótonas de vogal/consoante isoladas (ex: "aaaa", "eeee", "hmmmm")
+  if (/^(.)\1+$/.test(clean)) return false;
+  const words = clean.split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 1 && words[0].length < 3) return false;
+  return true;
+}
 
 export function useLiveVoice({
   asset,
@@ -628,7 +647,7 @@ export function useLiveVoice({
     if (cleanSubject.length > 2) {
       return `Sobre "${cleanSubject}": no ${ctx.asset.symbol}, a tendência é de ${trend} com score de ${score}%. Me pergunte se vale a pena entrar agora, qual o suporte mais próximo ou a previsão do próximo candle!`;
     }
-    return `Estou atenta ao par ${ctx.asset.symbol}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte ou conselhos operacionais!`;
+    return `Estou atenta ao par ${ctx.asset.name}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte ou conselhos operacionais!`;
   }, []);
 
   /**
@@ -638,7 +657,7 @@ export function useLiveVoice({
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-    let clean = textToSpeak.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').replace(/#/g, '').trim();
+    let clean = normalizeTradingPronunciation(textToSpeak);
     if (!clean) return;
 
     // Garante respostas estritamente concisas (no máximo 2 frases para fala limpa sem engasgos)
@@ -778,7 +797,7 @@ export function useLiveVoice({
         speechCooldownTimeoutRef.current = null;
       }
 
-      // Cooldown de 500ms após o fim completo da fala para dissipar o som ambiente
+      // Cooldown de 850ms após o fim completo da fala para dissipar o som ambiente e eco
       speechCooldownTimeoutRef.current = setTimeout(() => {
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
@@ -791,7 +810,7 @@ export function useLiveVoice({
             startSpeechRecognitionRef.current();
           } catch {}
         }
-      }, 500);
+      }, 850);
     };
 
     utterance.onstart = () => {
@@ -905,6 +924,7 @@ REGRAS OBRIGATÓRIAS (ETAPA 7):
 5. Domine Price Action, Suporte e Resistência, Fluxo de candles, Tendência, Consolidação, Rompimento, Rejeição, CALL, PUT, M1, M5, Forex e Criptomoedas.
 6. Não invente preços ou indicadores. Não prometa lucros e não garanta resultados.
 7. Se não houver confirmação técnica ou dados suficientes, informe com clareza.
+8. PRONÚNCIA OBRIGATÓRIA DE ATIVOS E MOEDAS: NUNCA soletre pares de moedas ou ativos letra por letra (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens na sua fala ao citar o par, pois causam soletração robótica na voz.
 
 DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
 ${contextSummary}
@@ -933,7 +953,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
                 const response: any = await Promise.race([fetchPromise, timeoutPromise]);
 
                 if (response && response.text) {
-                  const cleanText = response.text.replace(/[*_#`~]/g, '').trim();
+                  const cleanText = normalizeTradingPronunciation(response.text);
                   if (cleanText) {
                     setIsProcessing(false);
                     return cleanText;
@@ -984,7 +1004,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       hasSpokenInTurnRef.current = false;
 
       const q = textQuery?.trim();
-      if (!q || q.length < 2) {
+      if (!q || !isLegitimateHumanSpeech(q)) {
         turnDispatchedRef.current = false;
         return;
       }
@@ -1120,14 +1140,14 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda 450ms de silêncio após a fala para enviar a pergunta com segurança
+        // Aguarda 750ms de silêncio após a fala para garantir término da frase e rejeitar ruídos transitórios
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
-          if (fullQuestion && fullQuestion.length > 1) {
+          if (fullQuestion && isLegitimateHumanSpeech(fullQuestion)) {
             dispatchTurn(fullQuestion);
           }
-        }, 450);
+        }, 750);
       };
 
       recognition.onerror = (e: any) => {
@@ -1189,8 +1209,22 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       setHasMicPermission(true);
 
       const source = inputCtx.createMediaStreamSource(stream);
+
+      // 1. Filtro Passa-Alta vocal (elimina rumbles < 90Hz)
+      const highpass = inputCtx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 90;
+
+      // 2. Filtro Passa-Baixa vocal (elimina ruído de fundo > 3400Hz)
+      const lowpass = inputCtx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 3400;
+
       const processor = inputCtx.createScriptProcessor(2048, 1, 1);
       processorRef.current = processor;
+
+      const VOICE_RMS_THRESHOLD = 0.024;
+      let voiceFramesCount = 0;
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
@@ -1199,43 +1233,49 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           sum += inputData[i] * inputData[i];
         }
         const rms = Math.sqrt(sum / (inputData.length / 8));
-        const currentLevel = Math.min(100, Math.round(rms * 280));
 
         // Se a IA estiver falando, silencia o medidor para evitar eco das caixas de som
-        if (isAiSpeakingRef.current || statusRef.current === 'speaking') {
+        if (isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing) {
           setMicLevel(0);
+          voiceFramesCount = 0;
           return;
         }
 
         if (isMutedRef.current) {
           setMicLevel(0);
+          voiceFramesCount = 0;
           return;
         }
 
+        // Filtro de ruído ambiente: se menor que o piso vocal, suprime ruídos não-humanos
+        if (rms < VOICE_RMS_THRESHOLD) {
+          voiceFramesCount = Math.max(0, voiceFramesCount - 1);
+          setMicLevel(0);
+          return;
+        }
+
+        voiceFramesCount++;
+        const currentLevel = Math.min(100, Math.round(rms * 280));
         setMicLevel(currentLevel);
 
         const now = Date.now();
-        // VAD gate: Se o volume for acima do piso de ruído, marca voz ativa
-        if (rms > 0.012) {
+        // VAD persistente: apenas sons sustentados (voz humana) ativam o canal
+        if (voiceFramesCount >= 2) {
           lastVoiceActiveTimeRef.current = now;
           hasSpokenInTurnRef.current = true;
           turnDispatchedRef.current = false;
         }
 
-        const isVoiceActive = now - lastVoiceActiveTimeRef.current < 1000;
+        const isVoiceActive = now - lastVoiceActiveTimeRef.current < 800;
 
         // 1. Resample nativo para 16kHz Little-Endian
         const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
         const base64Pcm = pcmToBase64(resampled);
 
-        // 2. Envio via WebSocket (se conectado ao servidor local)
+        // 2. Envio via WebSocket (se conectado ao servidor local Gemini Live)
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          if (isVoiceActive) {
+          if (isVoiceActive && voiceFramesCount >= 2) {
             wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
-          }
-
-          if (hasSpokenInTurnRef.current && !turnDispatchedRef.current && now - lastVoiceActiveTimeRef.current > 1100) {
-            dispatchTurn();
           }
         }
 
@@ -1254,7 +1294,9 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       const muteNode = inputCtx.createGain();
       muteNode.gain.value = 0;
 
-      source.connect(processor);
+      source.connect(highpass);
+      highpass.connect(lowpass);
+      lowpass.connect(processor);
       processor.connect(muteNode);
       muteNode.connect(inputCtx.destination);
     } catch (err: any) {

@@ -128,7 +128,7 @@ export class TradingContextAdapter implements TradingContextContract {
     const resistances = keyLevels.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals));
 
     let summary = `DADOS REAIS DO CANDLEX-IA NO PAINEL:
-- Ativo Selecionado: ${asset.symbol} (${asset.name})
+- Ativo Selecionado: ${asset.name} (dizer "${asset.symbol.replace('/', ' ')}")
 - Preço Atual: ${asset.currentPrice.toFixed(asset.pipDecimals)}
 - Timeframe Atual: ${tf}
 - Status do Mercado: ${isClosedWeekendForex ? 'FECHADO FIM DE SEMANA (Forex fechado, recomende Criptomoedas como Bitcoin)' : 'ABERTO EM TEMPO REAL'}

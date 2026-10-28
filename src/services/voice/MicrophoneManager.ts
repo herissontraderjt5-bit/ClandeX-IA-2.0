@@ -59,9 +59,23 @@ export class MicrophoneManager {
       const source = ctx.createMediaStreamSource(stream);
       this.sourceNode = source;
 
+      // 1. Filtro Passa-Alta: Elimina roncos graves, ar-condicionado e vibrações (< 90Hz)
+      const highpass = ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 90;
+
+      // 2. Filtro Passa-Baixa: Elimina chiados, cliques de mouse e ruídos de alta frequência (> 3400Hz)
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 3400;
+
       // ScriptProcessor para captura de chunks contínuos
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       this.processorNode = processor;
+
+      // Threshold de ruído humano (VAD gate)
+      const VOICE_THRESHOLD_RMS = 0.022;
+      let voiceConsecutiveFrames = 0;
 
       processor.onaudioprocess = (e) => {
         if (this.isMuted) {
@@ -77,13 +91,22 @@ export class MicrophoneManager {
           sum += inputData[i] * inputData[i];
         }
         const rms = Math.sqrt(sum / inputData.length);
+
+        // Filtro de isolamento de ruído: se for ruído de fundo (< threshold), suprime
+        if (rms < VOICE_THRESHOLD_RMS) {
+          voiceConsecutiveFrames = Math.max(0, voiceConsecutiveFrames - 1);
+          if (this.onVolumeChange) this.onVolumeChange(0);
+          return;
+        }
+
+        voiceConsecutiveFrames++;
         const level = Math.min(100, Math.round(rms * 450));
         if (this.onVolumeChange) {
           this.onVolumeChange(level);
         }
 
-        // Se houver callback e áudio audível, resampleia e envia PCM 16kHz
-        if (this.onAudioChunk) {
+        // Requer persistência mínima (2 frames) para não disparar em estalo/clique isolado
+        if (voiceConsecutiveFrames >= 2 && this.onAudioChunk) {
           const resampled = this.resampleTo16k(inputData, ctx.sampleRate);
           const pcmBase64 = this.pcmToBase64(resampled);
           if (pcmBase64) {
@@ -92,8 +115,15 @@ export class MicrophoneManager {
         }
       };
 
-      source.connect(processor);
-      processor.connect(ctx.destination);
+      // Conexão do pipeline de áudio com mute node para NÃO vazar no alto-falante
+      source.connect(highpass);
+      highpass.connect(lowpass);
+      lowpass.connect(processor);
+
+      const muteGain = ctx.createGain();
+      muteGain.gain.value = 0;
+      processor.connect(muteGain);
+      muteGain.connect(ctx.destination);
 
       return true;
     } catch (err) {

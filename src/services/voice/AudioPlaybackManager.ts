@@ -1,3 +1,5 @@
+import { normalizeTradingPronunciation } from './pronunciationNormalizer';
+
 /**
  * AudioPlaybackManager
  * Gerencia reprodução de áudio da IA (PCM 24kHz do Gemini Live e Web Speech API fallback)
@@ -101,7 +103,7 @@ export class AudioPlaybackManager {
 
     this.interrupt();
 
-    const clean = text.replace(/[*#`_~]/g, '').trim();
+    const clean = normalizeTradingPronunciation(text);
     if (!clean) {
       if (onEnd) onEnd();
       return;
