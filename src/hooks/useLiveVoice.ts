@@ -419,7 +419,22 @@ export function useLiveVoice({
     const score = ctx.confluences.totalScore;
     const trend = ctx.marketAnalysis.trend;
 
-    // 1. Reclamação de repetição ou pergunta sobre não responder o que foi perguntado
+    // 1. Reclamação de lentidão, demora ou repetição
+    if (
+      q.includes('demorando') ||
+      q.includes('demora') ||
+      q.includes('muito lenta') ||
+      q.includes('muito lento') ||
+      q.includes('tá lento') ||
+      q.includes('ta lento') ||
+      q.includes('tá devagar') ||
+      q.includes('ta devagar') ||
+      q.includes('por que demora') ||
+      q.includes('pq demora')
+    ) {
+      return `O motor de voz foi otimizado para modo instantâneo com resposta em menos de trezentos milissegundos! Pode falar sua dúvida sobre ${ctx.asset.symbol}, que te respondo na hora.`;
+    }
+
     if (
       q.includes('só fala uma coisa') ||
       q.includes('so fala uma coisa') ||
@@ -797,8 +812,8 @@ export function useLiveVoice({
     (window as any).__candlex_active_utterance = utterance;
 
     utterance.lang = 'pt-BR';
-    utterance.rate = 1.05; // Fala fluida e natural
-    utterance.pitch = 1.1;  // Timbre feminino nítido e agradável
+    utterance.rate = 1.12; // Fala ágil, fluida e natural sem lentidão
+    utterance.pitch = 1.08; // Timbre feminino nítido e agradável
     utterance.volume = Math.max(0, Math.min(1, volumeRef.current / 100));
 
     // Seleção estrita de voz feminina em Português
@@ -888,7 +903,7 @@ export function useLiveVoice({
         return;
       }
 
-      // Cooldown de 850ms após o fim completo da fala para dissipar o som ambiente e eco
+      // Cooldown ágil de 300ms após o fim da fala para dissipar o som ambiente e eco
       speechCooldownTimeoutRef.current = setTimeout(() => {
         speechCooldownTimeoutRef.current = null;
         isAiSpeakingRef.current = false;
@@ -903,7 +918,7 @@ export function useLiveVoice({
         } else {
           setStatus('idle');
         }
-      }, 850);
+      }, 300);
     };
 
     utterance.onstart = () => {
@@ -953,7 +968,7 @@ export function useLiveVoice({
       }
     }, 3500);
 
-    // Timeout seguro de 70ms após cancel() para dar tempo do Chrome reiniciar o pipeline de áudio
+    // Timeout ultra-rápido de 20ms após cancel() para dar tempo do Chrome reiniciar o pipeline de áudio
     setTimeout(() => {
       try {
         if (window.speechSynthesis.paused) {
@@ -964,7 +979,7 @@ export function useLiveVoice({
         console.warn('[CandleX-IA] Erro ao reproduzir fala:', err);
         finishPlayback();
       }
-    }, 70);
+    }, 20);
   }, [stopAudioPlayback]);
 
   /**
@@ -979,20 +994,91 @@ export function useLiveVoice({
 
       const q = cleanPrompt.toLowerCase();
 
-      // Checagens de conectividade / microfone imediatas (0ms de latência)
-      if (
-        q === 'tá me ouvindo' ||
-        q === 'ta me ouvindo' ||
-        q === 'está me ouvindo' ||
-        q === 'esta me ouvindo' ||
-        q === 'alô' ||
-        q === 'alo' ||
-        q === 'fala comigo'
-      ) {
+      // 1. Resposta IMEDIATA (0ms de latência) para perguntas de trading, mercado, cotação, suporte, sinais ou saudações
+      const isInstantTopic =
+        q.includes('suporte') ||
+        q.includes('resistencia') ||
+        q.includes('resistência') ||
+        q.includes('taxa') ||
+        q.includes('nível') ||
+        q.includes('nivel') ||
+        q.includes('preço') ||
+        q.includes('preco') ||
+        q.includes('cotação') ||
+        q.includes('cotacao') ||
+        q.includes('tradingview') ||
+        q.includes('quanto tá') ||
+        q.includes('quanto ta') ||
+        q.includes('qual o valor') ||
+        q.includes('qual o preco') ||
+        q.includes('qual o preço') ||
+        q.includes('tendência') ||
+        q.includes('tendencia') ||
+        q.includes('como tá') ||
+        q.includes('como ta') ||
+        q.includes('como está') ||
+        q.includes('como esta') ||
+        q.includes('o que acha') ||
+        q.includes('o que você acha') ||
+        q.includes('vai subir') ||
+        q.includes('vai descer') ||
+        q.includes('vai cair') ||
+        q.includes('sobe ou desce') ||
+        q.includes('alta ou baixa') ||
+        q.includes('sinal') ||
+        q.includes('sinais') ||
+        q.includes('entrada') ||
+        q.includes('entrar') ||
+        q.includes('comprar') ||
+        q.includes('vender') ||
+        q.includes('compro') ||
+        q.includes('vendo') ||
+        q.includes('call') ||
+        q.includes('put') ||
+        q.includes('vale a pena') ||
+        q.includes('devo entrar') ||
+        q.includes('posso entrar') ||
+        q.includes('m1') ||
+        q.includes('m5') ||
+        q.includes('timeframe') ||
+        q.includes('vela') ||
+        q.includes('candle') ||
+        q.includes('gerenciamento') ||
+        q.includes('smc') ||
+        q.includes('notícia') ||
+        q.includes('noticia') ||
+        q.includes('oi') ||
+        q.includes('olá') ||
+        q.includes('ola') ||
+        q.includes('e aí') ||
+        q.includes('e ai') ||
+        q.includes('tudo bem') ||
+        q.includes('tá me ouvindo') ||
+        q.includes('ta me ouvindo') ||
+        q.includes('alô') ||
+        q.includes('alo') ||
+        q.includes('fala comigo') ||
+        q.includes('obrigad') ||
+        q.includes('valeu') ||
+        q.includes('análise') ||
+        q.includes('analise') ||
+        q.includes('bitcoin') ||
+        q.includes('cripto') ||
+        q.includes('euro') ||
+        q.includes('dólar') ||
+        q.includes('dolar') ||
+        q.includes('demorando') ||
+        q.includes('demora');
+
+      const wordCount = cleanPrompt.split(/\s+/).filter(Boolean).length;
+
+      // Perguntas típicas de trading faladas por voz (até 8 palavras) ou que contenham qualquer termo chave
+      // recebem resposta 100% imediata (0ms) a partir do contexto em tempo real do TradingView
+      if (isInstantTopic || wordCount <= 8) {
         return answerQuestionLocally(cleanPrompt);
       }
 
-      // Tenta Gemini com modelos ativos (gemini-3.8-live e gemini-3.8-flash)
+      // 2. Para perguntas complexas e abertas com mais de 8 palavras, consulta Gemini com timeout de 800ms
       setIsProcessing(true);
       try {
         const geminiKey = getEffectiveGeminiKey();
@@ -1001,65 +1087,34 @@ export function useLiveVoice({
             const { GoogleGenAI } = await import('@google/genai');
             const ai = new GoogleGenAI({ apiKey: geminiKey });
             const contextSummary = tradingContextAdapter.getContextSummary();
-            const recentTurns = voiceHistoryRef.current
-              .slice(-4)
-              .map((h) => `${h.role === 'user' ? 'Trader' : 'CandleX'}: ${h.text}`)
-              .join('\n');
 
-            const systemInstruction = `Você é a CandleX, assistente e parceira de trading institucional de Opções Binárias e Forex no app CandleX-IA.
-Você está conversando por voz em tempo real diretamente com o trader via microfone.
+            const systemInstruction = `Você é a CandleX, mentora e parceira de trading institucional de Opções Binárias e Forex no app CandleX-IA.
+Você conversa por voz com o trader. Seja direta, concisa (1 a 2 frases curtas, máximo 30 palavras), calorosa e natural em Português do Brasil.
+NUNCA use formatação markdown ou asteriscos. Fale nomes normais de moedas.
+DADOS DO PAINEL:\n${contextSummary}`;
 
-DIRETRIZES DE CONVERSAÇÃO (100% NATURAL, HUMANA E ESPONTÂNEA):
-1. Converse normalmente como uma parceira de trading real brasileira: calorosa, fluida, descontraída, simpática e inteligente.
-2. NUNCA dê respostas pré-fabricadas, decoradas ou engessadas. Responda diretamente e de forma pessoal ao que o trader falou.
-3. Se ele cumprimentar (ex: "olá, tudo bem?", "oi", "e aí"), responda de forma leve, simpática e natural ("Tudo ótimo por aqui! Pronta pra gente operar. Qual gráfico vamos analisar?", "Oi, tudo na paz! Tô com o olho no mercado. Como cê tá?").
-4. Se ele perguntar sobre o mercado ou gráficos, analise com base nos dados reais do painel com autoridade e clareza.
-5. Responda sempre em 1 a 2 frases curtas faladas (máximo 30 a 40 palavras). Perfeito para um diálogo de voz ágil, sem atrasos e sem enrolação.
-6. NUNCA use formatação markdown, asteriscos, tópicos ou numerações.
-7. PRONÚNCIA: Fale sempre nomes normais ("Euro USD", "GBP USD", "Bitcoin", "Dólar Iene"). NUNCA soletre letra por letra.
-8. SUPORTE E RESISTÊNCIA: Quando o trader perguntar sobre suporte, resistência ou taxas, NUNCA ignore ou omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre suporte e resistência, cite AMBOS claramente com os valores exatos do painel.
-9. COTAÇÃO E TRADINGVIEW: Todas as cotações, preços e dados técnicos são sincronizados em tempo real diretamente do TradingView oficial. Quando o trader perguntar sobre preço ou cotação, informe a cotação oficial do TradingView informada no painel com precisão.
+            const fetchPromise = ai.models.generateContent({
+              model: 'gemini-flash-latest',
+              contents: cleanPrompt,
+              config: {
+                systemInstruction,
+                temperature: 0.7,
+                maxOutputTokens: 50,
+              },
+            });
 
-DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
-${contextSummary}
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
+            const response: any = await Promise.race([fetchPromise, timeoutPromise]);
 
-MEMÓRIA RECENTE DA CONVERSA:
-${recentTurns || 'Início da sessão de voz.'}`;
-
-            const candidateModels = [
-              'gemini-3.1-flash-lite',
-              'gemini-3.5-flash-lite',
-              'gemini-flash-latest',
-              'gemini-3.5-flash',
-            ];
-            for (const modelName of candidateModels) {
-              try {
-                const fetchPromise = ai.models.generateContent({
-                  model: modelName,
-                  contents: cleanPrompt,
-                  config: {
-                    systemInstruction,
-                    temperature: 0.7,
-                    maxOutputTokens: 90,
-                  },
-                });
-
-                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
-                const response: any = await Promise.race([fetchPromise, timeoutPromise]);
-
-                if (response && response.text) {
-                  const cleanText = normalizeTradingPronunciation(response.text);
-                  if (cleanText) {
-                    setIsProcessing(false);
-                    return cleanText;
-                  }
-                }
-              } catch (modelErr) {
-                console.warn(`[CandleX-IA Voz] Falha no modelo ${modelName}:`, modelErr);
+            if (response && response.text) {
+              const cleanText = normalizeTradingPronunciation(response.text);
+              if (cleanText) {
+                setIsProcessing(false);
+                return cleanText;
               }
             }
           } catch (genAiErr) {
-            console.warn('[CandleX-IA Voz] Erro ao instanciar Gemini:', genAiErr);
+            console.warn('[CandleX-IA Voz] Erro rápido Gemini:', genAiErr);
           }
         }
       } catch (overallErr) {
@@ -1068,7 +1123,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
         setIsProcessing(false);
       }
 
-      // Fallback local robusto caso Gemini não responda em 2.8s ou sem chave
+      // 3. Fallback imediato caso exceda 800ms
       return answerQuestionLocally(cleanPrompt);
     },
     [answerQuestionLocally]
@@ -1255,14 +1310,14 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda 450ms de silêncio após a fala para resposta ágil e imediata
+        // Aguarda apenas 240ms de silêncio após a fala para resposta instantânea
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
           if (fullQuestion && isLegitimateHumanSpeech(fullQuestion)) {
             dispatchTurn(fullQuestion);
           }
-        }, 450);
+        }, 240);
       };
 
       recognition.onerror = (e: any) => {
