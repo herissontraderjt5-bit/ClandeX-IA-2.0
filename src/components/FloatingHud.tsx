@@ -620,7 +620,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     alertBadgeClass = 'bg-rose-500/25 text-rose-300 border-rose-500/70 shadow-sm';
     glowBorderClass = 'glow-put border-rose-500/50';
   } else if (isTradeRunning && activeTrade) {
-    alertStatusText = `⏳ OPERAÇÃO EM ANDAMENTO: ${activeTrade.direction}`;
+    alertStatusText = `⏳ OPERAÇÃO ABERTA • AGUARDANDO RESULTADO (${activeTrade.direction})`;
     alertBadgeClass = isWinning
       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse'
       : 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
@@ -1124,8 +1124,9 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             )}
                           </div>
                           <div>
-                            <div className="text-[9px] uppercase font-bold tracking-wider opacity-80">
-                              OPERAÇÃO ABERTA NA HIOVE
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-cyan-400 animate-pulse flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                              <span>OPERAÇÃO ABERTA NA HIOVE • AGUARDANDO RESULTADO</span>
                             </div>
                             <div className="text-base font-black font-mono tracking-wide">
                               {isCallTrade ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
@@ -1185,7 +1186,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </div>
                           <div>
                             <div className="text-[9px] uppercase font-bold tracking-wider text-rose-400">
-                              PROTEÇÃO DE CAPITAL (JANELA 15s-10s)
+                              PROTEÇÃO DE CAPITAL (JANELA 15s-5s)
                             </div>
                             <div className="text-sm font-black font-mono tracking-wide text-white">
                               SINAL CANCELADO • NÃO ENTRAR
@@ -1206,7 +1207,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                     </div>
                   ) : hasConfirmed && latestConfirmedSignal ? (
-                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 10s • ENTRADA NA ABERTURA DA VELA) */
+                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 5s • ENTRADA NA ABERTURA DA VELA) */
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border flex items-center justify-between ${
@@ -1295,7 +1296,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       {/* Decisão entre 15s e 10s */}
                       <div className="p-2 bg-black/70 border border-amber-500/40 rounded-xl text-center space-y-0.5">
                         <div className="text-[9px] font-mono text-amber-300 uppercase font-bold">
-                          {remainingSeconds > 15 ? 'Janela de Decisão (Confirmação/Cancelamento):' : 'Momento de Decisão (15s a 10s):'}
+                          {remainingSeconds > 15 ? 'Janela de Decisão (Confirmação/Cancelamento):' : 'Momento de Confirmação (15s a 5s):'}
                         </div>
                         <div className="text-base font-black font-mono text-white">
                           {remainingSeconds > 15 ? `Em ${remainingSeconds - 15} segundos` : 'AVALIANDO FECHAMENTO AGORA...'}
