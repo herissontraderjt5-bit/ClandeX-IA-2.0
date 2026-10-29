@@ -59,7 +59,8 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
   onOpenSettings,
   onOpenWebhook,
 }) => {
-  const [bgMode, setBgMode] = useState<BackgroundMode>('TRADINGVIEW');
+  // Modo padrão: SEMPRE abre no site/login direto da Hiove conforme solicitado
+  const [bgMode, setBgMode] = useState<BackgroundMode>('LIVE_SITE');
   const [iframeKey, setIframeKey] = useState<number>(0);
   const [accountType, setAccountType] = useState<'DEMO' | 'REAL'>('DEMO');
   const [demoBalance, setDemoBalance] = useState<number>(10000.00);

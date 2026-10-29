@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ExternalLink, ShieldCheck, ArrowRight, Monitor, Layers, AlertCircle, Copy, Check } from 'lucide-react';
 import { Asset, SignalRecord } from '../types/trading';
+import { HIOVE_LOGIN_URL } from './HioveBrokerBackground';
 
 interface HioveWorkspaceProps {
   currentAsset: Asset;
@@ -16,7 +17,7 @@ export const HioveWorkspace: React.FC<HioveWorkspaceProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const copyBrokerLink = () => {
-    navigator.clipboard.writeText('https://hiove.io/');
+    navigator.clipboard.writeText(HIOVE_LOGIN_URL);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
@@ -38,15 +39,15 @@ export const HioveWorkspace: React.FC<HioveWorkspaceProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono border border-neutral-700 transition-colors cursor-pointer"
           >
             {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            {copiedLink ? 'Link Copiado' : 'hiove.io'}
+            {copiedLink ? 'Link Copiado' : 'Login Hiove'}
           </button>
           <a
-            href="https://hiove.io/"
+            href={HIOVE_LOGIN_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3.5 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-neutral-950 font-bold rounded-lg text-xs transition-colors shadow-lg shadow-cyan-500/20 cursor-pointer"
           >
-            Abrir Hiove em Nova Janela
+            Abrir Login Hiove
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>

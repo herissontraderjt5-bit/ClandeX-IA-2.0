@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Chrome, Download, Check, Copy, ExternalLink, Shield, Code, Sparkles } from 'lucide-react';
+import { HIOVE_LOGIN_URL } from './HioveBrokerBackground';
 
 interface ExtensionModalProps {
   isOpen: boolean;
@@ -185,13 +186,13 @@ export const ExtensionModal: React.FC<ExtensionModalProps> = ({ isOpen, onClose 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3.5 bg-neutral-900 border-t border-neutral-800">
           <a
-            href="https://hiove.io/"
+            href={HIOVE_LOGIN_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
-            Visitar Hiove (hiove.io)
+            Visitar Hiove (Login)
           </a>
 
           <button
