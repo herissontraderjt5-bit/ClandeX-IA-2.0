@@ -23,6 +23,7 @@ interface UseLiveVoiceParams {
   timeframe: TimeFrame;
   marketAnalysis: MarketAnalysis;
   confluences: ConfluenceBreakdown;
+  userName?: string;
 }
 
 const getEffectiveGeminiKey = (): string => {
@@ -78,6 +79,7 @@ export function useLiveVoice({
   timeframe,
   marketAnalysis,
   confluences,
+  userName = 'Trader',
 }: UseLiveVoiceParams) {
   const [status, setStatus] = useState<LiveVoiceStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1549,7 +1551,7 @@ DADOS DO PAINEL:\n${contextSummary}`;
               JSON.stringify({
                 type: 'start',
                 voiceName: 'Zephyr',
-                userName: 'Herisson',
+                userName: userName || 'Trader',
                 marketContext: {
                   asset: currentCtx.asset.symbol,
                   assetName: currentCtx.asset.name,

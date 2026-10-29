@@ -183,6 +183,7 @@ export default function App() {
     timeframe,
     marketAnalysis,
     confluences,
+    userName: userSession?.name || userSession?.email?.split('@')[0] || 'Trader',
   });
 
   // Listen for signals history and lifecycle changes from engine
