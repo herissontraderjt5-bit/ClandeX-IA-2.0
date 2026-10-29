@@ -432,8 +432,14 @@ export default function App() {
         onSelectTimeframe={handleSelectTimeframe}
         onSelectExpiration={handleSelectExpiration}
         onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenWebhook={() => setIsWebhookModalOpen(true)}
+        onOpenSettings={() => {
+          if (isDepositLocked) return;
+          setIsSettingsOpen(true);
+        }}
+        onOpenWebhook={() => {
+          if (isDepositLocked) return;
+          setIsWebhookModalOpen(true);
+        }}
       />
 
       {/* FOREGROUND: Floating Draggable ClandeX-IA HUD */}
@@ -459,6 +465,7 @@ export default function App() {
         liveVoice={liveVoice}
         isAdmin={isAdmin}
         userSession={userSession}
+        onLogout={handleLogout}
         onRefreshSession={handleRefreshSession}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
         onSelectAnalysisProfile={handleSelectAnalysisProfile}
@@ -467,8 +474,14 @@ export default function App() {
         onSelectExpiration={handleSelectExpiration}
         onToggleAnalysis={handleToggleAnalysis}
         onToggleSound={handleToggleSound}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenWebhook={() => setIsWebhookModalOpen(true)}
+        onOpenSettings={() => {
+          if (isDepositLocked) return;
+          setIsSettingsOpen(true);
+        }}
+        onOpenWebhook={() => {
+          if (isDepositLocked) return;
+          setIsWebhookModalOpen(true);
+        }}
         onTriggerAiInsight={handleTriggerAiInsight}
         onTriggerTestSignal={handleTriggerTestSignal}
         onTriggerCancelTest={handleTriggerCancelTest}
@@ -478,7 +491,7 @@ export default function App() {
 
       {/* Settings Modal */}
       <SettingsModal
-        isOpen={isSettingsOpen}
+        isOpen={isSettingsOpen && !isDepositLocked}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
