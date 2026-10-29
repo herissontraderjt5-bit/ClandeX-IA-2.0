@@ -168,10 +168,10 @@ export default function App() {
     });
   }, [settings.webhook]);
 
-  // Derived market analysis and confluences
+  // Derived market analysis and confluences (com dados reais TradingView)
   const marketAnalysis: MarketAnalysis = React.useMemo(() => {
-    return analyzeMarket(candles);
-  }, [candles]);
+    return analyzeMarket(candles, marketDataManager.getLiveTradingViewData());
+  }, [candles, asset.currentPrice]);
 
   const confluences: ConfluenceBreakdown = React.useMemo(() => {
     return calculateConfluences(marketAnalysis, settings);
@@ -205,6 +205,8 @@ export default function App() {
         setRemainingSeconds(remainingSec);
         setCurrentCandle({ ...candle });
         setCandles(marketDataManager.getCandles());
+        setAsset((prev) => (prev.currentPrice !== currentAssetObj.currentPrice || prev.symbol !== currentAssetObj.symbol ? { ...currentAssetObj } : prev));
+
         // Process candle open capturing and expiration resolution continuously on every tick
         signalEngine.onMarketTick(
           candle,
@@ -214,9 +216,9 @@ export default function App() {
           timeframe
         );
 
-        // If analyzing is active, evaluate confluences in the signal engine
+        // If analyzing is active, evaluate confluences in the signal engine with TradingView feed
         if (isAnalyzing) {
-          const liveAnalysis = analyzeMarket(marketDataManager.getCandles());
+          const liveAnalysis = analyzeMarket(marketDataManager.getCandles(), marketDataManager.getLiveTradingViewData());
           const liveConfluences = calculateConfluences(liveAnalysis, settings);
           signalEngine.evaluate(
             candle,

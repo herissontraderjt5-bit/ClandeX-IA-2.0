@@ -54,7 +54,7 @@ export class TradingContextAdapter implements TradingContextContract {
   public getMarketAnalysis(): MarketAnalysis {
     if (this.cachedAnalysis) return this.cachedAnalysis;
     const candles = marketDataManager.getCandles();
-    return analyzeMarket(candles);
+    return analyzeMarket(candles, marketDataManager.getLiveTradingViewData());
   }
 
   /**
@@ -129,13 +129,14 @@ export class TradingContextAdapter implements TradingContextContract {
     const supImmediate = supports[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals);
     const resImmediate = resistances[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals);
 
-    let summary = `DADOS REAIS DO CANDLEX-IA NO PAINEL:
+    let summary = `DADOS REAIS DO CANDLEX-IA NO PAINEL (TRADINGVIEW OFICIAL):
 - Ativo Selecionado: ${asset.name} (dizer "${asset.symbol.replace('/', ' ')}")
-- Preço Atual: ${asset.currentPrice.toFixed(asset.pipDecimals)}
+- Cotação Oficial TradingView: ${asset.currentPrice.toFixed(asset.pipDecimals)}
 - Timeframe Atual: ${tf}
-- Status do Mercado: ${isClosedWeekendForex ? 'FECHADO FIM DE SEMANA (Forex fechado, recomende Criptomoedas como Bitcoin)' : 'ABERTO EM TEMPO REAL'}
+- Status do Mercado: ${isClosedWeekendForex ? 'FECHADO FIM DE SEMANA (Forex fechado, recomende Criptomoedas como Bitcoin)' : 'ABERTO EM TEMPO REAL NO TRADINGVIEW'}
 - Tendência Principal: ${analysis.trend}
 - Força Compradora: ${analysis.buyerStrength} | Força Vendedora: ${analysis.sellerStrength}
+- Indicador Oficial TradingView: ${analysis.tradingView.recommendation} (RSI: ${analysis.tradingView.rsi}, MACD: ${analysis.tradingView.macdSignal})
 - Resistência Imediata (Teto acima do preço): ${resImmediate}
 - Suporte Imediato (Piso abaixo do preço): ${supImmediate}
 - Resistências Técnicas: ${resistances.length > 0 ? resistances.slice(0, 3).join(', ') : resImmediate}

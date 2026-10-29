@@ -1,4 +1,5 @@
 import { Asset, Candle, DataSourceInfo, TimeFrame } from '../types/trading';
+import { tradingViewScanner, LiveTradingViewData } from './tradingViewScanner';
 
 /**
  * Verifica se o mercado interbancário e Forex do TradingView está ABERTO ou FECHADO.
@@ -29,8 +30,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Euro / Dólar Americano',
     category: 'FOREX',
     pipDecimals: 5,
-    currentPrice: 1.08485,
-    change24h: 0.18,
+    currentPrice: 1.11587,
+    change24h: 0.05,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.6,
     hiovePayoutPercent: 88,
@@ -41,8 +42,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Libra Esterlina / Dólar Americano',
     category: 'FOREX',
     pipDecimals: 5,
-    currentPrice: 1.29840,
-    change24h: -0.22,
+    currentPrice: 1.33662,
+    change24h: 0.31,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 87,
@@ -53,8 +54,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Dólar Americano / Iene Japonês',
     category: 'FOREX',
     pipDecimals: 3,
-    currentPrice: 152.380,
-    change24h: 0.45,
+    currentPrice: 157.867,
+    change24h: 0.03,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.7,
     hiovePayoutPercent: 86,
@@ -65,8 +66,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Dólar Australiano / Dólar Americano',
     category: 'FOREX',
     pipDecimals: 5,
-    currentPrice: 0.66520,
-    change24h: -0.15,
+    currentPrice: 0.70354,
+    change24h: -0.26,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.9,
     hiovePayoutPercent: 85,
@@ -77,8 +78,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Dólar Americano / Dólar Canadense',
     category: 'FOREX',
     pipDecimals: 5,
-    currentPrice: 1.38310,
-    change24h: 0.31,
+    currentPrice: 1.39867,
+    change24h: -0.06,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 85,
@@ -89,8 +90,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Euro / Iene Japonês',
     category: 'FOREX',
     pipDecimals: 3,
-    currentPrice: 165.240,
-    change24h: 0.62,
+    currentPrice: 176.157,
+    change24h: 0.07,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.1,
     hiovePayoutPercent: 86,
@@ -101,8 +102,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Libra Esterlina / Iene Japonês',
     category: 'FOREX',
     pipDecimals: 3,
-    currentPrice: 197.850,
-    change24h: 0.28,
+    currentPrice: 211.014,
+    change24h: 0.33,
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.2,
     hiovePayoutPercent: 85,
@@ -115,8 +116,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Bitcoin / Dólar Americano',
     category: 'CRYPTO',
     pipDecimals: 2,
-    currentPrice: 68420.50,
-    change24h: 2.45,
+    currentPrice: 81526.63,
+    change24h: 0.22,
     status: 'OPEN',
     spread: 2.5,
     hiovePayoutPercent: 90,
@@ -127,8 +128,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Ethereum / Dólar Americano',
     category: 'CRYPTO',
     pipDecimals: 2,
-    currentPrice: 2635.80,
-    change24h: 1.82,
+    currentPrice: 2360.27,
+    change24h: 0.03,
     status: 'OPEN',
     spread: 0.8,
     hiovePayoutPercent: 89,
@@ -139,8 +140,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Solana / Dólar Americano',
     category: 'CRYPTO',
     pipDecimals: 2,
-    currentPrice: 174.40,
-    change24h: 4.12,
+    currentPrice: 102.24,
+    change24h: -0.20,
     status: 'OPEN',
     spread: 0.2,
     hiovePayoutPercent: 88,
@@ -151,8 +152,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'BNB / Dólar Americano',
     category: 'CRYPTO',
     pipDecimals: 2,
-    currentPrice: 592.30,
-    change24h: 0.95,
+    currentPrice: 751.54,
+    change24h: -1.10,
     status: 'OPEN',
     spread: 0.5,
     hiovePayoutPercent: 87,
@@ -163,8 +164,8 @@ export const INITIAL_ASSETS: Asset[] = [
     name: 'Ripple / Dólar Americano',
     category: 'CRYPTO',
     pipDecimals: 4,
-    currentPrice: 0.5280,
-    change24h: -0.45,
+    currentPrice: 1.3062,
+    change24h: -1.48,
     status: 'OPEN',
     spread: 0.001,
     hiovePayoutPercent: 86,
@@ -323,14 +324,30 @@ export class MarketDataManager {
       ? liveAssets[0]
       : (liveAssets.find((a) => a.category === 'CRYPTO') || liveAssets[0]);
     this.currentAsset = { ...initialAsset };
+
+    // Sincronização em tempo real com o feed oficial da TradingView
+    tradingViewScanner.subscribe((tvData) => {
+      // Atualiza o preço global do ativo na lista
+      const assetMatch = INITIAL_ASSETS.find((a) => a.symbol === tvData.symbol);
+      if (assetMatch) {
+        assetMatch.currentPrice = tvData.price;
+        assetMatch.change24h = tvData.change24h;
+      }
+
+      // Se for o ativo em foco, atualiza preço, calibra candle e dispara evento
+      if (tvData.symbol === this.currentAsset.symbol) {
+        this.currentAsset.currentPrice = tvData.price;
+        this.currentAsset.change24h = tvData.change24h;
+        this.updateCurrentCandle(tvData.price);
+        this.notifyTickImmediately();
+      }
+    });
+
     this.candles = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
     const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
     this.candleCache.set(key, this.candles);
 
-    // Tenta carregar candles reais se for cripto
-    if (this.currentAsset.category === 'CRYPTO') {
-      this.loadCandlesForCurrentSelection();
-    }
+    this.loadCandlesForCurrentSelection();
   }
 
   public setCallbacks(
@@ -342,12 +359,25 @@ export class MarketDataManager {
   }
 
   /**
-   * Busca velas da Binance REST API para cripto ou gera velas determinísticas
+   * Busca cotações e velas reais diretamente do TradingView / Binance
    */
   private async loadCandlesForCurrentSelection() {
+    // 1. Sempre tenta buscar primeiro a cotação oficial do TradingView
+    try {
+      const tvData = await tradingViewScanner.fetchAssetData(this.currentAsset);
+      if (tvData) {
+        this.currentAsset.currentPrice = tvData.price;
+        this.currentAsset.change24h = tvData.change24h;
+      }
+    } catch {}
+
     const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
     if (this.candleCache.has(key)) {
       this.candles = [...this.candleCache.get(key)!];
+      if (this.candles.length > 0) {
+        this.candles[this.candles.length - 1].close = this.currentAsset.currentPrice;
+      }
+      this.notifyTickImmediately();
       return;
     }
 
@@ -370,8 +400,10 @@ export class MarketDataManager {
               volume: Math.round(parseFloat(item[5])),
               isClosed: idx < data.length - 1,
             }));
+            if (parsed.length > 0) {
+              parsed[parsed.length - 1].close = this.currentAsset.currentPrice;
+            }
             this.candles = parsed;
-            this.currentAsset.currentPrice = parsed[parsed.length - 1].close;
             this.candleCache.set(key, parsed);
             this.notifyTickImmediately();
             return;
@@ -382,8 +414,11 @@ export class MarketDataManager {
       }
     }
 
-    // Forex ou fallback determinístico (mesmos preços matemáticos preservados)
+    // Forex ou fallback determinístico (calibrado exatamente com o preço oficial TradingView)
     const generated = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
+    if (generated.length > 0) {
+      generated[generated.length - 1].close = this.currentAsset.currentPrice;
+    }
     this.candles = generated;
     this.candleCache.set(key, generated);
     this.notifyTickImmediately();
@@ -488,6 +523,10 @@ export class MarketDataManager {
 
   public start() {
     this.isConnected = true;
+    tradingViewScanner.startBackgroundPolling(
+      () => this.currentAsset,
+      () => getLiveAssets()
+    );
     this.reconnectStreams();
     this.startTickLoop();
     this.notifySource();
@@ -495,6 +534,7 @@ export class MarketDataManager {
 
   public stop() {
     this.isConnected = false;
+    tradingViewScanner.stopBackgroundPolling();
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
@@ -504,6 +544,10 @@ export class MarketDataManager {
       this.cryptoWs = null;
     }
     this.notifySource();
+  }
+
+  public getLiveTradingViewData(): LiveTradingViewData | null {
+    return tradingViewScanner.getLatest(this.currentAsset.symbol);
   }
 
   private reconnectStreams() {

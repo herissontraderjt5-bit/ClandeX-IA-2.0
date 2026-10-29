@@ -24,8 +24,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { isForexMarketOpen } from '../services/marketData';
+import { TradingViewWidget } from './TradingViewWidget';
 
 export const HIOVE_LOGIN_URL = 'https://app.hiove.com/auth/login?redirect=%2Ftraderoom%3Fticker%3DETHUSDT';
+
+export type BackgroundMode = 'TRADINGVIEW' | 'PLATFORM' | 'LIVE_SITE';
 
 interface HioveBrokerBackgroundProps {
   currentAsset: Asset;
@@ -56,7 +59,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
   onOpenSettings,
   onOpenWebhook,
 }) => {
-  const [bgMode, setBgMode] = useState<'LIVE_SITE' | 'PLATFORM'>('LIVE_SITE');
+  const [bgMode, setBgMode] = useState<BackgroundMode>('TRADINGVIEW');
   const [iframeKey, setIframeKey] = useState<number>(0);
   const [accountType, setAccountType] = useState<'DEMO' | 'REAL'>('DEMO');
   const [demoBalance, setDemoBalance] = useState<number>(10000.00);
@@ -173,6 +176,12 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
           </div>
 
           <div className="flex items-center gap-2 text-xs">
+            <button
+              onClick={() => setBgMode('TRADINGVIEW')}
+              className="px-2.5 py-1 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 font-bold rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
+            >
+              📊 Gráfico TradingView
+            </button>
             <button
               onClick={() => setBgMode('PLATFORM')}
               className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
@@ -321,13 +330,35 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
             DEPOSITAR
           </a>
 
-          {/* Switch to Live Site Mode */}
-          <button
-            onClick={() => setBgMode('LIVE_SITE')}
-            className="px-2.5 py-1.5 bg-[#172138] hover:bg-[#202e4d] text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-mono transition-colors cursor-pointer"
-          >
-            Ver Site Hiove (Login)
-          </button>
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-1 bg-[#101626] p-1 rounded-xl border border-[#1e263d]">
+            <button
+              onClick={() => setBgMode('TRADINGVIEW')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                bgMode === 'TRADINGVIEW'
+                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white hover:bg-[#172033]'
+              }`}
+            >
+              📊 Gráfico TradingView
+            </button>
+            <button
+              onClick={() => setBgMode('PLATFORM')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                bgMode === 'PLATFORM'
+                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white hover:bg-[#172033]'
+              }`}
+            >
+              📈 Simulador Hiove
+            </button>
+            <button
+              onClick={() => setBgMode('LIVE_SITE')}
+              className="px-3 py-1.5 rounded-lg text-xs font-mono text-neutral-400 hover:text-white hover:bg-[#172033] transition-all cursor-pointer"
+            >
+              🌐 Site Hiove (Login)
+            </button>
+          </div>
 
           {/* View Official Link */}
           <a
@@ -348,12 +379,19 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
         <div className="flex-1 relative flex flex-col bg-[#090d16]">
           {/* Chart Header Bar */}
           <div className="h-10 px-4 flex items-center justify-between border-b border-[#141b2b] text-xs text-neutral-400 font-mono">
-            <div className="flex items-center gap-4">
-              <span className="text-white font-bold">{currentAsset.name}</span>
-              <span className="text-neutral-500">•</span>
-              <span>Spread: <strong className="text-neutral-300">{currentAsset.spread} pips</strong></span>
-              <span className="text-neutral-500">•</span>
-              <span>24h: <strong className={currentAsset.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{currentAsset.change24h >= 0 ? `+${currentAsset.change24h}%` : `${currentAsset.change24h}%`}</strong></span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-500/50 text-[11px] text-cyan-300 font-bold shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span>TRADINGVIEW OFICIAL:</span>
+                <span className="text-white">{currentAsset.tvSymbol}</span>
+              </span>
+              <span className="text-white font-bold text-sm">
+                {currentPrice.toFixed(currentAsset.pipDecimals)}
+              </span>
+              <span className="text-neutral-500 hidden sm:inline">•</span>
+              <span className="hidden sm:inline">Spread: <strong className="text-neutral-300">{currentAsset.spread} pips</strong></span>
+              <span className="text-neutral-500 hidden md:inline">•</span>
+              <span className="hidden md:inline">24h: <strong className={currentAsset.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{currentAsset.change24h >= 0 ? `+${currentAsset.change24h}%` : `${currentAsset.change24h}%`}</strong></span>
             </div>
 
             <div className="flex items-center gap-2 text-cyan-400">
@@ -362,9 +400,20 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
             </div>
           </div>
 
-          {/* Live SVG Candlestick Chart */}
-          <div className="flex-1 relative w-full h-full">
-            <svg
+          {/* Chart View (TradingView Advanced Chart vs. Native Simulator SVG) */}
+          {bgMode === 'TRADINGVIEW' ? (
+            <div className="flex-1 relative w-full h-full bg-[#07090e]">
+              <TradingViewWidget
+                symbol={currentAsset.tvSymbol}
+                timeframe={timeframe}
+                mode="CHART"
+                className="w-full h-full"
+              />
+            </div>
+          ) : (
+            /* Live SVG Candlestick Chart */
+            <div className="flex-1 relative w-full h-full">
+              <svg
               viewBox={`0 0 ${chartWidth} ${chartHeight}`}
               className="w-full h-full block"
               preserveAspectRatio="none"
@@ -484,7 +533,8 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        )}
+      </div>
 
         {/* Right Execution Sidebar (Hiove Trading Panel) */}
         <div className="w-64 md:w-72 bg-[#0c111d] border-l border-[#1a2337] flex flex-col justify-between p-4 z-10 shrink-0">

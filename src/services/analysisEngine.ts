@@ -8,13 +8,14 @@ import {
   AppSettings,
   SignalDirection
 } from '../types/trading';
+import { LiveTradingViewData } from './tradingViewScanner';
 
 /**
  * ClandeX-IA Technical Analysis Engine
  * Deterministic calculation of Price Action, SMC, Support/Resistance, and Candlestick Flow.
  */
 
-export function analyzeMarket(candles: Candle[]): MarketAnalysis {
+export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | null): MarketAnalysis {
   if (candles.length < 15) {
     return {
       trend: 'LATERAL',
@@ -455,11 +456,39 @@ export function analyzeMarket(candles: Candle[]): MarketAnalysis {
   const totalSells = oscSell + maSell;
 
   let recommendation: 'FORTE COMPRA' | 'COMPRA' | 'NEUTRO' | 'VENDA' | 'FORTE VENDA' = 'NEUTRO';
-  if (totalBuys >= 13) recommendation = 'FORTE COMPRA';
-  else if (totalBuys > totalSells + 4) recommendation = 'COMPRA';
-  else if (totalSells >= 13) recommendation = 'FORTE VENDA';
-  else if (totalSells > totalBuys + 4) recommendation = 'VENDA';
-  else recommendation = 'NEUTRO';
+  if (tvData) {
+    recommendation = tvData.recommendation;
+  } else if (totalBuys >= 13) {
+    recommendation = 'FORTE COMPRA';
+  } else if (totalBuys > totalSells + 4) {
+    recommendation = 'COMPRA';
+  } else if (totalSells >= 13) {
+    recommendation = 'FORTE VENDA';
+  } else if (totalSells > totalBuys + 4) {
+    recommendation = 'VENDA';
+  } else {
+    recommendation = 'NEUTRO';
+  }
+
+  const effectiveRsi = tvData ? tvData.rsi : rsi;
+  const effectiveRsiCondition: 'SOBRECOMPRADO' | 'SOBREVENDIDO' | 'NEUTRO' =
+    effectiveRsi >= 70 ? 'SOBRECOMPRADO' : effectiveRsi <= 30 ? 'SOBREVENDIDO' : 'NEUTRO';
+
+  const effectiveMacdSignal: 'BULLISH' | 'BEARISH' | 'NEUTRO' = tvData
+    ? tvData.macd > tvData.macdSignal
+      ? 'BULLISH'
+      : tvData.macd < tvData.macdSignal
+      ? 'BEARISH'
+      : 'NEUTRO'
+    : macdSignal;
+
+  const effectiveEmaCross: 'ALTA' | 'BAIXA' | 'NEUTRO' = tvData
+    ? tvData.recommendationMA > 0.05
+      ? 'ALTA'
+      : tvData.recommendationMA < -0.05
+      ? 'BAIXA'
+      : 'NEUTRO'
+    : emaCross;
 
   return {
     trend,
@@ -483,14 +512,29 @@ export function analyzeMarket(candles: Candle[]): MarketAnalysis {
     atr,
     volatilityStatus,
     tradingView: {
-      symbol: 'TRADINGVIEW:DIRECT',
+      symbol: tvData ? tvData.tvSymbol : 'TRADINGVIEW:DIRECT',
       recommendation,
-      rsi,
-      rsiCondition,
-      macdSignal,
-      emaCross,
-      oscillatorsScore: { buy: oscBuy, neutral: oscNeutral, sell: oscSell },
-      movingAveragesScore: { buy: maBuy, neutral: maNeutral, sell: maSell },
+      rsi: effectiveRsi,
+      rsiCondition: effectiveRsiCondition,
+      macdSignal: effectiveMacdSignal,
+      emaCross: effectiveEmaCross,
+      oscillatorsScore: tvData
+        ? {
+            buy: tvData.recommendationOther > 0.1 ? 6 : tvData.recommendationOther > -0.1 ? 2 : 0,
+            neutral: Math.abs(tvData.recommendationOther) <= 0.1 ? 6 : 2,
+            sell: tvData.recommendationOther < -0.1 ? 6 : tvData.recommendationOther < 0.1 ? 2 : 0,
+          }
+        : { buy: oscBuy, neutral: oscNeutral, sell: oscSell },
+      movingAveragesScore: tvData
+        ? {
+            buy: tvData.recommendationMA > 0.1 ? 12 : tvData.recommendationMA > -0.1 ? 4 : 0,
+            neutral: Math.abs(tvData.recommendationMA) <= 0.1 ? 8 : 2,
+            sell: tvData.recommendationMA < -0.1 ? 12 : tvData.recommendationMA < 0.1 ? 4 : 0,
+          }
+        : { buy: maBuy, neutral: maNeutral, sell: maSell },
+      isLiveTradingView: Boolean(tvData),
+      recommendationScore: tvData ? tvData.recommendationScore : (totalBuys - totalSells) / 20,
+      livePrice: tvData ? tvData.price : latest.close,
     },
   };
 }

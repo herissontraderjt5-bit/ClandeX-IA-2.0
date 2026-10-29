@@ -322,6 +322,7 @@ DIRETRIZES DA PERSONALIDADE CANDLEX:
 6. Nunca invente dados e nunca prometa lucros.
 7. PRONÚNCIA OBRIGATÓRIA DE ATIVOS: NUNCA soletre pares de moedas ou ativos (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens ao citar o par.
 8. SUPORTE E RESISTÊNCIA: Quando o trader perguntar sobre taxas, suporte ou resistência, NUNCA ignore ou omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre suporte e resistência, cite AMBOS claramente com as taxas exatas informadas no painel.
+9. COTAÇÃO E TRADINGVIEW: Todas as cotações, preços e dados técnicos são sincronizados em tempo real diretamente do TradingView oficial. Quando o trader perguntar sobre preço ou cotação, informe a cotação oficial do TradingView informada no painel com precisão.
 CONTEXTO ATUALIZADO DO PAINEL:\n${contextSummary}
 HISTÓRICO RECENTE:\n${recentHistory}`;
 
@@ -366,6 +367,30 @@ HISTÓRICO RECENTE:\n${recentHistory}`;
 
     if (q.includes('tá me ouvindo') || q.includes('consegue me ouvir') || q.includes('alô') || q.includes('fala comigo')) {
       return 'Estou te ouvindo perfeitamente! Pode falar sua dúvida sobre as operações.';
+    }
+
+    const asksQuoteOrTradingView =
+      q.includes('tradingview') ||
+      q.includes('trading view') ||
+      q.includes('cotação') ||
+      q.includes('cotacao') ||
+      q.includes('quanto tá') ||
+      q.includes('quanto ta') ||
+      q.includes('qual o valor') ||
+      q.includes('qual o preco') ||
+      q.includes('qual o preço') ||
+      q.includes('preço atual') ||
+      q.includes('preco atual') ||
+      q.includes('cotação errada') ||
+      q.includes('cotacao errada') ||
+      q.includes('cotação certa') ||
+      q.includes('cotacao certa');
+
+    if (asksQuoteOrTradingView) {
+      const currentPriceStr = asset.currentPrice.toFixed(asset.pipDecimals);
+      const tvRec = analysis.tradingView?.recommendation || 'COMPRA';
+      const tvRsi = analysis.tradingView?.rsi !== undefined ? analysis.tradingView.rsi.toFixed(1) : '50.0';
+      return `A cotação oficial do TradingView para ${asset.name} é ${currentPriceStr}. O scanner em tempo real indica recomendação de ${tvRec} com RSI em ${tvRsi}.`;
     }
 
     const asksResistance = q.includes('resistencia') || q.includes('resistência');

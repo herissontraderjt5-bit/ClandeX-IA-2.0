@@ -91,6 +91,9 @@ export interface MarketAnalysis {
     emaCross: 'ALTA' | 'BAIXA' | 'NEUTRO';
     oscillatorsScore: { buy: number; neutral: number; sell: number };
     movingAveragesScore: { buy: number; neutral: number; sell: number };
+    isLiveTradingView?: boolean;
+    recommendationScore?: number;
+    livePrice?: number;
   };
 }
 

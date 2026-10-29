@@ -36,6 +36,31 @@ app.get('/api/time', (_req: Request, res: Response) => {
   });
 });
 
+// Proxy de alta velocidade para o scanner oficial do TradingView (elimina bloqueios de CORS e latência)
+app.post('/api/tradingview/scan', async (req: Request, res: Response) => {
+  try {
+    const category = req.query.category === 'crypto' ? 'crypto' : 'forex';
+    const targetUrl = `https://scanner.tradingview.com/${category}/scan`;
+    const tvResponse = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    if (!tvResponse.ok) {
+      return res.status(tvResponse.status).json({ success: false, error: 'TradingView scanner respondeu com erro' });
+    }
+
+    const data = await tvResponse.json();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Falha no proxy TradingView' });
+  }
+});
+
 /**
  * =========================================================================
  * AUTENTICAÇÃO E VALIDAÇÃO DE ACESSO DA CORRETORA HIOVE

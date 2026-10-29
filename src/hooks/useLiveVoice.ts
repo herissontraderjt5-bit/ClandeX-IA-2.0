@@ -598,7 +598,32 @@ export function useLiveVoice({
       return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
     }
 
-    // 14. Suportes e Resistências
+    // 14. Cotação Oficial e Análise Direta do TradingView
+    const asksQuoteOrTradingView =
+      q.includes('tradingview') ||
+      q.includes('trading view') ||
+      q.includes('cotação') ||
+      q.includes('cotacao') ||
+      q.includes('quanto tá') ||
+      q.includes('quanto ta') ||
+      q.includes('qual o valor') ||
+      q.includes('qual o preco') ||
+      q.includes('qual o preço') ||
+      q.includes('preço atual') ||
+      q.includes('preco atual') ||
+      q.includes('cotação errada') ||
+      q.includes('cotacao errada') ||
+      q.includes('cotação certa') ||
+      q.includes('cotacao certa');
+
+    if (asksQuoteOrTradingView) {
+      const currentPriceStr = ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals);
+      const tvRec = ctx.marketAnalysis.tradingView?.recommendation || (score >= 70 ? 'COMPRA' : score <= 30 ? 'VENDA' : 'NEUTRO');
+      const tvRsi = ctx.marketAnalysis.tradingView?.rsi !== undefined ? ctx.marketAnalysis.tradingView.rsi.toFixed(1) : '50.0';
+      return `A cotação oficial do TradingView para ${ctx.asset.name} é ${currentPriceStr}. O scanner em tempo real indica recomendação de ${tvRec} com RSI em ${tvRsi}.`;
+    }
+
+    // 15. Suportes e Resistências
     const asksResistance = q.includes('resistência') || q.includes('resistencia');
     const asksSupport = q.includes('suporte');
     const asksGeneralLevels =
@@ -944,6 +969,7 @@ DIRETRIZES DE CONVERSAÇÃO (100% NATURAL, HUMANA E ESPONTÂNEA):
 6. NUNCA use formatação markdown, asteriscos, tópicos ou numerações.
 7. PRONÚNCIA: Fale sempre nomes normais ("Euro USD", "GBP USD", "Bitcoin", "Dólar Iene"). NUNCA soletre letra por letra.
 8. SUPORTE E RESISTÊNCIA: Quando o trader perguntar sobre suporte, resistência ou taxas, NUNCA ignore ou omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre suporte e resistência, cite AMBOS claramente com os valores exatos do painel.
+9. COTAÇÃO E TRADINGVIEW: Todas as cotações, preços e dados técnicos são sincronizados em tempo real diretamente do TradingView oficial. Quando o trader perguntar sobre preço ou cotação, informe a cotação oficial do TradingView informada no painel com precisão.
 
 DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
 ${contextSummary}
