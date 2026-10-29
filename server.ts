@@ -204,7 +204,7 @@ wss.on('connection', (clientWs: WebSocket) => {
         if (session || isConnecting) return;
         isConnecting = true;
 
-        const { marketContext, voiceName = 'Aoede', userName = 'Herisson' } = msg;
+        const { marketContext, voiceName = 'Zephyr', userName = 'Herisson' } = msg;
         const asset = marketContext?.asset || 'EUR/USD';
         const currentPrice = marketContext?.currentPrice ?? 'N/A';
         const timeframe = marketContext?.timeframe || 'M1';
@@ -278,7 +278,9 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
         }
 
         const candidateModels = [
-          process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
+          process.env.GEMINI_LIVE_MODEL || 'models/gemini-3.8-live',
+          'models/gemini-3.8-live',
+          'gemini-3.8-live',
           'gemini-3.1-flash-live-preview',
           'gemini-3.8-flash',
           'gemini-3.5-flash',
@@ -295,7 +297,7 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                   voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voiceName || 'Aoede' },
+                    prebuiltVoiceConfig: { voiceName: voiceName || 'Zephyr' },
                   },
                 },
                 systemInstruction,
@@ -375,6 +377,18 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
           });
         } catch (audioErr) {
           console.error('[Gemini Live] Erro ao enviar chunk de áudio:', audioErr);
+        }
+      }
+
+      // Realtime video/screen capture frame from client (TradingView chart JPEG)
+      if ((msg.image || msg.frame) && session) {
+        try {
+          const imgData = msg.image || msg.frame;
+          session.sendRealtimeInput({
+            media: [{ data: imgData, mimeType: 'image/jpeg' }],
+          });
+        } catch (imgErr) {
+          console.error('[Gemini Live] Erro ao enviar frame de imagem:', imgErr);
         }
       }
 
