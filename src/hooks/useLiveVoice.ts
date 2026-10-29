@@ -324,11 +324,9 @@ export function useLiveVoice({
         wsRef.current.send(JSON.stringify({ type: 'interrupted' }));
       } catch {}
     }
-    try {
-      if (recognitionRef.current) {
-        recognitionRef.current.start();
-      }
-    } catch {}
+    if (sessionActiveRef.current) {
+      startSpeechRecognitionRef.current();
+    }
   }, [stopAudioPlayback]);
 
   /**
@@ -394,11 +392,9 @@ export function useLiveVoice({
             isAiSpeakingRef.current = false;
             turnDispatchedRef.current = false;
             setStatus((prev) => (prev === 'speaking' ? 'listening' : prev));
-            try {
-              if (recognitionRef.current && statusRef.current === 'listening') {
-                recognitionRef.current.start();
-              }
-            } catch {}
+            if (sessionActiveRef.current) {
+              startSpeechRecognitionRef.current();
+            }
           }, 500);
         }
       };
@@ -758,11 +754,15 @@ export function useLiveVoice({
       speechSilenceTimeoutRef.current = null;
     }
 
-    // Pausa e aborta reconhecimento do microfone enquanto a IA fala para evitar eco acústico
+    // Pausa e descarta reconhecimento do microfone enquanto a IA fala para evitar eco acústico
     if (recognitionRef.current) {
       try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
         recognitionRef.current.abort();
       } catch {}
+      recognitionRef.current = null;
     }
 
     // Limpa timers anteriores
@@ -937,13 +937,21 @@ export function useLiveVoice({
       finishPlayback();
     };
 
-    // Watchdog de 30s apenas caso a API de fala do navegador trave
+    // Watchdog de 12s para liberar com segurança a escuta caso a API de fala do navegador trave
     watchdogTimeoutRef.current = setTimeout(() => {
       if (!hasEnded && isAiSpeakingRef.current) {
         console.warn('[CandleX-IA] Watchdog: liberando estado travado de fala');
         finishPlayback();
       }
-    }, 30000);
+    }, 12000);
+
+    // Heartbeat contra congelamento silencioso do SpeechSynthesis no Chrome
+    resumeHeartbeatIntervalRef.current = setInterval(() => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 3500);
 
     // Timeout seguro de 70ms após cancel() para dar tempo do Chrome reiniciar o pipeline de áudio
     setTimeout(() => {
@@ -1188,12 +1196,17 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       return;
     }
 
-    // Se a instância já existir, apenas garante que está gravando
+    if (!sessionActiveRef.current) return;
+
+    // Se já houver uma instância ativa ou anterior, limpa completamente para garantir um novo ciclo de escuta saudável
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.start();
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.abort();
       } catch {}
-      return;
+      recognitionRef.current = null;
     }
 
     try {
@@ -1259,24 +1272,23 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       };
 
       recognition.onend = () => {
-        // Reinício automático para conversação contínua apenas se a IA NÃO estiver falando
+        // Chrome encerra o recognition periodicamente após pausas ou silêncio.
+        // Se a sessão ainda estiver ativa e a IA não estiver falando, reinicia uma nova instância limpa!
+        recognitionRef.current = null;
         if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
           setTimeout(() => {
             if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
-              try {
-                recognition.start();
-              } catch {}
+              startSpeechRecognitionRef.current();
             }
-          }, 250);
+          }, 200);
         }
       };
 
-      try {
-        recognition.start();
-      } catch {}
+      recognition.start();
       recognitionRef.current = recognition;
     } catch (err) {
       console.warn('[CandleX-IA] Falha ao iniciar reconhecimento de voz:', err);
+      recognitionRef.current = null;
     }
   }, [dispatchTurn, isProcessing]);
 
