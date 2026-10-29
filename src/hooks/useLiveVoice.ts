@@ -244,9 +244,24 @@ export function useLiveVoice({
   };
 
   const stopAudioPlayback = useCallback(() => {
+    // 1. Remove callbacks do utterance para evitar que o cancel() do navegador dispare onend/onerror
+    if (activeUtteranceRef.current) {
+      activeUtteranceRef.current.onend = null;
+      activeUtteranceRef.current.onerror = null;
+      activeUtteranceRef.current.onstart = null;
+      activeUtteranceRef.current = null;
+    }
+    if (typeof window !== 'undefined' && (window as any).__candlex_active_utterance) {
+      (window as any).__candlex_active_utterance.onend = null;
+      (window as any).__candlex_active_utterance.onerror = null;
+      (window as any).__candlex_active_utterance.onstart = null;
+      (window as any).__candlex_active_utterance = null;
+    }
+
     const state = audioPlaybackStateRef.current;
     state.activeSources.forEach((src) => {
       try {
+        src.onended = null;
         src.stop();
         src.disconnect();
       } catch {}
@@ -264,7 +279,9 @@ export function useLiveVoice({
       speechCooldownTimeoutRef.current = null;
     }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
     }
     isAiSpeakingRef.current = false;
   }, []);
@@ -297,7 +314,11 @@ export function useLiveVoice({
     isAiSpeakingRef.current = false;
     turnDispatchedRef.current = false;
     accumulatedSpeechRef.current = '';
-    setStatus('listening');
+    if (sessionActiveRef.current) {
+      setStatus('listening');
+    } else {
+      setStatus('idle');
+    }
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
         wsRef.current.send(JSON.stringify({ type: 'interrupted' }));
@@ -358,8 +379,18 @@ export function useLiveVoice({
         state.activeSources = state.activeSources.filter((s) => s !== source);
         if (state.activeSources.length === 0) {
           setAiSpeechLevel(0);
+          if (!sessionActiveRef.current) {
+            isAiSpeakingRef.current = false;
+            turnDispatchedRef.current = false;
+            setStatus('idle');
+            return;
+          }
           // Cooldown de 500ms após o fim do áudio para que todo o som ambiente dissipe antes de reabrir o microfone
           speechCooldownTimeoutRef.current = setTimeout(() => {
+            if (!sessionActiveRef.current) {
+              setStatus('idle');
+              return;
+            }
             isAiSpeakingRef.current = false;
             turnDispatchedRef.current = false;
             setStatus((prev) => (prev === 'speaking' ? 'listening' : prev));
@@ -708,6 +739,7 @@ export function useLiveVoice({
    */
   const speakBrowserText = useCallback((textToSpeak: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!sessionActiveRef.current) return;
 
     let clean = normalizeTradingPronunciation(textToSpeak);
     if (!clean) return;
@@ -849,18 +881,27 @@ export function useLiveVoice({
         speechCooldownTimeoutRef.current = null;
       }
 
+      if (!sessionActiveRef.current) {
+        isAiSpeakingRef.current = false;
+        turnDispatchedRef.current = false;
+        setStatus('idle');
+        return;
+      }
+
       // Cooldown de 850ms após o fim completo da fala para dissipar o som ambiente e eco
       speechCooldownTimeoutRef.current = setTimeout(() => {
+        speechCooldownTimeoutRef.current = null;
         isAiSpeakingRef.current = false;
         turnDispatchedRef.current = false;
         accumulatedSpeechRef.current = '';
-        setStatus('listening');
 
-        // Reabre o microfone com segurança apenas após o término total da fala
         if (sessionActiveRef.current) {
+          setStatus('listening');
           try {
             startSpeechRecognitionRef.current();
           } catch {}
+        } else {
+          setStatus('idle');
         }
       }, 850);
     };
@@ -1045,6 +1086,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
   // Disparo atômico e único de conclusão de turno do usuário
   const dispatchTurn = useCallback(
     async (textQuery?: string) => {
+      if (!sessionActiveRef.current) return;
       if (turnDispatchedRef.current || isAiSpeakingRef.current || isProcessing) return;
       turnDispatchedRef.current = true;
       hasSpokenInTurnRef.current = false;
@@ -1090,6 +1132,11 @@ ${recentTurns || 'Início da sessão de voz.'}`;
       // No Vercel ou modo cliente direto: processa a resposta imediatamente
       try {
         const reply = await generateAiReply(q);
+        if (!sessionActiveRef.current) {
+          setIsProcessing(false);
+          setStatus('idle');
+          return;
+        }
         if (reply) {
           const modelTurn: LiveTurnMessage = {
             id: `model-voice-${Date.now()}`,
@@ -1102,10 +1149,19 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           setVoiceHistory((prev) => [...prev, modelTurn]);
           speakBrowserText(reply);
         } else {
-          setStatus('listening');
+          if (sessionActiveRef.current) {
+            setStatus('listening');
+          } else {
+            setStatus('idle');
+          }
           turnDispatchedRef.current = false;
         }
       } catch (err) {
+        if (!sessionActiveRef.current) {
+          setIsProcessing(false);
+          setStatus('idle');
+          return;
+        }
         console.warn('[CandleX-IA Voz] Erro ao responder:', err);
         const fallbackReply = answerQuestionLocally(q);
         const modelTurn: LiveTurnMessage = {
@@ -1505,21 +1561,55 @@ ${recentTurns || 'Início da sessão de voz.'}`;
   // Disconnect session and release media streams
   const disconnectSession = useCallback(() => {
     sessionActiveRef.current = false;
-    activeUtteranceRef.current = null;
-    stopAudioPlayback();
-    stopSpeechRecognition();
+    isAiSpeakingRef.current = false;
+    turnDispatchedRef.current = false;
     hasSpokenInTurnRef.current = false;
     accumulatedSpeechRef.current = '';
+    currentAiTurnTextRef.current = '';
+    setIsProcessing(false);
+
+    if (activeUtteranceRef.current) {
+      activeUtteranceRef.current.onend = null;
+      activeUtteranceRef.current.onerror = null;
+      activeUtteranceRef.current.onstart = null;
+      activeUtteranceRef.current = null;
+    }
+    if (typeof window !== 'undefined' && (window as any).__candlex_active_utterance) {
+      (window as any).__candlex_active_utterance.onend = null;
+      (window as any).__candlex_active_utterance.onerror = null;
+      (window as any).__candlex_active_utterance.onstart = null;
+      (window as any).__candlex_active_utterance = null;
+    }
 
     if (speechCooldownTimeoutRef.current) {
       clearTimeout(speechCooldownTimeoutRef.current);
       speechCooldownTimeoutRef.current = null;
     }
-    isAiSpeakingRef.current = false;
-    currentAiTurnTextRef.current = '';
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
+    if (resumeHeartbeatIntervalRef.current) {
+      clearInterval(resumeHeartbeatIntervalRef.current);
+      resumeHeartbeatIntervalRef.current = null;
+    }
+    if (speechSilenceTimeoutRef.current) {
+      clearTimeout(speechSilenceTimeoutRef.current);
+      speechSilenceTimeoutRef.current = null;
+    }
+    if (speechAnimIntervalRef.current) {
+      clearInterval(speechAnimIntervalRef.current);
+      speechAnimIntervalRef.current = null;
+    }
+
+    stopAudioPlayback();
+    stopSpeechRecognition();
 
     if (wsRef.current) {
       try {
+        wsRef.current.onmessage = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
         if (wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'stop' }));
         }
@@ -1561,6 +1651,7 @@ ${recentTurns || 'Início da sessão de voz.'}`;
     async (textToSend: string) => {
       const clean = textToSend.trim();
       if (!clean) return;
+      if (!sessionActiveRef.current) return;
 
       const userTurn: LiveTurnMessage = {
         id: `user-voice-${Date.now()}`,

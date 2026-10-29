@@ -716,7 +716,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           {/* Real-Time Live Voice with 3D Technological Avatar */}
           <button
             onClick={() => {
-              setActiveTab('chat');
+              setActiveTab('voz');
               setIsMinimized(false);
               if (onOpenVoice) onOpenVoice();
               if (liveVoice && liveVoice.status === 'idle') {
