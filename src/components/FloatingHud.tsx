@@ -42,6 +42,9 @@ import {
   Gauge,
   SlidersHorizontal,
   Bell,
+  Lock,
+  ExternalLink,
+  Coins,
 } from 'lucide-react';
 import {
   Asset,
@@ -53,6 +56,7 @@ import {
   TimeFrame,
   ExpirationTime,
   AppSettings,
+  UserSession,
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
@@ -122,6 +126,8 @@ interface FloatingHudProps {
   isAiLoading: boolean;
   aiInsightText: string | null;
   isAdmin?: boolean;
+  userSession?: UserSession | null;
+  onRefreshSession?: () => Promise<void>;
   onOpenAdminPanel?: () => void;
   onSelectAnalysisProfile?: (profile: 'CONSERVADORA' | 'MODERADA' | 'AGRESSIVA') => void;
 }
@@ -249,11 +255,55 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   isAiLoading,
   aiInsightText,
   isAdmin,
+  userSession,
+  onRefreshSession,
   onOpenAdminPanel,
   onSelectAnalysisProfile,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [isCheckingDeposit, setIsCheckingDeposit] = useState(false);
+  const [depositCheckSuccess, setDepositCheckSuccess] = useState<string | null>(null);
+  const [depositCheckError, setDepositCheckError] = useState<string | null>(null);
+
+  // Trava de ativação da ferramenta por cadeado: se a pessoa não tiver feito depósito mínimo de $10
+  const isDepositLocked = useMemo(() => {
+    if (isAdmin) return false;
+    if (!userSession) return false;
+    return !userSession.hasDeposit || userSession.status === 'PENDING_DEPOSIT';
+  }, [isAdmin, userSession]);
+
+  const handleCheckDeposit = async () => {
+    setIsCheckingDeposit(true);
+    setDepositCheckSuccess(null);
+    setDepositCheckError(null);
+    try {
+      if (onRefreshSession) {
+        await onRefreshSession();
+      }
+      if (userSession?.email) {
+        const resp = await fetch('/api/auth/validate-access', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: userSession.email }),
+        });
+        const data = await resp.json();
+        if (data.status === 'ACTIVE' || data.hasDeposit === true) {
+          setDepositCheckSuccess('Depósito de $10 confirmado com sucesso! Todas as funções foram desbloqueadas.');
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+          return;
+        }
+      }
+      setDepositCheckError('Depósito ainda não identificado. Se acabou de realizar, aguarde 1 a 2 minutos para compensação e tente novamente.');
+    } catch {
+      setDepositCheckError('Não foi possível verificar no momento. Tente novamente em instantes.');
+    } finally {
+      setIsCheckingDeposit(false);
+    }
+  };
   const [position, setPosition] = useState({ x: 24, y: 84 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; posX: number; posY: number }>({
@@ -747,6 +797,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0.5 right-0.5 animate-ping" />
             )}
           </button>
+          {/* BOTÃO CADEADO DE DEPÓSITO PENDENTE ($10) */}
+          {isDepositLocked && (
+            <button
+              onClick={() => setIsDepositModalOpen(true)}
+              title="Ferramenta com Cadeado: Faça o depósito mínimo de $10 na Hiove para liberar a ativação"
+              className="px-2 py-0.5 rounded-lg bg-amber-500/25 hover:bg-amber-500/35 border border-amber-500/60 text-amber-300 font-mono font-black text-[10px] flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.35)] cursor-pointer animate-pulse"
+            >
+              <Lock className="w-3 h-3 text-amber-400" />
+              <span>CADEADO ($10)</span>
+            </button>
+          )}
+
           {/* BOTÃO ADM EXCLUSIVO: Visível APENAS para herisson.trader.jt5@gmail.com */}
           {isAdmin && (
             <button
@@ -1341,7 +1403,34 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   ) : (
                     /* ESTÁGIO 6: MONITORAMENTO DO MERCADO EM TEMPO REAL */
                     <div className="py-7 px-4 text-center space-y-3 relative z-10 flex flex-col items-center justify-center min-h-[160px] overflow-hidden">
-                      {isAnalyzing ? (
+                      {isDepositLocked ? (
+                        /* ESTÁGIO DE CADEADO: CONTA CADASTRADA MAS SEM DEPÓSITO */
+                        <div className="space-y-3 relative z-10 flex flex-col items-center justify-center p-2">
+                          <div className="relative flex items-center justify-center">
+                            <div className="w-13 h-13 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.4)]">
+                              <Lock className="w-6 h-6 text-amber-300 stroke-[2.5] animate-pulse" />
+                            </div>
+                            <div className="absolute -inset-1.5 rounded-full border border-amber-500/30 animate-pulse pointer-events-none" />
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="text-xs font-black font-mono tracking-wider text-amber-300 flex items-center justify-center gap-1.5">
+                              <Lock className="w-3.5 h-3.5 text-amber-400" />
+                              <span>FERRAMENTA COM CADEADO</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-neutral-300 max-w-[280px] leading-relaxed">
+                              Conta Hiove vinculada! Para ativar o algoritmo de sinais e confluências, realize o depósito mínimo de <strong className="text-amber-300">$10 USD</strong> na corretora.
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setIsDepositModalOpen(true)}
+                            className="py-1.5 px-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all cursor-pointer active:scale-98"
+                          >
+                            <span>LIBERAR COM DEPÓSITO ($10) ↗</span>
+                          </button>
+                        </div>
+                      ) : isAnalyzing ? (
                         <>
                           {/* Laser scanning line effect */}
                           <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] animate-pulse pointer-events-none" />
@@ -1399,9 +1488,17 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   )}
                 </div>
 
-                {/* 3. BOTÃO DE INICIAR / PARAR ANÁLISE (EMBAIXO DO CARD DE SINAL) */}
+                {/* 3. BOTÃO DE INICIAR / PARAR ANÁLISE (OU CADEADO DE DEPÓSITO) */}
                 <div className="pt-1">
-                  {isAnalyzing ? (
+                  {isDepositLocked ? (
+                    <button
+                      onClick={() => setIsDepositModalOpen(true)}
+                      className="w-full relative group overflow-hidden py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-mono font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-[0_0_25px_rgba(245,158,11,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer border-2 border-amber-400"
+                    >
+                      <Lock className="w-4 h-4 fill-current stroke-[2.5] text-neutral-950 animate-pulse" />
+                      <span>🔒 ATIVAÇÃO BLOQUEADA (DEPÓSITO MÍNIMO $10)</span>
+                    </button>
+                  ) : isAnalyzing ? (
                     <button
                       onClick={onToggleAnalysis}
                       className="w-full relative group overflow-hidden py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 hover:from-rose-500 hover:to-rose-500 text-white font-mono font-black text-xs sm:text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-[0_0_25px_rgba(244,63,94,0.45)] hover:shadow-[0_0_35px_rgba(244,63,94,0.7)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer border border-rose-400"
@@ -2068,7 +2165,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                 {/* Voice Controls: Iniciar conversa / Encerrar conversa / Silenciar áudio */}
                 <div className="space-y-2">
-                  {(!liveVoice || liveVoice.status === 'idle') && (
+                  {isDepositLocked ? (
+                    <button
+                      onClick={() => setIsDepositModalOpen(true)}
+                      className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all cursor-pointer border border-amber-400 active:scale-98"
+                    >
+                      <Lock className="w-4 h-4 text-neutral-950 stroke-[2.5]" />
+                      <span>🔒 IA BLOQUEADA • REALIZE O DEPÓSITO ($10) PARA ATIVAR</span>
+                    </button>
+                  ) : (!liveVoice || liveVoice.status === 'idle') ? (
                     <button
                       onClick={liveVoice?.startLiveConversation}
                       className="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-500 hover:from-cyan-400 hover:to-blue-400 text-neutral-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all cursor-pointer active:scale-98"
@@ -2076,7 +2181,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <Radio className="w-4 h-4 text-neutral-950 animate-pulse" />
                       <span>INICIAR CONVERSA (FALE AO MICROFONE)</span>
                     </button>
-                  )}
+                  ) : null}
 
                   {liveVoice && liveVoice.status === 'connecting' && (
                     <div className="flex items-center gap-2">
@@ -2407,6 +2512,97 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 </form>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DESBLOQUEIO POR DEPÓSITO MÍNIMO ($10 NA HIOVE) */}
+      {isDepositModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md p-6 bg-gradient-to-b from-[#121829] via-[#0c1220] to-black border-2 border-amber-500/50 rounded-3xl shadow-[0_0_50px_rgba(245,158,11,0.3)] space-y-4">
+            {/* Top Accent Line */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-emerald-400 to-amber-500 rounded-t-3xl" />
+
+            {/* Close Button */}
+            <button
+              onClick={() => setIsDepositModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="text-center space-y-2 pt-1">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/20 border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.4)]">
+                <Lock className="w-7 h-7 text-amber-300 stroke-[2.5] animate-pulse" />
+              </div>
+              <h3 className="text-lg font-black font-mono tracking-wider text-white">
+                LIBERAÇÃO DA FERRAMENTA <span className="text-amber-400">CANDLEX-IA</span>
+              </h3>
+              <p className="text-xs font-mono text-neutral-300">
+                Conta Hiove: <strong className="text-cyan-300">{userSession?.email || 'Cadastrada'}</strong>
+              </p>
+            </div>
+
+            {/* Card Explicativo */}
+            <div className="p-3.5 bg-black/60 border border-amber-500/30 rounded-2xl space-y-2 text-xs font-mono text-neutral-300">
+              <div className="flex items-center gap-1.5 text-amber-300 font-bold">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ativação com Depósito Mínimo</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-neutral-300">
+                Sua conta na corretora Hiove foi identificada com sucesso! Para desbloquear o monitoramento contínuo de confluências, sinais M1/M2/M5 ao vivo e a IA por voz, é necessário realizar o depósito mínimo de <strong className="text-amber-400 font-bold">$10 USD</strong> na sua conta.
+              </p>
+            </div>
+
+            {/* Status alerts if any */}
+            {depositCheckSuccess && (
+              <div className="p-3 bg-emerald-950/50 border border-emerald-500/60 rounded-xl text-xs font-mono text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{depositCheckSuccess}</span>
+              </div>
+            )}
+            {depositCheckError && (
+              <div className="p-3 bg-amber-950/50 border border-amber-500/60 rounded-xl text-xs font-mono text-amber-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>{depositCheckError}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-2.5 pt-1">
+              <a
+                href="https://hiove.io/gSBstV"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-emerald-500 to-amber-500 hover:from-amber-400 hover:via-emerald-400 hover:to-amber-400 text-neutral-950 font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(245,158,11,0.4)] transition-all cursor-pointer group active:scale-98 text-center"
+              >
+                <span>FAZER DEPÓSITO DE $10 NA HIOVE</span>
+                <ExternalLink className="w-4 h-4 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </a>
+
+              <button
+                onClick={handleCheckDeposit}
+                disabled={isCheckingDeposit}
+                className="w-full py-3 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-cyan-400 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isCheckingDeposit ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    <span>CONSULTANDO CORRETORA HIOVE...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>JÁ REALIZEI O DEPÓSITO • VERIFICAR AGORA</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="text-center text-[10px] font-mono text-neutral-500 pt-1">
+              Depósito 100% creditado na sua banca da Hiove para você operar.
+            </div>
           </div>
         </div>
       )}

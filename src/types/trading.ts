@@ -211,6 +211,7 @@ export interface UserSession {
   email: string;
   name: string;
   hasAccess: boolean;
+  hasDeposit?: boolean;
   isAdmin: boolean;
   validatedAt: number;
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
@@ -221,6 +222,7 @@ export interface MemberRecord {
   email: string;
   name?: string;
   hasAccess: boolean;
+  hasDeposit?: boolean;
   isAdmin: boolean;
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
   source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';

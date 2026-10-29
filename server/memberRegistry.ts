@@ -12,6 +12,7 @@ export interface MemberRecord {
   email: string;
   name: string;
   hasAccess: boolean;
+  hasDeposit?: boolean;
   isAdmin: boolean;
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
   firstValidatedAt: number;
@@ -220,9 +221,10 @@ export async function queryHioveApi(email: string): Promise<{
  * 3. Novo ou pendente -> Consulta API da Hiove
  * 4. Trata erros (429, 401, 500, rede)
  */
-export async function validateUserAccess(emailInput: string): Promise<{
+export async function validateUserAccess(emailInput: string, registeredClaim?: boolean): Promise<{
   success: boolean;
   access: boolean;
+  hasDeposit: boolean;
   isAdmin: boolean;
   name: string;
   email: string;
@@ -236,6 +238,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
     return {
       success: false,
       access: false,
+      hasDeposit: false,
       isAdmin: false,
       name: '',
       email,
@@ -251,6 +254,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
     return {
       success: true,
       access: true,
+      hasDeposit: true,
       isAdmin: true,
       name: 'Herisson',
       email: ADMIN_EMAIL,
@@ -260,12 +264,13 @@ export async function validateUserAccess(emailInput: string): Promise<{
     };
   }
 
-  // 2. Consulta em cache/base local se já veio true anteriormente (regra obrigatória da API: não consultar de novo se já liberado)
+  // 2. Consulta em cache/base local se já veio true com depósito confirmado
   const cachedMember = membersMap[email];
   if (cachedMember && cachedMember.hasAccess && cachedMember.status === 'ACTIVE') {
     return {
       success: true,
       access: true,
+      hasDeposit: true,
       isAdmin: false,
       name: cachedMember.name || email.split('@')[0],
       email,
@@ -280,12 +285,26 @@ export async function validateUserAccess(emailInput: string): Promise<{
     const hioveResult = await queryHioveApi(email);
 
     if (hioveResult.status === 200) {
-      if (hioveResult.access === true) {
-        // Cliente cadastrado e já realizou depósito! Pode liberar.
+      const isDeposited =
+        hioveResult.access === true ||
+        hioveResult.raw?.hasDeposit === true ||
+        hioveResult.raw?.deposited === true;
+
+      const hasAccount =
+        isDeposited ||
+        hioveResult.raw?.hasAccount === true ||
+        hioveResult.raw?.registered === true ||
+        hioveResult.raw?.exists === true ||
+        hioveResult.raw?.lead === true ||
+        registeredClaim === true;
+
+      if (isDeposited) {
+        // Cliente cadastrado e já realizou depósito! Liberação total sem cadeado.
         const record: MemberRecord = {
           email,
           name: email.split('@')[0],
           hasAccess: true,
+          hasDeposit: true,
           isAdmin: false,
           status: 'ACTIVE',
           firstValidatedAt: cachedMember?.firstValidatedAt || Date.now(),
@@ -300,6 +319,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
         return {
           success: true,
           access: true,
+          hasDeposit: true,
           isAdmin: false,
           name: record.name,
           email,
@@ -307,18 +327,47 @@ export async function validateUserAccess(emailInput: string): Promise<{
           status: 'ACTIVE',
           message: 'Conta Hiove validada com sucesso! Depósito confirmado e acesso liberado.',
         };
-      } else {
-        // Não liberar (sem cadastro na corretora ou ainda não depositou)
+      } else if (hasAccount) {
+        // Conta criada com link de cadastro! Consegue entrar na ferramenta, mas com cadeado para depósito
         const record: MemberRecord = {
           email,
           name: email.split('@')[0],
-          hasAccess: false,
+          hasAccess: true,
+          hasDeposit: false,
           isAdmin: false,
           status: 'PENDING_DEPOSIT',
           firstValidatedAt: cachedMember?.firstValidatedAt || Date.now(),
           lastCheckedAt: Date.now(),
           source: 'HIOVE_API',
-          notes: 'Acesso recusado pela Hiove (sem cadastro ou sem depósito)',
+          notes: 'Conta Hiove cadastrada (aguardando depósito mínimo de $10 para ativação)',
+        };
+        membersMap[email] = record;
+        saveRegistryFile();
+
+        return {
+          success: true,
+          access: true,
+          hasDeposit: false,
+          isAdmin: false,
+          name: record.name,
+          email,
+          cached: false,
+          status: 'PENDING_DEPOSIT',
+          message: 'Conta Hiove identificada! Acesso à ferramenta liberado (com cadeado de depósito mínimo de $10 para ativação).',
+        };
+      } else {
+        // Sem conta criada
+        const record: MemberRecord = {
+          email,
+          name: email.split('@')[0],
+          hasAccess: false,
+          hasDeposit: false,
+          isAdmin: false,
+          status: 'PENDING_DEPOSIT',
+          firstValidatedAt: cachedMember?.firstValidatedAt || Date.now(),
+          lastCheckedAt: Date.now(),
+          source: 'HIOVE_API',
+          notes: 'Acesso recusado pela Hiove (sem cadastro)',
         };
         membersMap[email] = record;
         saveRegistryFile();
@@ -326,19 +375,34 @@ export async function validateUserAccess(emailInput: string): Promise<{
         return {
           success: false,
           access: false,
+          hasDeposit: false,
           isAdmin: false,
           name: record.name,
           email,
           cached: false,
           status: 'PENDING_DEPOSIT',
-          message: 'Conta não validada na corretora Hiove. Cadastre sua conta pelo link oficial (https://hiove.io/gSBstV) e realize o depósito mínimo de $10 para liberar seu acesso ao CandleX-IA.',
-          errorCode: 'NO_DEPOSIT',
+          message: 'Conta não encontrada na corretora Hiove. Cadastre-se pelo link oficial (https://hiove.io/gSBstV) para ter acesso.',
+          errorCode: 'NO_ACCOUNT',
         };
       }
     } else if (hioveResult.status === 429) {
+      if (registeredClaim) {
+        return {
+          success: true,
+          access: true,
+          hasDeposit: false,
+          isAdmin: false,
+          name: email.split('@')[0],
+          email,
+          cached: false,
+          status: 'PENDING_DEPOSIT',
+          message: 'Conta registrada! Acesso liberado à ferramenta (depósito pendente para ativação).',
+        };
+      }
       return {
         success: false,
         access: false,
+        hasDeposit: false,
         isAdmin: false,
         name: '',
         email,
@@ -348,10 +412,23 @@ export async function validateUserAccess(emailInput: string): Promise<{
         errorCode: 'RATE_LIMIT_429',
       };
     } else if (hioveResult.status === 401) {
-      console.error('[Hiove API] Erro 401: Chave desativada ou incorreta.');
+      if (registeredClaim) {
+        return {
+          success: true,
+          access: true,
+          hasDeposit: false,
+          isAdmin: false,
+          name: email.split('@')[0],
+          email,
+          cached: false,
+          status: 'PENDING_DEPOSIT',
+          message: 'Conta registrada! Acesso liberado à ferramenta (depósito pendente para ativação).',
+        };
+      }
       return {
         success: false,
         access: false,
+        hasDeposit: false,
         isAdmin: false,
         name: '',
         email,
@@ -361,9 +438,23 @@ export async function validateUserAccess(emailInput: string): Promise<{
         errorCode: 'AUTH_401',
       };
     } else {
+      if (registeredClaim) {
+        return {
+          success: true,
+          access: true,
+          hasDeposit: false,
+          isAdmin: false,
+          name: email.split('@')[0],
+          email,
+          cached: false,
+          status: 'PENDING_DEPOSIT',
+          message: 'Conta registrada! Acesso liberado à ferramenta (depósito pendente para ativação).',
+        };
+      }
       return {
         success: false,
         access: false,
+        hasDeposit: false,
         isAdmin: false,
         name: '',
         email,
@@ -374,10 +465,23 @@ export async function validateUserAccess(emailInput: string): Promise<{
       };
     }
   } catch (err: any) {
-    console.error('[Hiove API] Falha de conexão ou execução:', err?.message || err);
+    if (registeredClaim) {
+      return {
+        success: true,
+        access: true,
+        hasDeposit: false,
+        isAdmin: false,
+        name: email.split('@')[0],
+        email,
+        cached: false,
+        status: 'PENDING_DEPOSIT',
+        message: 'Conta registrada! Acesso liberado à ferramenta (depósito pendente para ativação).',
+      };
+    }
     return {
       success: false,
       access: false,
+      hasDeposit: false,
       isAdmin: false,
       name: '',
       email,

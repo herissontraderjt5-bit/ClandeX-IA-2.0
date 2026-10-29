@@ -276,8 +276,16 @@ export default function App() {
     [settings]
   );
 
+  // Se o usuário não tiver feito depósito, a análise fica bloqueada com cadeado
+  const isDepositLocked = React.useMemo(() => {
+    if (isAdmin) return false;
+    if (!userSession) return false;
+    return !userSession.hasDeposit || userSession.status === 'PENDING_DEPOSIT';
+  }, [isAdmin, userSession]);
+
   // Toggle Analysis ON/OFF
   const handleToggleAnalysis = useCallback(() => {
+    if (isDepositLocked) return;
     setIsAnalyzing((prev) => {
       const next = !prev;
       if (!next) {
@@ -285,7 +293,32 @@ export default function App() {
       }
       return next;
     });
-  }, []);
+  }, [isDepositLocked]);
+
+  // Atualiza a sessão para checar se o depósito foi confirmado na Hiove
+  const handleRefreshSession = useCallback(async () => {
+    if (!userSession?.email) return;
+    try {
+      const response = await fetch('/api/auth/validate-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userSession.email }),
+      });
+      const data = await response.json();
+      if (data.status === 'ACTIVE' || data.hasDeposit === true) {
+        const updated: UserSession = {
+          ...userSession,
+          hasAccess: true,
+          hasDeposit: true,
+          status: 'ACTIVE',
+        };
+        setUserSession(updated);
+        try {
+          localStorage.setItem('clandex_user_session', JSON.stringify(updated));
+        } catch {}
+      }
+    } catch {}
+  }, [userSession]);
 
   // Toggle Sound
   const handleToggleSound = useCallback(() => {
@@ -425,6 +458,8 @@ export default function App() {
         settings={settings}
         liveVoice={liveVoice}
         isAdmin={isAdmin}
+        userSession={userSession}
+        onRefreshSession={handleRefreshSession}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
         onSelectAnalysisProfile={handleSelectAnalysisProfile}
         onSelectAsset={handleSelectAsset}
