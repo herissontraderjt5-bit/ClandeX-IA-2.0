@@ -1548,7 +1548,7 @@ DADOS DO PAINEL:\n${contextSummary}`;
             ws.send(
               JSON.stringify({
                 type: 'start',
-                voiceName: 'Aoede',
+                voiceName: 'Zephyr',
                 userName: 'Herisson',
                 marketContext: {
                   asset: currentCtx.asset.symbol,
