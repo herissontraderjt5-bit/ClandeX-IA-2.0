@@ -13,8 +13,8 @@ export interface Asset {
   tvSymbol: string;
 }
 
-export type TimeFrame = 'M1' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1';
-export type ExpirationTime = '1m' | '5m';
+export type TimeFrame = 'M1' | 'M2' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1';
+export type ExpirationTime = '1m' | '2m' | '5m';
 
 export interface Candle {
   time: number; // Unix timestamp in seconds

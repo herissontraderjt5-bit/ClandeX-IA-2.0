@@ -187,6 +187,7 @@ export function getLiveAssets(): Asset[] {
 export function getTimeframeSeconds(tf: TimeFrame): number {
   switch (tf) {
     case 'M1': return 60;
+    case 'M2': return 120;
     case 'M5': return 300;
     case 'M15': return 900;
     case 'M30': return 1800;
@@ -210,6 +211,7 @@ export function getBinancePair(symbol: string): string {
 export function getBinanceInterval(tf: TimeFrame): string {
   switch (tf) {
     case 'M1': return '1m';
+    case 'M2': return '1m'; // Binance não possui 2m nativo; buscamos 1m e agrupamos a cada 2 velas
     case 'M5': return '5m';
     case 'M15': return '15m';
     case 'M30': return '30m';
@@ -385,13 +387,14 @@ export class MarketDataManager {
       try {
         const pair = getBinancePair(this.currentAsset.symbol);
         const interval = getBinanceInterval(this.currentTimeframe);
+        const limit = this.currentTimeframe === 'M2' ? 110 : 55;
         const res = await fetch(
-          `https://api.binance.com/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=55`
+          `https://api.binance.com/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=${limit}`
         );
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
-            const parsed: Candle[] = data.map((item: any, idx: number) => ({
+            let parsed: Candle[] = data.map((item: any, idx: number) => ({
               time: Math.floor(Number(item[0]) / 1000),
               open: Number(parseFloat(item[1]).toFixed(this.currentAsset.pipDecimals)),
               high: Number(parseFloat(item[2]).toFixed(this.currentAsset.pipDecimals)),
@@ -400,6 +403,26 @@ export class MarketDataManager {
               volume: Math.round(parseFloat(item[5])),
               isClosed: idx < data.length - 1,
             }));
+
+            // Se for M2, agrupa com precisão pares de velas de 1m em velas de 2m
+            if (this.currentTimeframe === 'M2' && parsed.length >= 2) {
+              const m2Candles: Candle[] = [];
+              for (let i = 0; i < parsed.length - 1; i += 2) {
+                const c1 = parsed[i];
+                const c2 = parsed[i + 1];
+                m2Candles.push({
+                  time: c1.time,
+                  open: c1.open,
+                  high: Math.max(c1.high, c2.high),
+                  low: Math.min(c1.low, c2.low),
+                  close: c2.close,
+                  volume: c1.volume + c2.volume,
+                  isClosed: c2.isClosed,
+                });
+              }
+              parsed = m2Candles;
+            }
+
             if (parsed.length > 0) {
               parsed[parsed.length - 1].close = this.currentAsset.currentPrice;
             }

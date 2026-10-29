@@ -184,6 +184,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
         >
           <option value="ALL">Todos Timeframes</option>
           <option value="M1">M1 (1 Minuto)</option>
+          <option value="M2">M2 (2 Minutos)</option>
           <option value="M5">M5 (5 Minutos)</option>
         </select>
 

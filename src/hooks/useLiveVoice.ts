@@ -581,6 +581,7 @@ export function useLiveVoice({
       q.includes('timeframe') ||
       q.includes('qual vela') ||
       q.includes('m1') ||
+      q.includes('m2') ||
       q.includes('m5')
     ) {
       return `Estamos analisando o timeframe ${ctx.timeframe} do par ${ctx.asset.symbol}. Para opções binárias, aguarde a expiração coincidir exatamente com o fim da vela.`;
@@ -1039,6 +1040,7 @@ export function useLiveVoice({
         q.includes('devo entrar') ||
         q.includes('posso entrar') ||
         q.includes('m1') ||
+        q.includes('m2') ||
         q.includes('m5') ||
         q.includes('timeframe') ||
         q.includes('vela') ||

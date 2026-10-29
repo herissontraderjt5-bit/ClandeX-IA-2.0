@@ -323,7 +323,7 @@ export class SignalEngine {
         } else {
           // CONFIRMADO! Entrada confirmada entre 15s e 5s!
           // A ordem em andamento e contagem de expiração iniciam na abertura da vela do sinal (now + remainingSec)
-          const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
+          const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
           const entryTimestamp = now + remainingSec; // Momento exato em que a vela do sinal abre (segundo 00:00)
           const expirationTimestamp = entryTimestamp + expirationSeconds;
 
@@ -372,7 +372,7 @@ export class SignalEngine {
         !(profile === 'CONSERVADORA' && marketAnalysis?.inConsolidation)
       ) {
         // Confirmação direta instantânea de alta convicção que surgiu entre 15s e 5s
-        const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
+        const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
         const entryTimestamp = now + remainingSec;
         const expirationTimestamp = entryTimestamp + expirationSeconds;
 
@@ -456,7 +456,7 @@ export class SignalEngine {
       !activeRunningTrade &&
       this.lastEvaluatedCandleTime !== currentCandle.time
     ) {
-      const expirationSeconds = (settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300;
+      const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
       const preAlert: SignalRecord = {
         id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
@@ -472,7 +472,7 @@ export class SignalEngine {
         reasons: confluences.reasons.length > 0
           ? [...confluences.reasons]
           : [`Fluxo direcional favorável para ${confluences.direction}`, 'Confluência de Médias e Volume', 'Probabilidade institucional identificada'],
-        candleCloseTime: currentCandle.time + (timeframe === 'M1' ? 60 : 300),
+        candleCloseTime: currentCandle.time + (timeframe === 'M2' ? 120 : (timeframe === 'M1' ? 60 : 300)),
         expirationTimestamp: now + remainingSec + expirationSeconds,
         isEstimatedResult: false,
       };
@@ -586,7 +586,7 @@ export class SignalEngine {
     const now = Math.floor(Date.now() / 1000);
     const dateObj = new Date();
     const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
-    const expirationSeconds = (expiration === '1m' || timeframe === 'M1') ? 60 : 300;
+    const expirationSeconds = (expiration === '2m' || timeframe === 'M2') ? 120 : ((expiration === '1m' || timeframe === 'M1') ? 60 : 300);
 
     const preAlert: SignalRecord = {
       id: `sig_ai_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

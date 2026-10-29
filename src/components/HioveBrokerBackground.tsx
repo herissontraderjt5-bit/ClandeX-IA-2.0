@@ -142,7 +142,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
         if (accountType === 'DEMO') setDemoBalance((prev) => prev + totalReturn);
         else setRealBalance((prev) => prev + totalReturn);
       }
-    }, expiration === '1m' ? 60000 : 300000);
+    }, expiration === '1m' ? 60000 : (expiration === '2m' ? 120000 : 300000));
   };
 
   const mins = Math.floor(remainingSeconds / 60);
@@ -500,6 +500,14 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
                 1M
               </button>
               <button
+                onClick={() => onSelectTimeframe('M2')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
+                  timeframe === 'M2' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                2M
+              </button>
+              <button
                 onClick={() => onSelectTimeframe('M5')}
                 className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
                   timeframe === 'M5' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400 hover:text-white'
@@ -530,7 +538,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
               <label className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wider block">
                 TEMPO DE EXPIRAÇÃO
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   onClick={() => onSelectExpiration('1m')}
                   className={`py-2 text-xs font-mono font-bold rounded-xl border transition-all cursor-pointer ${
@@ -540,6 +548,16 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
                   }`}
                 >
                   01:00 MIN
+                </button>
+                <button
+                  onClick={() => onSelectExpiration('2m')}
+                  className={`py-2 text-xs font-mono font-bold rounded-xl border transition-all cursor-pointer ${
+                    expiration === '2m'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                      : 'bg-[#121827] text-neutral-400 border-[#1e263d] hover:text-white'
+                  }`}
+                >
+                  02:00 MIN
                 </button>
                 <button
                   onClick={() => onSelectExpiration('5m')}

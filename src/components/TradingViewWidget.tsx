@@ -28,9 +28,12 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
 
     // Converte Timeframe para o formato aceito pelo TradingView
     let interval = '1';
-    if (timeframe === 'M5') interval = '5';
+    if (timeframe === 'M2') interval = '2';
+    else if (timeframe === 'M5') interval = '5';
     else if (timeframe === 'M15') interval = '15';
+    else if (timeframe === 'M30') interval = '30';
     else if (timeframe === 'H1') interval = '60';
+    else if (timeframe === 'H4') interval = '240';
     else if (timeframe === 'D1') interval = 'D';
 
     if (mode === 'CHART') {

@@ -1499,8 +1499,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         Ativo no gráfico: <strong className="text-white">{timeframe}</strong>
                       </span>
                     </div>
-                    <div className="grid grid-cols-7 gap-1">
-                      {(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'] as TimeFrame[]).map((tf) => {
+                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                      {(['M1', 'M2', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'] as TimeFrame[]).map((tf) => {
                         const isSelected = timeframe === tf;
                         return (
                           <button
