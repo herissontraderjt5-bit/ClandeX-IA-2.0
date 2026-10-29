@@ -2010,6 +2010,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300'
                           : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
                           ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
+                          : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                          ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
                           : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
                           ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
                           : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
@@ -2025,6 +2027,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             ? 'bg-cyan-400 animate-ping'
                             : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
                             ? 'bg-purple-400 animate-pulse'
+                            : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                            ? 'bg-amber-400'
                             : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
                             ? 'bg-emerald-400 animate-pulse'
                             : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
@@ -2035,18 +2039,20 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         }`}
                       />
                       <span>
-                        {liveVoice?.assistantState ||
-                          (liveVoice?.status === 'speaking'
-                            ? 'FALANDO'
-                            : liveVoice?.isProcessing
-                            ? 'PROCESSANDO'
-                            : liveVoice?.status === 'listening'
-                            ? 'OUVINDO'
-                            : liveVoice?.status === 'connecting'
-                            ? 'CONECTANDO'
-                            : liveVoice?.status === 'error'
-                            ? 'ERRO'
-                            : 'DESCONECTADO')}
+                        {liveVoice?.isMuted
+                          ? 'MUTADO'
+                          : liveVoice?.assistantState ||
+                            (liveVoice?.status === 'speaking'
+                              ? 'FALANDO'
+                              : liveVoice?.isProcessing
+                              ? 'PROCESSANDO'
+                              : liveVoice?.status === 'listening'
+                              ? 'OUVINDO'
+                              : liveVoice?.status === 'connecting'
+                              ? 'CONECTANDO'
+                              : liveVoice?.status === 'error'
+                              ? 'ERRO'
+                              : 'DESCONECTADO')}
                       </span>
                     </div>
                   </div>
@@ -2097,16 +2103,16 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           onClick={liveVoice.toggleMute}
                           className={`flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                             liveVoice.isMuted
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              ? 'bg-amber-500/25 hover:bg-amber-500/35 text-amber-200 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
                               : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
                           }`}
                         >
                           {liveVoice.isMuted ? (
-                            <MicOff className="w-4 h-4 text-amber-400" />
+                            <MicOff className="w-4 h-4 text-amber-400 animate-pulse" />
                           ) : (
                             <Mic className="w-4 h-4 text-emerald-400" />
                           )}
-                          <span>{liveVoice.isMuted ? 'Desmutar Microfone' : 'Microfone Ativo (Silenciar)'}</span>
+                          <span>{liveVoice.isMuted ? 'Microfone Mutado (Clique p/ Ativar)' : 'Microfone Ativo (Silenciar)'}</span>
                         </button>
                       ) : (
                         <button
@@ -2175,7 +2181,17 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 </div>
 
                 {/* Real-time Dynamic Audio Feedback Strip (No Chat, Pure Audio Status) */}
-                {liveVoice && (liveVoice.status === 'listening' || liveVoice.assistantState === 'OUVINDO') && (
+                {liveVoice && liveVoice.isMuted && (liveVoice.status === 'listening' || liveVoice.assistantState === 'MUTADO' || liveVoice.assistantState === 'OUVINDO') && (
+                  <div className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-xl flex items-center justify-between gap-2 text-xs font-mono text-amber-300">
+                    <div className="flex items-center gap-2">
+                      <MicOff className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="font-bold">Microfone silenciado (IA não está ouvindo)</span>
+                    </div>
+                    <span className="text-[10px] text-amber-400/80">Clique em Ativar para falar</span>
+                  </div>
+                )}
+
+                {liveVoice && !liveVoice.isMuted && (liveVoice.status === 'listening' || liveVoice.assistantState === 'OUVINDO') && (
                   <div className="p-3 bg-[#0c1220] border border-emerald-500/30 rounded-xl space-y-2">
                     <div className="flex items-center gap-2 text-[11px] font-mono">
                       <Mic className={`w-3.5 h-3.5 ${liveVoice.micLevel > 5 ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />

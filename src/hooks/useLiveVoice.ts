@@ -8,7 +8,7 @@ import { signalEngine } from '../services/signalEngine';
 import { normalizeTradingPronunciation } from '../services/voice/pronunciationNormalizer';
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'listening' | 'speaking' | 'interrupted' | 'error';
-export type AssistantUiState = 'DESCONECTADO' | 'CONECTANDO' | 'OUVINDO' | 'PROCESSANDO' | 'FALANDO' | 'ERRO';
+export type AssistantUiState = 'DESCONECTADO' | 'CONECTANDO' | 'OUVINDO' | 'PROCESSANDO' | 'FALANDO' | 'ERRO' | 'MUTADO';
 export type VoiceEngine = 'gemini_live' | 'browser_speech';
 
 export interface LiveTurnMessage {
@@ -915,9 +915,11 @@ export function useLiveVoice({
 
         if (sessionActiveRef.current) {
           setStatus('listening');
-          try {
-            startSpeechRecognitionRef.current();
-          } catch {}
+          if (!isMutedRef.current) {
+            try {
+              startSpeechRecognitionRef.current();
+            } catch {}
+          }
         } else {
           setStatus('idle');
         }
@@ -1153,7 +1155,7 @@ DADOS DO PAINEL:\n${contextSummary}`;
   // Disparo atômico e único de conclusão de turno do usuário
   const dispatchTurn = useCallback(
     async (textQuery?: string) => {
-      if (!sessionActiveRef.current) return;
+      if (!sessionActiveRef.current || isMutedRef.current) return;
       if (turnDispatchedRef.current || isAiSpeakingRef.current || isProcessing) return;
       turnDispatchedRef.current = true;
       hasSpokenInTurnRef.current = false;
@@ -1255,7 +1257,7 @@ DADOS DO PAINEL:\n${contextSummary}`;
       return;
     }
 
-    if (!sessionActiveRef.current) return;
+    if (!sessionActiveRef.current || isMutedRef.current) return;
 
     // Se já houver uma instância ativa ou anterior, limpa completamente para garantir um novo ciclo de escuta saudável
     if (recognitionRef.current) {
@@ -1276,10 +1278,10 @@ DADOS DO PAINEL:\n${contextSummary}`;
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event: any) => {
-        // BLOQUEIO TOTAL DE ECO ACÚSTICO:
-        // Se a IA estiver falando, aguardando resposta ou no período de cooldown,
-        // descarta 100% de qualquer som do microfone para que a IA NUNCA ouça a si mesma!
-        if (isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing) {
+        // BLOQUEIO TOTAL DE ECO ACÚSTICO E MICROFONE MUTADO:
+        // Se o microfone estiver mutado, ou a IA estiver falando, aguardando resposta ou no período de cooldown,
+        // descarta 100% de qualquer som do microfone para que nada seja transcrito ou disparado!
+        if (isMutedRef.current || isAiSpeakingRef.current || statusRef.current === 'speaking' || isProcessing) {
           accumulatedSpeechRef.current = '';
           return;
         }
@@ -1355,11 +1357,11 @@ DADOS DO PAINEL:\n${contextSummary}`;
 
       recognition.onend = () => {
         // Chrome encerra o recognition periodicamente após pausas ou silêncio.
-        // Se a sessão ainda estiver ativa e a IA não estiver falando, reinicia uma nova instância limpa!
+        // Se a sessão ainda estiver ativa e o microfone NÃO estiver mutado nem a IA falando, reinicia uma nova instância limpa!
         recognitionRef.current = null;
-        if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
+        if (sessionActiveRef.current && !isMutedRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
           setTimeout(() => {
-            if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
+            if (sessionActiveRef.current && !isMutedRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
               startSpeechRecognitionRef.current();
             }
           }, 200);
@@ -1515,6 +1517,8 @@ DADOS DO PAINEL:\n${contextSummary}`;
   const startLiveConversation = useCallback(async () => {
     try {
       setErrorMessage(null);
+      setIsMuted(false);
+      isMutedRef.current = false;
       setStatus('connecting');
 
       // 1. Inicializa AudioContext para reprodução a 24.000 Hz
@@ -1735,6 +1739,8 @@ DADOS DO PAINEL:\n${contextSummary}`;
     }
 
     setStatus('idle');
+    setIsMuted(false);
+    isMutedRef.current = false;
     setMicLevel(0);
     setAiSpeechLevel(0);
     setErrorMessage(null);
@@ -1792,17 +1798,54 @@ DADOS DO PAINEL:\n${contextSummary}`;
     [generateAiReply, answerQuestionLocally, speakBrowserText]
   );
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
+      isMutedRef.current = next;
+
+      // Desativa ou reativa os tracks nativos de áudio do microfone
       if (micStreamRef.current) {
         micStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = !next;
         });
       }
+
+      if (next) {
+        // MUTADO: Interrompe totalmente o reconhecimento de voz, limpa buffers e zera medidores
+        if (speechSilenceTimeoutRef.current) {
+          clearTimeout(speechSilenceTimeoutRef.current);
+          speechSilenceTimeoutRef.current = null;
+        }
+        accumulatedSpeechRef.current = '';
+        setUserTranscript('');
+        setMicLevel(0);
+        turnDispatchedRef.current = false;
+        hasSpokenInTurnRef.current = false;
+
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.onresult = null;
+            recognitionRef.current.onend = null;
+            recognitionRef.current.onerror = null;
+            recognitionRef.current.abort();
+          } catch {}
+          recognitionRef.current = null;
+        }
+      } else {
+        // DESMUTADO: Retoma a escuta limpa
+        accumulatedSpeechRef.current = '';
+        turnDispatchedRef.current = false;
+        hasSpokenInTurnRef.current = false;
+        if (sessionActiveRef.current && !isAiSpeakingRef.current && statusRef.current !== 'speaking') {
+          try {
+            startSpeechRecognitionRef.current();
+          } catch {}
+        }
+      }
+
       return next;
     });
-  };
+  }, []);
 
   // Conecta avisos falados de novos sinais e cancelamentos (ETAPA 6)
   useEffect(() => {
@@ -1847,6 +1890,8 @@ DADOS DO PAINEL:\n${contextSummary}`;
       ? 'FALANDO'
       : isProcessing
       ? 'PROCESSANDO'
+      : isMuted
+      ? 'MUTADO'
       : 'OUVINDO';
 
   return {
