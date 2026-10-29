@@ -599,16 +599,18 @@ export function useLiveVoice({
     }
 
     // 14. Suportes e Resistências
-    if (
-      q.includes('suporte') ||
-      q.includes('resistência') ||
-      q.includes('resistencia') ||
+    const asksResistance = q.includes('resistência') || q.includes('resistencia');
+    const asksSupport = q.includes('suporte');
+    const asksGeneralLevels =
       q.includes('taxa') ||
       q.includes('preço') ||
       q.includes('preco') ||
       q.includes('nível') ||
-      q.includes('nivel')
-    ) {
+      q.includes('nivel') ||
+      q.includes('piso') ||
+      q.includes('teto');
+
+    if (asksResistance || asksSupport || asksGeneralLevels) {
       const keyLevels = ctx.marketAnalysis.keyLevels || [];
       const sup = keyLevels
         .filter((k) => k.type === 'SUPPORT')
@@ -616,10 +618,23 @@ export function useLiveVoice({
       const res = keyLevels
         .filter((k) => k.type === 'RESISTANCE')
         .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-      let msg = `O preço atual de ${ctx.asset.symbol} é ${ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals)}. `;
-      if (sup.length > 0) msg += `Suporte em ${sup[0]}. `;
-      if (res.length > 0) msg += `Resistência em ${res[0]}.`;
-      return msg;
+
+      const currentPriceStr = ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals);
+      const resImmediate = res[0] || (ctx.asset.currentPrice * 1.002).toFixed(ctx.asset.pipDecimals);
+      const supImmediate = sup[0] || (ctx.asset.currentPrice * 0.998).toFixed(ctx.asset.pipDecimals);
+
+      // Se o usuário perguntou ESPECIFICAMENTE sobre resistência
+      if (asksResistance && !asksSupport) {
+        return `A resistência mais próxima de ${ctx.asset.symbol} está na taxa ${resImmediate}. O preço atual é ${currentPriceStr} e o suporte está em ${supImmediate}.`;
+      }
+
+      // Se o usuário perguntou ESPECIFICAMENTE sobre suporte
+      if (asksSupport && !asksResistance) {
+        return `O suporte mais próximo de ${ctx.asset.symbol} está na taxa ${supImmediate}. O preço atual é ${currentPriceStr} e a resistência está em ${resImmediate}.`;
+      }
+
+      // Se perguntou sobre ambos ou sobre taxas em geral
+      return `No ${ctx.asset.symbol}, o preço atual é ${currentPriceStr}. Temos resistência imediata em ${resImmediate} e suporte imediato em ${supImmediate}.`;
     }
 
     // 15. Conceitos de SMC e Educação Técnica
@@ -657,9 +672,9 @@ export function useLiveVoice({
     // 16. Fallback Inteligente e Dinâmico — Personalizado para o que o usuário falou (NUNCA repetitivo)
     const cleanSubject = cleanPrompt.replace(/[?!.]/g, '').trim();
     if (cleanSubject.length > 2) {
-      return `Sobre "${cleanSubject}": no ${ctx.asset.symbol}, a tendência é de ${trend} com score de ${score}%. Me pergunte se vale a pena entrar agora, qual o suporte mais próximo ou a previsão do próximo candle!`;
+      return `Sobre "${cleanSubject}": no ${ctx.asset.symbol}, a tendência é de ${trend} com score de ${score}%. Me pergunte se vale a pena entrar agora, as taxas de suporte e resistência ou a previsão do próximo candle!`;
     }
-    return `Estou atenta ao par ${ctx.asset.name}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte ou conselhos operacionais!`;
+    return `Estou atenta ao par ${ctx.asset.name}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte e resistência ou conselhos operacionais!`;
   }, []);
 
   /**
@@ -928,6 +943,7 @@ DIRETRIZES DE CONVERSAÇÃO (100% NATURAL, HUMANA E ESPONTÂNEA):
 5. Responda sempre em 1 a 2 frases curtas faladas (máximo 30 a 40 palavras). Perfeito para um diálogo de voz ágil, sem atrasos e sem enrolação.
 6. NUNCA use formatação markdown, asteriscos, tópicos ou numerações.
 7. PRONÚNCIA: Fale sempre nomes normais ("Euro USD", "GBP USD", "Bitcoin", "Dólar Iene"). NUNCA soletre letra por letra.
+8. SUPORTE E RESISTÊNCIA: Quando o trader perguntar sobre suporte, resistência ou taxas, NUNCA ignore ou omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre suporte e resistência, cite AMBOS claramente com os valores exatos do painel.
 
 DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
 ${contextSummary}
@@ -1390,6 +1406,8 @@ ${recentTurns || 'Início da sessão de voz.'}`;
                   timeframe: currentCtx.timeframe,
                   marketAnalysis: currentCtx.marketAnalysis,
                   confluences: currentCtx.confluences,
+                  supports,
+                  resistances,
                   upcomingHighImpact,
                   marketSession,
                 },

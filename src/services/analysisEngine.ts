@@ -155,48 +155,137 @@ export function analyzeMarket(candles: Candle[]): MarketAnalysis {
     sellerPoints >= 6 ? 'FORTE' : sellerPoints >= 3 ? 'MODERADA' : 'FRACA';
   const dominantForce = buyerPoints > sellerPoints + 2 ? 'COMPRADOR' : (sellerPoints > buyerPoints + 2 ? 'VENDEDOR' : 'EQUILIBRADO');
 
-  // 4. Key Support & Resistance Swing Detection
-  const keyLevels: SupportResistanceLevel[] = [];
-  const lookback = Math.min(30, candles.length - 2);
-  
-  for (let i = candles.length - lookback; i < candles.length - 2; i++) {
+  // 4. Key Support & Resistance (Dynamic Price Action & Swings)
+  const rawPeaks: { price: number; type: 'HIGH' | 'LOW' }[] = [];
+  const lookback = Math.min(50, candles.length - 2);
+  const startIdx = Math.max(1, candles.length - lookback);
+
+  for (let i = startIdx; i < candles.length - 1; i++) {
     const curr = candles[i];
     const prevC = candles[i - 1];
     const nextC = candles[i + 1];
 
     // Swing High
-    if (curr.high > prevC.high && curr.high > nextC.high) {
-      keyLevels.push({
-        price: curr.high,
-        touches: 1,
-        type: 'RESISTANCE',
-        strength: 'MEDIUM'
-      });
+    if (curr.high >= prevC.high && curr.high >= nextC.high) {
+      rawPeaks.push({ price: curr.high, type: 'HIGH' });
     }
     // Swing Low
-    if (curr.low < prevC.low && curr.low < nextC.low) {
-      keyLevels.push({
-        price: curr.low,
-        touches: 1,
-        type: 'SUPPORT',
-        strength: 'MEDIUM'
-      });
+    if (curr.low <= prevC.low && curr.low <= nextC.low) {
+      rawPeaks.push({ price: curr.low, type: 'LOW' });
     }
   }
 
-  // Check proximity to S/R (within 0.3 * ATR)
-  const proximityThreshold = atr * 0.4;
-  let nearSupport = false;
-  let nearResistance = false;
+  // Also include the overall highest high and lowest low of the lookback
+  let highestHigh = -Infinity;
+  let lowestLow = Infinity;
+  for (let i = startIdx; i < candles.length; i++) {
+    if (candles[i].high > highestHigh) highestHigh = candles[i].high;
+    if (candles[i].low < lowestLow) lowestLow = candles[i].low;
+  }
+  if (highestHigh > -Infinity) rawPeaks.push({ price: highestHigh, type: 'HIGH' });
+  if (lowestLow < Infinity) rawPeaks.push({ price: lowestLow, type: 'LOW' });
 
-  for (const lvl of keyLevels) {
-    if (lvl.type === 'SUPPORT' && Math.abs(latest.close - lvl.price) <= proximityThreshold) {
-      nearSupport = true;
-    }
-    if (lvl.type === 'RESISTANCE' && Math.abs(latest.close - lvl.price) <= proximityThreshold) {
-      nearResistance = true;
+  // Cluster nearby levels within 0.25 * ATR
+  const clusterDistance = Math.max(atr * 0.25, 0.00005);
+  const clusteredLevels: { price: number; touches: number }[] = [];
+
+  for (const peak of rawPeaks) {
+    const existing = clusteredLevels.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
+    if (existing) {
+      existing.touches += 1;
+      existing.price = (existing.price * (existing.touches - 1) + peak.price) / existing.touches;
+    } else {
+      clusteredLevels.push({ price: peak.price, touches: 1 });
     }
   }
+
+  // Principle of Polaridade:
+  // Any level strictly above current price is RESISTANCE.
+  // Any level strictly below current price is SUPPORT.
+  const currentPrice = latest.close;
+  const deadZone = Math.max(atr * 0.04, 0.00002);
+
+  const rawResistances: SupportResistanceLevel[] = clusteredLevels
+    .filter((l) => l.price > currentPrice + deadZone)
+    .map((l) => ({
+      price: l.price,
+      touches: l.touches,
+      type: 'RESISTANCE' as const,
+      strength: l.touches >= 2 ? ('STRONG' as const) : ('MEDIUM' as const),
+    }))
+    .sort((a, b) => a.price - b.price); // Ascending: index 0 is closest ceiling above price
+
+  const rawSupports: SupportResistanceLevel[] = clusteredLevels
+    .filter((l) => l.price < currentPrice - deadZone)
+    .map((l) => ({
+      price: l.price,
+      touches: l.touches,
+      type: 'SUPPORT' as const,
+      strength: l.touches >= 2 ? ('STRONG' as const) : ('MEDIUM' as const),
+    }))
+    .sort((a, b) => b.price - a.price); // Descending: index 0 is closest floor below price
+
+  // Guarantee at least 2 Resistances above current price
+  if (rawResistances.length === 0) {
+    rawResistances.push({
+      price: currentPrice + Math.max(atr * 1.2, 0.0003),
+      touches: 1,
+      type: 'RESISTANCE',
+      strength: 'MEDIUM',
+    });
+    rawResistances.push({
+      price: currentPrice + Math.max(atr * 2.5, 0.0007),
+      touches: 1,
+      type: 'RESISTANCE',
+      strength: 'MEDIUM',
+    });
+  } else if (rawResistances.length === 1) {
+    rawResistances.push({
+      price: rawResistances[0].price + Math.max(atr * 1.2, 0.0004),
+      touches: 1,
+      type: 'RESISTANCE',
+      strength: 'MEDIUM',
+    });
+  }
+
+  // Guarantee at least 2 Supports below current price
+  if (rawSupports.length === 0) {
+    rawSupports.push({
+      price: currentPrice - Math.max(atr * 1.2, 0.0003),
+      touches: 1,
+      type: 'SUPPORT',
+      strength: 'MEDIUM',
+    });
+    rawSupports.push({
+      price: currentPrice - Math.max(atr * 2.5, 0.0007),
+      touches: 1,
+      type: 'SUPPORT',
+      strength: 'MEDIUM',
+    });
+  } else if (rawSupports.length === 1) {
+    rawSupports.push({
+      price: rawSupports[0].price - Math.max(atr * 1.2, 0.0004),
+      touches: 1,
+      type: 'SUPPORT',
+      strength: 'MEDIUM',
+    });
+  }
+
+  // Interleave key levels so both Resistance & Support are in the top elements (for charts & quick slice)
+  const keyLevels: SupportResistanceLevel[] = [];
+  const maxPairs = Math.max(rawResistances.length, rawSupports.length);
+  for (let i = 0; i < maxPairs; i++) {
+    if (rawResistances[i]) keyLevels.push(rawResistances[i]);
+    if (rawSupports[i]) keyLevels.push(rawSupports[i]);
+  }
+
+  // Proximity to S/R (within 0.45 * ATR)
+  const proximityThreshold = atr * 0.45;
+  const closestResistance = rawResistances[0];
+  const closestSupport = rawSupports[0];
+
+  const nearSupport = closestSupport ? Math.abs(currentPrice - closestSupport.price) <= proximityThreshold : false;
+  const nearResistance = closestResistance ? Math.abs(closestResistance.price - currentPrice) <= proximityThreshold : false;
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;

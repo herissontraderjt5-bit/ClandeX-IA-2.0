@@ -126,6 +126,8 @@ export class TradingContextAdapter implements TradingContextContract {
     const keyLevels = analysis.keyLevels || [];
     const supports = keyLevels.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals));
     const resistances = keyLevels.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals));
+    const supImmediate = supports[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals);
+    const resImmediate = resistances[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals);
 
     let summary = `DADOS REAIS DO CANDLEX-IA NO PAINEL:
 - Ativo Selecionado: ${asset.name} (dizer "${asset.symbol.replace('/', ' ')}")
@@ -134,8 +136,10 @@ export class TradingContextAdapter implements TradingContextContract {
 - Status do Mercado: ${isClosedWeekendForex ? 'FECHADO FIM DE SEMANA (Forex fechado, recomende Criptomoedas como Bitcoin)' : 'ABERTO EM TEMPO REAL'}
 - Tendência Principal: ${analysis.trend}
 - Força Compradora: ${analysis.buyerStrength} | Força Vendedora: ${analysis.sellerStrength}
-- Suportes Técnicos: ${supports.length > 0 ? supports.join(', ') : 'Zonas dinâmicas'}
-- Resistências Técnicas: ${resistances.length > 0 ? resistances.join(', ') : 'Zonas dinâmicas'}
+- Resistência Imediata (Teto acima do preço): ${resImmediate}
+- Suporte Imediato (Piso abaixo do preço): ${supImmediate}
+- Resistências Técnicas: ${resistances.length > 0 ? resistances.slice(0, 3).join(', ') : resImmediate}
+- Suportes Técnicos: ${supports.length > 0 ? supports.slice(0, 3).join(', ') : supImmediate}
 - Confluência do Robô: ${score}% para ${dir}`;
 
     if (signal) {

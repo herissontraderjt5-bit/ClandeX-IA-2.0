@@ -321,10 +321,12 @@ DIRETRIZES DA PERSONALIDADE CANDLEX:
 5. Domine Price Action, Suporte/Resistência, Tendência, SMC, Rompimento, Rejeição, CALL, PUT, M1 e M5.
 6. Nunca invente dados e nunca prometa lucros.
 7. PRONÚNCIA OBRIGATÓRIA DE ATIVOS: NUNCA soletre pares de moedas ou ativos (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens ao citar o par.
+8. SUPORTE E RESISTÊNCIA: Quando o trader perguntar sobre taxas, suporte ou resistência, NUNCA ignore ou omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre suporte e resistência, cite AMBOS claramente com as taxas exatas informadas no painel.
 CONTEXTO ATUALIZADO DO PAINEL:\n${contextSummary}
 HISTÓRICO RECENTE:\n${recentHistory}`;
 
         const candidateModels = [
+          'gemini-3.1-flash-lite',
           (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
           (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_MODEL) || 'gemini-3.8-flash',
           'gemini-3.5-flash-lite',
@@ -340,7 +342,7 @@ HISTÓRICO RECENTE:\n${recentHistory}`;
                 temperature: 0.4,
               },
             });
-            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
             const response: any = await Promise.race([fetchPromise, timeoutPromise]);
             if (response && response.text) {
               const cleanText = normalizeTradingPronunciation(response.text);
@@ -366,6 +368,26 @@ HISTÓRICO RECENTE:\n${recentHistory}`;
       return 'Estou te ouvindo perfeitamente! Pode falar sua dúvida sobre as operações.';
     }
 
+    const asksResistance = q.includes('resistencia') || q.includes('resistência');
+    const asksSupport = q.includes('suporte');
+    const asksTaxa = q.includes('taxa') || q.includes('nível') || q.includes('nivel') || q.includes('preço') || q.includes('preco');
+
+    if (asksResistance || asksSupport || asksTaxa) {
+      const sup = analysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+      const res = analysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+      const currentPriceStr = asset.currentPrice.toFixed(asset.pipDecimals);
+      const resImmediate = res[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals);
+      const supImmediate = sup[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals);
+
+      if (asksResistance && !asksSupport) {
+        return `A resistência mais próxima de ${asset.symbol} está na taxa ${resImmediate}. O preço atual é ${currentPriceStr} e o suporte está em ${supImmediate}.`;
+      }
+      if (asksSupport && !asksResistance) {
+        return `O suporte mais próximo de ${asset.symbol} está na taxa ${supImmediate}. O preço atual é ${currentPriceStr} e a resistência está em ${resImmediate}.`;
+      }
+      return `No ${asset.symbol}, o preço atual é ${currentPriceStr}. Temos resistência imediata em ${resImmediate} e suporte imediato em ${supImmediate}.`;
+    }
+
     if (q.includes('como está') || q.includes('como tá') || q.includes('o que você acha') || q.includes('análise')) {
       return `O par ${asset.symbol} está em tendência de ${analysis.trend} no timeframe ${tf}. A força compradora é ${analysis.buyerStrength} e a vendedora é ${analysis.sellerStrength}.`;
     }
@@ -382,7 +404,7 @@ HISTÓRICO RECENTE:\n${recentHistory}`;
     }
 
     const cleanSubject = prompt.replace(/[?!.]/g, '').trim();
-    return `Sobre "${cleanSubject}": no gráfico de ${asset.symbol}, a tendência é de ${analysis.trend}. Pode me perguntar se vale a pena entrar agora ou quais são as taxas de suporte!`;
+    return `Sobre "${cleanSubject}": no gráfico de ${asset.symbol}, a tendência é de ${analysis.trend}. Pode me perguntar se vale a pena entrar agora ou quais são as taxas de suporte e resistência!`;
   }
 
   private getGeminiKey(): string {

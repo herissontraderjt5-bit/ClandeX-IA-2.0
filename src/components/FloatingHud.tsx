@@ -414,18 +414,24 @@ Mercado em Tempo Real (TradingView):
 - Status do Mercado: ${marketStatusStr}
 - Preço Atual: ${asset.currentPrice} | Timeframe: ${timeframe}
 - Tendência: ${marketAnalysis.trend} (Força Compra: ${marketAnalysis.buyerStrength}, Venda: ${marketAnalysis.sellerStrength})
-- Suportes: ${supList.join(', ') || 'dinâmicos'}
-- Resistências: ${resList.join(', ') || 'dinâmicos'}
+- Resistência Imediata (Teto acima do preço): ${resList[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals)}
+- Suporte Imediato (Piso abaixo do preço): ${supList[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals)}
+- Todas as Resistências: ${resList.join(', ') || 'dinâmicas'}
+- Todos os Suportes: ${supList.join(', ') || 'dinâmicos'}
 - Confluência: ${confluences.totalScore}% para ${confluences.direction}
 - Banco de Notícias Reais: ${topNews ? `"${topNews.title}" (${topNews.source} - Impacto: ${topNews.impact})` : 'Sem eventos de risco no momento'}
 - Calendário Econômico: ${upcomingHighImpact ? `${upcomingHighImpact.event} (${upcomingHighImpact.currency}) às ${upcomingHighImpact.time}` : 'Sem notícias críticas imediatas'}
 
 Pergunta do Trader: "${textToSend}"
 
+DIRETRIZ CRÍTICA DE SUPORTE E RESISTÊNCIA:
+Se o trader perguntar sobre suporte, resistência ou taxas, NUNCA omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre ambos ou sobre taxas em geral, informe tanto a resistência quanto o suporte com os valores exatos informados acima.
+
 Responda em português brasileiro de forma direta, clara, profissional e motivadora. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7. Seja concisa e objetiva.
           `;
 
           const candidateModels = [
+            'gemini-3.1-flash-lite',
             (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
             'gemini-3.8-flash',
             'gemini-3.5-flash-lite',
@@ -505,10 +511,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         } else {
           fallbackText = `Não há notícias de alto impacto imediatas previstas para os próximos minutos em ${asset.symbol}. O mercado técnico no TradingView está limpo para confluências.`;
         }
+      } else if (lower.includes('resistencia') || lower.includes('resistência')) {
+        const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+        const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
+        fallbackText = `🎯 Níveis Chave de ${asset.symbol}:\n• Resistência Mais Próxima: ${resList[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals)}\n• Suporte Mais Próximo: ${supList[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals)}\n• Preço Atual: ${asset.currentPrice.toFixed(asset.pipDecimals)} (Tendência: ${marketAnalysis.trend})`;
       } else {
         const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
         const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
-        fallbackText = `Análise TradingView de ${asset.symbol} (${asset.tvSymbol}): Tendência ${marketAnalysis.trend}. Força compradora ${marketAnalysis.buyerStrength} e vendedora ${marketAnalysis.sellerStrength}.\n• Suportes: ${supList.length > 0 ? supList.join(', ') : 'Zonas dinâmicas'}\n• Resistências: ${resList.length > 0 ? resList.join(', ') : 'Zonas dinâmicas'}. Confluência técnica de ${confluences.totalScore}% para ${confluences.direction}.`;
+        fallbackText = `Análise TradingView de ${asset.symbol} (${asset.tvSymbol}): Tendência ${marketAnalysis.trend}. Força compradora ${marketAnalysis.buyerStrength} e vendedora ${marketAnalysis.sellerStrength}.\n• Resistência Imediata: ${resList[0] || 'Zonas dinâmicas'}\n• Suporte Imediato: ${supList[0] || 'Zonas dinâmicas'}\n• Todas Resistências: ${resList.length > 0 ? resList.join(', ') : 'Zonas dinâmicas'}\n• Todos Suportes: ${supList.length > 0 ? supList.join(', ') : 'Zonas dinâmicas'}\nConfluência técnica de ${confluences.totalScore}% para ${confluences.direction}.`;
       }
 
       setChatMessages((prev) => [
