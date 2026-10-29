@@ -331,7 +331,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
           email,
           cached: false,
           status: 'PENDING_DEPOSIT',
-          message: 'Conta não validada na corretora Hiove. Para liberar seu acesso ao CandleX-IA, certifique-se de que sua conta na corretora Hiove está cadastrada com este mesmo e-mail e com saldo ou depósito ativo.',
+          message: 'Conta não validada na corretora Hiove. Cadastre sua conta pelo link oficial (https://hiove.io/gSBstV) e realize o depósito mínimo de $10 para liberar seu acesso ao CandleX-IA.',
           errorCode: 'NO_DEPOSIT',
         };
       }
