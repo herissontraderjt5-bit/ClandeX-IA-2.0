@@ -183,12 +183,6 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
               📊 Gráfico TradingView
             </button>
             <button
-              onClick={() => setBgMode('PLATFORM')}
-              className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
-            >
-              📈 Simulador Hiove
-            </button>
-            <button
               onClick={() => setIframeKey((prev) => prev + 1)}
               className="px-2.5 py-1 bg-[#161e30] hover:bg-[#1e2942] border border-[#283552] text-neutral-300 hover:text-white rounded-lg text-[11px] font-mono transition-colors cursor-pointer"
               title="Recarregar tela de login da Hiove"
@@ -207,15 +201,6 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
             >
               Webhooks
             </button>
-            <a
-              href={HIOVE_LOGIN_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg font-bold text-[11px] shadow-sm transition-all"
-            >
-              <span>Abrir Login Hiove (ETH/USDT)</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
           </div>
         </header>
 
@@ -341,16 +326,6 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
               }`}
             >
               📊 Gráfico TradingView
-            </button>
-            <button
-              onClick={() => setBgMode('PLATFORM')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
-                bgMode === 'PLATFORM'
-                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
-                  : 'text-neutral-400 hover:text-white hover:bg-[#172033]'
-              }`}
-            >
-              📈 Simulador Hiove
             </button>
             <button
               onClick={() => setBgMode('LIVE_SITE')}
