@@ -69,8 +69,8 @@ app.post('/api/tradingview/scan', async (req: Request, res: Response) => {
 // Valida se o cliente possui cadastro e depósito ativo na corretora Hiove
 app.post('/api/auth/validate-access', async (req: Request, res: Response) => {
   try {
-    const { email, registeredClaim } = req.body;
-    const result = await validateUserAccess(email, registeredClaim);
+    const { email } = req.body;
+    const result = await validateUserAccess(email);
     res.json(result);
   } catch (err: any) {
     console.error('[Auth API] Erro ao validar:', err);

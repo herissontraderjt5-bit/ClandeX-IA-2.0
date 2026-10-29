@@ -74,7 +74,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: cleanEmail, registeredClaim: true }),
+        body: JSON.stringify({ email: cleanEmail }),
       });
 
       const data = await response.json();
@@ -84,7 +84,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         setSuccessMessage(
           isFullyActive
             ? 'Conta Hiove e depósito confirmados! Acesso total liberado.'
-            : 'Conta Hiove identificada! Acessando ferramenta (com cadeado para depósito)...'
+            : 'Conta Hiove identificada! Entrando na ferramenta (depósito pendente)...'
         );
         const session: UserSession = {
           email: cleanEmail,
@@ -107,28 +107,13 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       } else {
         setErrorMessage(
           data.message ||
-            'Conta ainda não encontrada na corretora Hiove. Cadastre sua conta pelo link abaixo para ter acesso.'
+            'E-mail não cadastrado na corretora Hiove. Crie sua conta para liberar o acesso ao CandleX-IA.'
         );
       }
     } catch {
-      // Fallback: se houver falha de rede temporária, permite acesso à ferramenta com status PENDING_DEPOSIT (cadeado)
-      const session: UserSession = {
-        email: cleanEmail,
-        name: cleanEmail.split('@')[0],
-        hasAccess: true,
-        hasDeposit: false,
-        isAdmin: false,
-        validatedAt: Date.now(),
-        status: 'PENDING_DEPOSIT',
-        source: 'HIOVE_API',
-      };
-      try {
-        localStorage.setItem('clandex_user_session', JSON.stringify(session));
-      } catch {}
-      setSuccessMessage('Conta Hiove identificada! Entrando na ferramenta (cadeado ativo)...');
-      setTimeout(() => {
-        onSuccess(session);
-      }, 600);
+      setErrorMessage(
+        'Não foi possível consultar a corretora Hiove no momento. Verifique sua conexão e tente novamente.'
+      );
     } finally {
       setLoading(false);
     }
@@ -201,7 +186,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-300 hover:text-amber-200 underline"
                 >
-                  <span>Clique aqui para criar sua conta ou depositar $10 na Hiove ↗</span>
+                  <span>Clique aqui para criar sua conta na Hiove ↗</span>
                 </a>
               </div>
             </div>
@@ -273,7 +258,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
                   <span>Cadastrar sua Conta</span>
                 </div>
                 <p className="text-neutral-300 text-[10.5px] leading-relaxed">
-                  Clique no botão abaixo e crie sua conta na corretora oficial <strong>Hiove</strong> através do link de parceiro.
+                  Clique no botão abaixo e crie sua conta na corretora oficial <strong>Hiove</strong>.
                 </p>
               </div>
             </div>
