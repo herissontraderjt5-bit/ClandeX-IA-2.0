@@ -196,50 +196,110 @@ export function getTimeframeSeconds(tf: TimeFrame): number {
   }
 }
 
-/**
- * Generate authentic historical candles ending at the current candle boundary
- */
-export function generateInitialCandles(asset: Asset, timeframe: TimeFrame, count = 50): Candle[] {
-  const candles: Candle[] = [];
-  const tfSeconds = getTimeframeSeconds(timeframe);
-  const now = Math.floor(Date.now() / 1000);
-  const currentBoundary = now - (now % tfSeconds);
+export function getBinancePair(symbol: string): string {
+  const sym = symbol.toUpperCase();
+  if (sym.includes('BTC')) return 'btcusdt';
+  if (sym.includes('ETH')) return 'ethusdt';
+  if (sym.includes('SOL')) return 'solusdt';
+  if (sym.includes('BNB')) return 'bnbusdt';
+  if (sym.includes('XRP')) return 'xrpusdt';
+  return 'btcusdt';
+}
 
-  let price = asset.currentPrice;
-  const volatility = asset.pipDecimals === 5 ? 0.00015 : (asset.pipDecimals === 3 ? 0.04 : 12.0);
-
-  // Generate backwards then reverse
-  const tempCandles: Candle[] = [];
-  for (let i = 0; i < count; i++) {
-    const candleTime = currentBoundary - (i * tfSeconds);
-    const trendFactor = Math.sin(i * 0.3) * volatility * 0.7;
-    const change = (Math.random() - 0.49) * volatility * 2 + trendFactor;
-    
-    const open = price - change;
-    const close = price;
-    const high = Math.max(open, close) + Math.random() * volatility * 0.8;
-    const low = Math.min(open, close) - Math.random() * volatility * 0.8;
-    const volume = Math.floor(Math.random() * 200 + 50);
-
-    tempCandles.push({
-      time: candleTime,
-      open: Number(open.toFixed(asset.pipDecimals)),
-      high: Number(high.toFixed(asset.pipDecimals)),
-      low: Number(low.toFixed(asset.pipDecimals)),
-      close: Number(close.toFixed(asset.pipDecimals)),
-      volume,
-      isClosed: i > 0,
-    });
-
-    price = open; // step back
+export function getBinanceInterval(tf: TimeFrame): string {
+  switch (tf) {
+    case 'M1': return '1m';
+    case 'M5': return '5m';
+    case 'M15': return '15m';
+    case 'M30': return '30m';
+    case 'H1': return '1h';
+    case 'H4': return '4h';
+    case 'D1': return '1d';
+    default: return '1m';
   }
+}
 
-  tempCandles.reverse();
-  return tempCandles;
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function seededRandom(seed: number): number {
+  let t = (seed += 0x6D2B79F5);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
 /**
- * Market Data Manager with Binance Crypto WebSocket & Real Spot Aggregator
+ * Gera velas históricas matematicamente determinísticas com base no tempo e ativo.
+ * Desta forma, a vela de 10:00 sempre terá o mesmo preço, RSI e confluências,
+ * independente de quantas vezes o operador alternar entre M1, M5 e M15.
+ */
+export function generateDeterministicCandles(asset: Asset, timeframe: TimeFrame, count = 55): Candle[] {
+  const candles: Candle[] = [];
+  const tfSeconds = getTimeframeSeconds(timeframe);
+  const now = Math.floor(Date.now() / 1000);
+  const currentBoundary = now - (((now % tfSeconds) + tfSeconds) % tfSeconds);
+
+  const basePrice = asset.currentPrice;
+  const volatility = asset.pipDecimals === 5 ? 0.00018 : (asset.pipDecimals === 3 ? 0.045 : (asset.pipDecimals === 4 ? 0.0012 : 14.0));
+  const assetHash = hashString(asset.symbol);
+
+  // Função harmônica de preço no tempo exato (Ondas de mercado consistentes)
+  const getPriceAtTime = (tSec: number): number => {
+    const wave24h = Math.sin((tSec / 86400) * 2 * Math.PI) * volatility * 9;
+    const wave4h = Math.cos((tSec / 14400) * 2 * Math.PI) * volatility * 4.5;
+    const wave1h = Math.sin((tSec / 3600) * 2 * Math.PI) * volatility * 2.2;
+    const wave15m = Math.cos((tSec / 900) * 2 * Math.PI) * volatility * 1.1;
+    const rand = (seededRandom(assetHash ^ tSec) - 0.495) * volatility * 1.8;
+    return basePrice + wave24h + wave4h + wave1h + wave15m + rand;
+  };
+
+  for (let i = count - 1; i >= 0; i--) {
+    const candleTime = currentBoundary - (i * tfSeconds);
+    const prevTime = candleTime - tfSeconds;
+    const open = Number(getPriceAtTime(prevTime).toFixed(asset.pipDecimals));
+    const close = Number(getPriceAtTime(candleTime).toFixed(asset.pipDecimals));
+
+    const seed = assetHash ^ candleTime;
+    const r1 = seededRandom(seed + 1);
+    const r2 = seededRandom(seed + 2);
+    const r3 = seededRandom(seed + 3);
+
+    const bodyHigh = Math.max(open, close);
+    const bodyLow = Math.min(open, close);
+    const wickUp = (r1 * 0.8 + 0.1) * volatility;
+    const wickDown = (r2 * 0.8 + 0.1) * volatility;
+
+    const high = Number((bodyHigh + wickUp).toFixed(asset.pipDecimals));
+    const low = Number(Math.max(0.00001, bodyLow - wickDown).toFixed(asset.pipDecimals));
+    const volume = Math.floor(r3 * 350 + 60);
+
+    candles.push({
+      time: candleTime,
+      open,
+      high,
+      low,
+      close,
+      volume,
+      isClosed: i > 0,
+    });
+  }
+
+  return candles;
+}
+
+export function generateInitialCandles(asset: Asset, timeframe: TimeFrame, count = 55): Candle[] {
+  return generateDeterministicCandles(asset, timeframe, count);
+}
+
+/**
+ * Market Data Manager com Cache Persistente Multi-Timeframe e Binance WebSocket
  */
 export class MarketDataManager {
   private cryptoWs: WebSocket | null = null;
@@ -247,6 +307,7 @@ export class MarketDataManager {
   private currentAsset: Asset;
   private currentTimeframe: TimeFrame = 'M1';
   private candles: Candle[] = [];
+  private candleCache = new Map<string, Candle[]>();
   private onTickCallback: ((candle: Candle, remainingSec: number, asset: Asset) => void) | null = null;
   private onSourceChange: ((info: DataSourceInfo) => void) | null = null;
   private isConnected = false;
@@ -258,12 +319,18 @@ export class MarketDataManager {
   constructor() {
     this.syncServerTime();
     const liveAssets = getLiveAssets();
-    // No fim de semana com Forex fechado, seleciona automaticamente Criptomoeda (BTC/USD 24/7)
     const initialAsset = isForexMarketOpen()
       ? liveAssets[0]
       : (liveAssets.find((a) => a.category === 'CRYPTO') || liveAssets[0]);
     this.currentAsset = { ...initialAsset };
-    this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);
+    this.candles = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
+    const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+    this.candleCache.set(key, this.candles);
+
+    // Tenta carregar candles reais se for cripto
+    if (this.currentAsset.category === 'CRYPTO') {
+      this.loadCandlesForCurrentSelection();
+    }
   }
 
   public setCallbacks(
@@ -274,21 +341,112 @@ export class MarketDataManager {
     this.onSourceChange = onSource;
   }
 
-  public setAsset(symbol: string) {
+  /**
+   * Busca velas da Binance REST API para cripto ou gera velas determinísticas
+   */
+  private async loadCandlesForCurrentSelection() {
+    const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+    if (this.candleCache.has(key)) {
+      this.candles = [...this.candleCache.get(key)!];
+      return;
+    }
+
+    if (this.currentAsset.category === 'CRYPTO') {
+      try {
+        const pair = getBinancePair(this.currentAsset.symbol);
+        const interval = getBinanceInterval(this.currentTimeframe);
+        const res = await fetch(
+          `https://api.binance.com/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=55`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            const parsed: Candle[] = data.map((item: any, idx: number) => ({
+              time: Math.floor(Number(item[0]) / 1000),
+              open: Number(parseFloat(item[1]).toFixed(this.currentAsset.pipDecimals)),
+              high: Number(parseFloat(item[2]).toFixed(this.currentAsset.pipDecimals)),
+              low: Number(parseFloat(item[3]).toFixed(this.currentAsset.pipDecimals)),
+              close: Number(parseFloat(item[4]).toFixed(this.currentAsset.pipDecimals)),
+              volume: Math.round(parseFloat(item[5])),
+              isClosed: idx < data.length - 1,
+            }));
+            this.candles = parsed;
+            this.currentAsset.currentPrice = parsed[parsed.length - 1].close;
+            this.candleCache.set(key, parsed);
+            this.notifyTickImmediately();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[MarketData] Fallback klines para', this.currentAsset.symbol, err);
+      }
+    }
+
+    // Forex ou fallback determinístico (mesmos preços matemáticos preservados)
+    const generated = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
+    this.candles = generated;
+    this.candleCache.set(key, generated);
+    this.notifyTickImmediately();
+  }
+
+  private notifyTickImmediately() {
+    const activeCandle = this.candles[this.candles.length - 1];
+    if (activeCandle && this.onTickCallback) {
+      const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
+      const nowMs = Date.now() + this.serverOffsetMs;
+      const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
+      const elapsed = ((nowSec % tfSeconds) + tfSeconds) % tfSeconds;
+      const remainingSec = elapsed === 0 ? tfSeconds : tfSeconds - elapsed;
+      this.onTickCallback(activeCandle, remainingSec, this.currentAsset);
+    }
+  }
+
+  public async setAsset(symbol: string) {
     const liveAssets = getLiveAssets();
     const found = liveAssets.find((a) => a.symbol === symbol);
     if (found && found.symbol !== this.currentAsset.symbol) {
+      // 1. Salva candles do ativo anterior no cache
+      const oldKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+      this.candleCache.set(oldKey, [...this.candles]);
+
+      // 2. Altera ativo
       this.currentAsset = { ...found };
-      this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);
+
+      // 3. Carrega do cache (se já foi acessado antes) ou gera/busca
+      const newKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+      if (this.candleCache.has(newKey)) {
+        this.candles = [...this.candleCache.get(newKey)!];
+        this.notifyTickImmediately();
+      } else {
+        await this.loadCandlesForCurrentSelection();
+      }
+
       this.reconnectStreams();
       this.notifySource();
     }
   }
 
-  public setTimeframe(tf: TimeFrame) {
+  public async setTimeframe(tf: TimeFrame) {
     if (tf !== this.currentTimeframe) {
+      // 1. Salva histórico do timeframe atual no cache
+      const oldKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+      this.candleCache.set(oldKey, [...this.candles]);
+
+      // 2. Muda timeframe
       this.currentTimeframe = tf;
-      this.candles = generateInitialCandles(this.currentAsset, tf, 50);
+
+      // 3. Carrega velas do cache para este timeframe (mantendo confluências e histórico)
+      const newKey = `${this.currentAsset.symbol}::${tf}`;
+      if (this.candleCache.has(newKey)) {
+        this.candles = [...this.candleCache.get(newKey)!];
+        this.notifyTickImmediately();
+      } else {
+        await this.loadCandlesForCurrentSelection();
+      }
+
+      // 4. Reconecta stream WebSocket para o novo timeframe (1m, 5m, etc.)
+      this.reconnectStreams();
+      this.notifySource();
     }
   }
 
@@ -324,6 +482,10 @@ export class MarketDataManager {
     return this.currentAsset;
   }
 
+  public getCurrentTimeframe(): TimeFrame {
+    return this.currentTimeframe;
+  }
+
   public start() {
     this.isConnected = true;
     this.reconnectStreams();
@@ -352,14 +514,9 @@ export class MarketDataManager {
 
     if (this.currentAsset.category === 'CRYPTO' && typeof WebSocket !== 'undefined') {
       try {
-        const sym = this.currentAsset.symbol.toLowerCase();
-        let pair = 'btcusdt';
-        if (sym.includes('eth')) pair = 'ethusdt';
-        else if (sym.includes('sol')) pair = 'solusdt';
-        else if (sym.includes('bnb')) pair = 'bnbusdt';
-        else if (sym.includes('xrp')) pair = 'xrpusdt';
-
-        const wsUrl = `wss://stream.binance.com:9443/ws/${pair}@kline_1m`;
+        const pair = getBinancePair(this.currentAsset.symbol);
+        const interval = getBinanceInterval(this.currentTimeframe);
+        const wsUrl = `wss://stream.binance.com:9443/ws/${pair}@kline_${interval}`;
         this.cryptoWs = new WebSocket(wsUrl);
 
         this.cryptoWs.onopen = () => {
@@ -432,7 +589,9 @@ export class MarketDataManager {
     const currentBoundary = nowSec - (((nowSec % tfSeconds) + tfSeconds) % tfSeconds);
 
     if (this.candles.length === 0) {
-      this.candles = generateInitialCandles(this.currentAsset, this.currentTimeframe, 50);
+      this.candles = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
+      const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+      this.candleCache.set(key, this.candles);
       return;
     }
 
@@ -465,6 +624,9 @@ export class MarketDataManager {
       if (price < last.low) last.low = price;
       last.volume += 1;
     }
+
+    const cacheKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
+    this.candleCache.set(cacheKey, this.candles);
   }
 
   private notifySource() {

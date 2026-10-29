@@ -1415,8 +1415,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <SlidersHorizontal className="w-3 h-3 text-cyan-400" />
                         SELECIONAR ATIVO
                       </label>
-                      <span className="text-[9px] font-mono text-neutral-400">
-                        {asset.category === 'FOREX' ? 'Mercado Forex' : 'Criptomoeda'}
+                      <span className="text-[9px] font-mono text-cyan-300 font-bold">
+                        {asset.category === 'FOREX' ? '🌐 Mercado Forex' : '⚡ Criptomoeda (24/7)'}
                       </span>
                     </div>
                     <div className="relative">
@@ -1425,14 +1425,27 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         onChange={(e) => onSelectAsset(e.target.value)}
                         className="w-full bg-black/60 border border-neutral-700/80 hover:border-cyan-500/60 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold appearance-none focus:outline-none transition-colors cursor-pointer"
                       >
-                        {assetsList.map((a) => {
-                          const isClosed = a.category === 'FOREX' && !isForexOpen;
-                          return (
-                            <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
-                              {isClosed ? '🔴 [FECHADO FIM DE SEMANA] ' : '🟢 [24/7 CRIPTO] '}{a.symbol} — {a.name}
-                            </option>
-                          );
-                        })}
+                        <optgroup label="🌐 MERCADO FOREX (Pares Globais)">
+                          {assetsList
+                            .filter((a) => a.category === 'FOREX')
+                            .map((a) => {
+                              const isClosed = !isForexOpen;
+                              return (
+                                <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                                  {isClosed ? '🔴 [FOREX FECHADO] ' : '🟢 [FOREX] '}{a.symbol} — {a.name}
+                                </option>
+                              );
+                            })}
+                        </optgroup>
+                        <optgroup label="⚡ CRIPTOMOEDAS (Abertas 24/7)">
+                          {assetsList
+                            .filter((a) => a.category === 'CRYPTO')
+                            .map((a) => (
+                              <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                                🟢 [24/7 CRIPTO] {a.symbol} — {a.name}
+                              </option>
+                            ))}
+                        </optgroup>
                       </select>
                       <ChevronDown className="w-4 h-4 text-cyan-400 absolute right-3 top-2.5 pointer-events-none" />
                     </div>

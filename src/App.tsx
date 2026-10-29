@@ -236,8 +236,8 @@ export default function App() {
   }, [settings, isAnalyzing, timeframe]);
 
   // Handle Asset change
-  const handleSelectAsset = useCallback((symbol: string) => {
-    marketDataManager.setAsset(symbol);
+  const handleSelectAsset = useCallback(async (symbol: string) => {
+    await marketDataManager.setAsset(symbol);
     const newAsset = marketDataManager.getCurrentAsset();
     setAsset({ ...newAsset });
     setCandles(marketDataManager.getCandles());
@@ -245,9 +245,9 @@ export default function App() {
   }, []);
 
   // Handle Timeframe change
-  const handleSelectTimeframe = useCallback((tf: TimeFrame) => {
+  const handleSelectTimeframe = useCallback(async (tf: TimeFrame) => {
     setTimeframe(tf);
-    marketDataManager.setTimeframe(tf);
+    await marketDataManager.setTimeframe(tf);
     setCandles(marketDataManager.getCandles());
     setAiInsightText(null);
   }, []);
