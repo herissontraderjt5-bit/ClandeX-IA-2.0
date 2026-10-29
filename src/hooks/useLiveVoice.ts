@@ -1314,14 +1314,37 @@ DADOS DO PAINEL:\n${contextSummary}`;
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda apenas 240ms de silêncio após a fala para resposta instantânea
+        // CÁLCULO INTELIGENTE DO TEMPO DE ESPERA PARA O USUÁRIO CONCLUIR A FALA:
+        // Evita cortar o usuário no meio da frase ou durante pausas naturais de respiração.
+        const cleanWords = display.toLowerCase().split(/\s+/).filter(Boolean);
+        const lastWord = cleanWords[cleanWords.length - 1] || '';
+        const incompleteConnectors = new Set([
+          'de', 'do', 'da', 'dos', 'das', 'no', 'na', 'nos', 'nas', 'em',
+          'para', 'pra', 'pro', 'com', 'e', 'ou', 'que', 'qual', 'quanto',
+          'quantos', 'quantas', 'se', 'o', 'a', 'os', 'as', 'um', 'uma',
+          'como', 'porque', 'por que', 'pq', 'sobre'
+        ]);
+
+        let silenceWaitMs = 950; // Tempo base confortável para fala humana natural
+
+        if (interim.trim().length > 0) {
+          // Se ainda estiver recebendo fonemas intermediários (usuário falando ativamente)
+          silenceWaitMs = 1200;
+        } else if (cleanWords.length <= 2) {
+          // Frase muito curta no início (ex: "CandleX...", "Olha...")
+          silenceWaitMs = 1350;
+        } else if (incompleteConnectors.has(lastWord)) {
+          // Parou em uma conjunção ou preposição (claramente vai continuar a frase)
+          silenceWaitMs = 1500;
+        }
+
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
           if (fullQuestion && isLegitimateHumanSpeech(fullQuestion)) {
             dispatchTurn(fullQuestion);
           }
-        }, 240);
+        }, silenceWaitMs);
       };
 
       recognition.onerror = (e: any) => {
