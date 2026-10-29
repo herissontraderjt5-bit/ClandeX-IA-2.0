@@ -173,6 +173,7 @@ export function useLiveVoice({
   const sessionActiveRef = useRef<boolean>(false);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const startSpeechRecognitionRef = useRef<() => void>(() => {});
+  const lastMicUpdateRef = useRef<number>(0);
 
   // Keep latest context in ref so live conversation has up-to-date market data
   const contextRef = useRef({ asset, timeframe, marketAnalysis, confluences });
@@ -426,10 +427,15 @@ export function useLiveVoice({
       q.includes('me ouve') ||
       q.includes('ouviu')
     ) {
-      return `Estou te ouvindo perfeitamente e em alto e bom som! Pode mandar sua pergunta sobre o mercado.`;
+      const hearingOptions = [
+        `Tô te ouvindo perfeitamente e em alto e bom som! Pode falar.`,
+        `Sim, na escuta total! Qual a sua dúvida sobre o gráfico de ${ctx.asset.symbol}?`,
+        `Ouvindo cristalino! Manda ver, o que você quer ver agora?`
+      ];
+      return hearingOptions[Math.floor(Math.random() * hearingOptions.length)];
     }
 
-    // 3. Saudações, bem-estar e conversa casual
+    // 3. Saudações, bem-estar e conversa casual (100% natural e variada)
     if (
       q.includes('como você está') ||
       q.includes('como voce esta') ||
@@ -446,7 +452,13 @@ export function useLiveVoice({
       q.includes('e aí') ||
       q.includes('e ai')
     ) {
-      return `Tudo ótimo por aqui! Estou com o gráfico de ${ctx.asset.symbol} na tela e 100% focada nas confluências. O que você quer analisar agora?`;
+      const greetingOptions = [
+        `Oi! Tudo ótimo por aqui. E com você, pronto pra gente operar hoje?`,
+        `Tudo na paz! Tô com o olho colado no gráfico de ${ctx.asset.symbol}. Como tão as operações por aí?`,
+        `Tudo bem demais! Gráfico de ${ctx.asset.symbol} tá bem ativo. O que você quer analisar agora?`,
+        `Opa, tudo certo! Prontíssima pra acompanhar suas entradas. Como você tá?`
+      ];
+      return greetingOptions[Math.floor(Math.random() * greetingOptions.length)];
     }
 
     // 4. Agradecimentos e confirmações
@@ -826,16 +838,11 @@ export function useLiveVoice({
         setAiSpeechLevel(Math.max(25, Math.min(95, Math.round(baseLevel))));
       }, 70);
 
-      // Heartbeat contra o bug do Chromium (Chrome pausa áudio silenciosamente após ~10-15s)
-      if (resumeHeartbeatIntervalRef.current) clearInterval(resumeHeartbeatIntervalRef.current);
-      resumeHeartbeatIntervalRef.current = setInterval(() => {
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-          if (window.speechSynthesis.speaking && !hasEnded) {
-            window.speechSynthesis.pause();
-            window.speechSynthesis.resume();
-          }
-        }
-      }, 3500);
+      // Limpa qualquer heartbeat residual
+      if (resumeHeartbeatIntervalRef.current) {
+        clearInterval(resumeHeartbeatIntervalRef.current);
+        resumeHeartbeatIntervalRef.current = null;
+      }
     };
 
     utterance.onend = () => {
@@ -910,21 +917,17 @@ export function useLiveVoice({
               .map((h) => `${h.role === 'user' ? 'Trader' : 'CandleX'}: ${h.text}`)
               .join('\n');
 
-            const systemInstruction = `Você é a CandleX, assistente inteligente e mentora de trading institucional de Opções Binárias e Forex para o aplicativo CandleX-IA.
-Você está conversando por voz em tempo real diretamente com o trader humano via microfone.
+            const systemInstruction = `Você é a CandleX, assistente e parceira de trading institucional de Opções Binárias e Forex no app CandleX-IA.
+Você está conversando por voz em tempo real diretamente com o trader via microfone.
 
-PERSONALIDADE (CANDLEX):
-Profissional, natural, objetiva e amigável. Responda como uma especialista humana em análise técnica e Price Action.
-
-REGRAS OBRIGATÓRIAS (ETAPA 7):
-1. Responda DIRETAMENTE ao que o trader acabou de perguntar em Português do Brasil com naturalidade e clareza.
-2. Seja sempre concisa: estritamente 1 a 2 frases faladas. Não faça discursos longos.
-3. NUNCA use markdown, asteriscos, tópicos, numerações ou formatações no texto de fala.
-4. Mantenha a memória de contexto da conversa (se o trader disser "e no gráfico de cinco minutos?", "e o suporte?", "vale a pena entrar agora?", entenda a referência anterior).
-5. Domine Price Action, Suporte e Resistência, Fluxo de candles, Tendência, Consolidação, Rompimento, Rejeição, CALL, PUT, M1, M5, Forex e Criptomoedas.
-6. Não invente preços ou indicadores. Não prometa lucros e não garanta resultados.
-7. Se não houver confirmação técnica ou dados suficientes, informe com clareza.
-8. PRONÚNCIA OBRIGATÓRIA DE ATIVOS E MOEDAS: NUNCA soletre pares de moedas ou ativos letra por letra (NUNCA diga "E-U-R U-S-D", "G-B-P U-S-D" ou "S-O-L"). Fale sempre o nome completo e natural: "Euro USD", "GBP USD", "Bitcoin USD", "Ethereum USD", "Solana USD", "Dólar Iene". NUNCA use barras ("/") ou hifens na sua fala ao citar o par, pois causam soletração robótica na voz.
+DIRETRIZES DE CONVERSAÇÃO (100% NATURAL, HUMANA E ESPONTÂNEA):
+1. Converse normalmente como uma parceira de trading real brasileira: calorosa, fluida, descontraída, simpática e inteligente.
+2. NUNCA dê respostas pré-fabricadas, decoradas ou engessadas. Responda diretamente e de forma pessoal ao que o trader falou.
+3. Se ele cumprimentar (ex: "olá, tudo bem?", "oi", "e aí"), responda de forma leve, simpática e natural ("Tudo ótimo por aqui! Pronta pra gente operar. Qual gráfico vamos analisar?", "Oi, tudo na paz! Tô com o olho no mercado. Como cê tá?").
+4. Se ele perguntar sobre o mercado ou gráficos, analise com base nos dados reais do painel com autoridade e clareza.
+5. Responda sempre em 1 a 2 frases curtas faladas (máximo 30 a 40 palavras). Perfeito para um diálogo de voz ágil, sem atrasos e sem enrolação.
+6. NUNCA use formatação markdown, asteriscos, tópicos ou numerações.
+7. PRONÚNCIA: Fale sempre nomes normais ("Euro USD", "GBP USD", "Bitcoin", "Dólar Iene"). NUNCA soletre letra por letra.
 
 DADOS EM TEMPO REAL DO CANDLEX-IA NO PAINEL:
 ${contextSummary}
@@ -933,9 +936,9 @@ MEMÓRIA RECENTE DA CONVERSA:
 ${recentTurns || 'Início da sessão de voz.'}`;
 
             const candidateModels = [
-              (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_LIVE_MODEL) || 'gemini-3.8-live',
-              (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_MODEL) || 'gemini-3.8-flash',
+              'gemini-3.1-flash-lite',
               'gemini-3.5-flash-lite',
+              'gemini-flash-latest',
               'gemini-3.5-flash',
             ];
             for (const modelName of candidateModels) {
@@ -945,11 +948,12 @@ ${recentTurns || 'Início da sessão de voz.'}`;
                   contents: cleanPrompt,
                   config: {
                     systemInstruction,
-                    temperature: 0.4,
+                    temperature: 0.7,
+                    maxOutputTokens: 90,
                   },
                 });
 
-                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2800));
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
                 const response: any = await Promise.race([fetchPromise, timeoutPromise]);
 
                 if (response && response.text) {
@@ -1140,14 +1144,14 @@ ${recentTurns || 'Início da sessão de voz.'}`;
           clearTimeout(speechSilenceTimeoutRef.current);
         }
 
-        // Aguarda 750ms de silêncio após a fala para garantir término da frase e rejeitar ruídos transitórios
+        // Aguarda 450ms de silêncio após a fala para resposta ágil e imediata
         speechSilenceTimeoutRef.current = setTimeout(() => {
           const fullQuestion = (accumulatedSpeechRef.current || display).trim();
           accumulatedSpeechRef.current = '';
           if (fullQuestion && isLegitimateHumanSpeech(fullQuestion)) {
             dispatchTurn(fullQuestion);
           }
-        }, 750);
+        }, 450);
       };
 
       recognition.onerror = (e: any) => {
@@ -1256,9 +1260,14 @@ ${recentTurns || 'Início da sessão de voz.'}`;
 
         voiceFramesCount++;
         const currentLevel = Math.min(100, Math.round(rms * 280));
-        setMicLevel(currentLevel);
-
+        
+        // Throttling: Atualiza estado do React no máximo a cada 100ms para evitar travamentos da interface e do 3D
         const now = Date.now();
+        if (now - lastMicUpdateRef.current >= 100) {
+          lastMicUpdateRef.current = now;
+          setMicLevel(currentLevel);
+        }
+
         // VAD persistente: apenas sons sustentados (voz humana) ativam o canal
         if (voiceFramesCount >= 2) {
           lastVoiceActiveTimeRef.current = now;
@@ -1268,20 +1277,19 @@ ${recentTurns || 'Início da sessão de voz.'}`;
 
         const isVoiceActive = now - lastVoiceActiveTimeRef.current < 800;
 
-        // 1. Resample nativo para 16kHz Little-Endian
-        const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
-        const base64Pcm = pcmToBase64(resampled);
+        // Processa áudio PCM apenas se houver WebSocket ou sessão Gemini Live ativa
+        const hasLiveWs = wsRef.current && wsRef.current.readyState === WebSocket.OPEN;
+        const hasLiveSession = !!geminiLiveSessionRef.current;
 
-        // 2. Envio via WebSocket (se conectado ao servidor local Gemini Live)
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          if (isVoiceActive && voiceFramesCount >= 2) {
-            wsRef.current.send(JSON.stringify({ audio: base64Pcm }));
+        if (hasLiveWs || hasLiveSession) {
+          const resampled = resampleTo16k(inputData, inputCtx.sampleRate);
+          const base64Pcm = pcmToBase64(resampled);
+
+          if (hasLiveWs && isVoiceActive && voiceFramesCount >= 2) {
+            wsRef.current?.send(JSON.stringify({ audio: base64Pcm }));
           }
-        }
 
-        // 3. Envio direto via Gemini Live Session (se ativo)
-        if (geminiLiveSessionRef.current) {
-          if (isVoiceActive) {
+          if (hasLiveSession && isVoiceActive) {
             try {
               geminiLiveSessionRef.current.sendRealtimeInput({
                 media: [{ data: base64Pcm, mimeType: 'audio/pcm;rate=16000' }],

@@ -205,7 +205,14 @@ export default function App() {
         setRemainingSeconds(remainingSec);
         setCurrentCandle({ ...candle });
         setCandles(marketDataManager.getCandles());
-        setAsset({ ...currentAssetObj });
+        // Process candle open capturing and expiration resolution continuously on every tick
+        signalEngine.onMarketTick(
+          candle,
+          remainingSec,
+          currentAssetObj.currentPrice,
+          currentAssetObj.symbol,
+          timeframe
+        );
 
         // If analyzing is active, evaluate confluences in the signal engine
         if (isAnalyzing) {

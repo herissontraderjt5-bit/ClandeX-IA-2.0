@@ -540,7 +540,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     const curMonth = now.getMonth();
     const curDate = now.getDate();
     return signalsHistory.filter((s) => {
-      const d = new Date(s.timestamp);
+      const d = new Date(s.resolvedAt || s.timestamp);
       return (
         d.getDate() === curDate &&
         d.getMonth() === curMonth &&
@@ -564,6 +564,13 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   const expSecs = remainingExpSec % 60;
   const formattedExpCountdown = `${String(expMins).padStart(2, '0')}:${String(expSecs).padStart(2, '0')}`;
 
+  // Se o cronômetro zerou (00:00) na tela, aciona a apuração imediata no fechamento da vela
+  useEffect(() => {
+    if (activeTrade && activeTrade.result === 'PENDING' && isTradeRunning && remainingExpSec <= 0) {
+      signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice);
+    }
+  }, [activeTrade, isTradeRunning, remainingExpSec, asset.currentPrice]);
+
   // Confirmação recente aguardando a abertura da vela do sinal
   const isWaitingEntry = !!latestConfirmedSignal && !isTradeRunning && (
     (latestConfirmedSignal.entryTimestamp ? nowSec < latestConfirmedSignal.entryTimestamp : Date.now() - latestConfirmedSignal.timestamp < 15000)
@@ -582,11 +589,11 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     ? Math.abs(asset.currentPrice - activeTrade.entryPrice) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
-  // Has recently resolved trade (within 4 seconds after expiration reached 0)
-  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 4000;
+  // Has recently resolved trade (exibe por 7 segundos completos para visualização clara do WIN/LOSS)
+  const hasResolvedTrade = !!lastResolvedTrade && Date.now() - (lastResolvedTrade.resolvedAt || lastResolvedTrade.timestamp || 0) < 7000;
 
-  // Has recently cancelled signal (within 3 seconds)
-  const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 3000;
+  // Has recently cancelled signal (within 4 seconds)
+  const hasCancelledSignal = !!lastCancelledSignal && Date.now() - (lastCancelledSignal.cancelledAt || lastCancelledSignal.timestamp || 0) < 4000;
 
   // Confirmed signal entry window
   const hasConfirmed = isWaitingEntry;
@@ -1061,7 +1068,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </button>
                   </div>
 
-                  {/* ESTÁGIO 1: RESULTADO APURADO (DURAÇÃO ESTRITA DE 5s) */}
+                  {/* ESTÁGIO 1: RESULTADO APURADO (DURAÇÃO DE 7s COM APURAÇÃO EXATA) */}
                   {hasResolvedTrade && lastResolvedTrade ? (
                     <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
                       <div
@@ -1089,15 +1096,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           )}
                         </div>
 
-                        <div className="flex items-center justify-center gap-3 text-[10px] font-mono text-neutral-200">
-                          <span>Entrada: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                        <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-neutral-200 bg-black/40 py-1.5 px-3 rounded-lg border border-white/10">
+                          <span>Abertura da Vela: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
                           <span>➔</span>
-                          <span>Saída: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
                         </div>
 
                         <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                          <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado dura 5s (próxima análise liberada)</span>
+                          <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado apurado com precisão</span>
                         </div>
                       </div>
                     </div>
@@ -1154,14 +1161,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       {/* Status Dinâmico Resumido */}
                       <div
                         className={`p-1.5 rounded-lg text-center font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 border ${
-                          isWinning
+                          remainingExpSec === 0
+                            ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-300 animate-pulse'
+                            : isWinning
                             ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
                             : isTied
                             ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
                             : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
                         }`}
                       >
-                        {isWinning ? (
+                        {remainingExpSec === 0 ? (
+                          <span>FECHAMENTO DA VELA • REGISTRANDO RESULTADO FINAL...</span>
+                        ) : isWinning ? (
                           <>
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                             <span>NO LUCRO (WIN PROVISÓRIO) • +{diffPips.toFixed(1)} pips</span>

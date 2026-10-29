@@ -130,6 +130,9 @@ export interface SignalRecord {
   confluenceScore: number;
   entryPrice: number;
   exitPrice?: number;
+  candleOpenPrice?: number;
+  candleClosePrice?: number;
+  isEntered?: boolean;
   result: TradeResult;
   reasons: string[];
   aiAnalysis?: string;
