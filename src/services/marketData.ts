@@ -536,6 +536,15 @@ export class MarketDataManager {
     return [...this.candles];
   }
 
+  public getCandlesForAsset(symbol: string, timeframe: TimeFrame): Candle[] {
+    if (this.currentAsset.symbol === symbol && this.currentTimeframe === timeframe) {
+      return [...this.candles];
+    }
+    const key = `${symbol}::${timeframe}`;
+    const cached = this.candleCache.get(key);
+    return cached && cached.length > 0 ? [...cached] : [...this.candles];
+  }
+
   public getCurrentAsset(): Asset {
     return this.currentAsset;
   }

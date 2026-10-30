@@ -208,18 +208,21 @@ export default function App() {
         setCandles(marketDataManager.getCandles());
         setAsset((prev) => (prev.currentPrice !== currentAssetObj.currentPrice || prev.symbol !== currentAssetObj.symbol ? { ...currentAssetObj } : prev));
 
+        const currentCandles = marketDataManager.getCandles();
+
         // Process candle open capturing and expiration resolution continuously on every tick
         signalEngine.onMarketTick(
           candle,
           remainingSec,
           currentAssetObj.currentPrice,
           currentAssetObj.symbol,
-          timeframe
+          timeframe,
+          currentCandles
         );
 
         // If analyzing is active, evaluate confluences in the signal engine with TradingView feed
         if (isAnalyzing) {
-          const liveAnalysis = analyzeMarket(marketDataManager.getCandles(), marketDataManager.getLiveTradingViewData());
+          const liveAnalysis = analyzeMarket(currentCandles, marketDataManager.getLiveTradingViewData());
           const liveConfluences = calculateConfluences(liveAnalysis, settings);
           signalEngine.evaluate(
             candle,
@@ -228,7 +231,8 @@ export default function App() {
             settings,
             currentAssetObj.symbol,
             timeframe,
-            liveAnalysis
+            liveAnalysis,
+            currentCandles
           );
         }
       },

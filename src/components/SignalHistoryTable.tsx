@@ -203,7 +203,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
               <th className="py-2.5 px-3">TF</th>
               <th className="py-2.5 px-3">Direção</th>
               <th className="py-2.5 px-3">Score</th>
-              <th className="py-2.5 px-3">Preço Ref.</th>
+              <th className="py-2.5 px-3">Abertura ➔ Fechamento</th>
               <th className="py-2.5 px-3">Expiração</th>
               <th className="py-2.5 px-3">Resultado</th>
               <th className="py-2.5 px-3">Motivo Técnico Principal</th>
@@ -240,7 +240,27 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
                       {sig.confluenceScore}/100
                     </span>
                   </td>
-                  <td className="py-2 px-3 whitespace-nowrap">{sig.entryPrice}</td>
+                  <td className="py-2 px-3 whitespace-nowrap">
+                    {sig.exitPrice && sig.result !== 'PENDING' ? (
+                      <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                        <span className="text-neutral-300">{sig.entryPrice}</span>
+                        <span className="text-neutral-500">➔</span>
+                        <span
+                          className={
+                            sig.result === 'WIN'
+                              ? 'text-emerald-400 font-bold'
+                              : sig.result === 'LOSS'
+                              ? 'text-rose-400 font-bold'
+                              : 'text-neutral-300 font-bold'
+                          }
+                        >
+                          {sig.exitPrice}
+                        </span>
+                      </span>
+                    ) : (
+                      sig.entryPrice
+                    )}
+                  </td>
                   <td className="py-2 px-3 text-neutral-400 whitespace-nowrap">{sig.expiration}</td>
                   <td className="py-2 px-3 whitespace-nowrap">
                     {sig.result === 'WIN' && (

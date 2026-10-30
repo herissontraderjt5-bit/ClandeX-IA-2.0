@@ -641,7 +641,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   // Se o cronômetro zerou (00:00) na tela, aciona a apuração imediata no fechamento da vela
   useEffect(() => {
     if (activeTrade && activeTrade.result === 'PENDING' && isTradeRunning && remainingExpSec <= 0) {
-      signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice);
+      signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice, marketDataManager.getCandles());
     }
   }, [activeTrade, isTradeRunning, remainingExpSec, asset.currentPrice]);
 
