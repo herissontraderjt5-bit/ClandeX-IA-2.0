@@ -103,9 +103,9 @@ app.get('/api/admin/members', (req: Request, res: Response) => {
     activeCount,
     pendingCount,
     members,
-    hioveKeyConfigured: Boolean(process.env.HIOVE_ACCESS_KEY),
-    hioveKeyPreview: process.env.HIOVE_ACCESS_KEY
-      ? `${process.env.HIOVE_ACCESS_KEY.slice(0, 14)}...${process.env.HIOVE_ACCESS_KEY.slice(-6)}`
+    hioveKeyConfigured: Boolean(process.env.HIOVE_KEY || process.env.HIOVE_ACCESS_KEY),
+    hioveKeyPreview: (process.env.HIOVE_KEY || process.env.HIOVE_ACCESS_KEY)
+      ? `${(process.env.HIOVE_KEY || process.env.HIOVE_ACCESS_KEY)!.slice(0, 14)}...${(process.env.HIOVE_KEY || process.env.HIOVE_ACCESS_KEY)!.slice(-6)}`
       : 'NÃO CONFIGURADA',
   });
 });
@@ -435,7 +435,7 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
         if (session) {
           try {
             session.close();
-          } catch {}
+          } catch { }
           session = null;
         }
         if (clientWs.readyState === WebSocket.OPEN) {
@@ -451,7 +451,7 @@ DIRETRIZES DA CONVERSAÇÃO (ETAPA 7):
     if (session) {
       try {
         session.close();
-      } catch {}
+      } catch { }
       session = null;
     }
   });
@@ -634,7 +634,7 @@ DIRETRIZES DE COMUNICAÇÃO:
     });
   } catch (error: any) {
     console.error('Gemini chat error:', error?.message || error);
-    
+
     // Fallback heuristic response in case of API transient error
     const { marketContext, messages } = req.body || {};
     const lastMsg = messages?.[messages.length - 1]?.text?.toLowerCase() || '';
@@ -720,8 +720,8 @@ async function dispatchWebhook(options: {
           description: options.event === 'PRE_ALERT'
             ? 'Aguardando fechamento da vela para confirmação.'
             : options.event === 'RESULT'
-            ? `Operação finalizada: Resultado ${sig.result || 'WIN'}`
-            : 'Entrada na abertura da próxima vela.',
+              ? `Operação finalizada: Resultado ${sig.result || 'WIN'}`
+              : 'Entrada na abertura da próxima vela.',
           color: isCall ? 3066993 : 15158332,
           fields: [
             { name: 'Timeframe', value: `${sig.timeframe || 'M1'}`, inline: true },
@@ -802,7 +802,7 @@ async function dispatchWebhook(options: {
     let responseText = '';
     try {
       responseText = await response.text();
-    } catch {}
+    } catch { }
 
     const isOk = response.ok;
     return {

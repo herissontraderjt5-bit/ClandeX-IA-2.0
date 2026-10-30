@@ -305,7 +305,7 @@ export default function App() {
         body: JSON.stringify({ email: userSession.email }),
       });
       const data = await response.json();
-      if (data.status === 'ACTIVE' || data.hasDeposit === true) {
+      if (data.access === true) {
         const updated: UserSession = {
           ...userSession,
           hasAccess: true,
@@ -521,7 +521,7 @@ export default function App() {
 
       {/* Access Gate Modal (Hiove Authentication Gate) */}
       <AccessGateModal
-        isOpen={!userSession || !userSession.hasAccess}
+        isOpen={!userSession || !userSession.hasAccess || userSession.status !== 'ACTIVE'}
         onSuccess={(session) => {
           setUserSession(session);
         }}

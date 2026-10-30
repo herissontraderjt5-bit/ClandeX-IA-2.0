@@ -80,20 +80,15 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       const data = await response.json();
 
       if (data.access === true) {
-        const isFullyActive = data.status === 'ACTIVE' || data.hasDeposit === true;
-        setSuccessMessage(
-          isFullyActive
-            ? 'Conta Hiove e depósito confirmados! Acesso total liberado.'
-            : 'Conta Hiove identificada! Entrando na ferramenta (depósito pendente)...'
-        );
+        setSuccessMessage('Conta Hiove e depósito confirmados! Acesso liberado.');
         const session: UserSession = {
           email: cleanEmail,
           name: data.name || cleanEmail.split('@')[0],
           hasAccess: true,
-          hasDeposit: isFullyActive,
+          hasDeposit: true,
           isAdmin: false,
           validatedAt: Date.now(),
-          status: isFullyActive ? 'ACTIVE' : 'PENDING_DEPOSIT',
+          status: 'ACTIVE',
           source: data.cached ? 'CACHE' : 'HIOVE_API',
         };
 
@@ -107,12 +102,12 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       } else {
         setErrorMessage(
           data.message ||
-            'E-mail não cadastrado na corretora Hiove. Crie sua conta para liberar o acesso ao CandleX-IA.'
+            'Não conseguimos validar agora, tente em alguns minutos.'
         );
       }
     } catch {
       setErrorMessage(
-        'Não foi possível consultar a corretora Hiove no momento. Verifique sua conexão e tente novamente.'
+        'Não conseguimos validar agora, tente em alguns minutos.'
       );
     } finally {
       setLoading(false);
