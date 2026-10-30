@@ -23,12 +23,15 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
       sellerStrength: 'MODERADA',
       dominantForce: 'EQUILIBRADO',
       rejectionCandle: false,
+      rejectionDirection: null,
       engulfingPattern: null,
       candleSequences: { color: 'GREEN', count: 0 },
       exhaustionDetected: false,
       momentumAccelerating: false,
       bos: false,
+      bosDirection: null,
       choch: false,
+      chochDirection: null,
       activeOrderBlock: null,
       activeFVG: null,
       liquiditySweep: null,
@@ -100,10 +103,11 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   const upperWick = latest.high - Math.max(latest.close, latest.open);
   const lowerWick = Math.min(latest.close, latest.open) - latest.low;
 
-  // Rejection: Pinbar with wick at least 2x body and representing > 55% of total candle range
-  const isPinbarBullish = lowerWick >= bodySize * 1.8 && lowerWick >= recentRange * 0.5;
-  const isPinbarBearish = upperWick >= bodySize * 1.8 && upperWick >= recentRange * 0.5;
+  // Rejection: Pinbar with wick at least 1.6x body and representing > 45% of total candle range
+  const isPinbarBullish = lowerWick >= bodySize * 1.6 && lowerWick >= recentRange * 0.45;
+  const isPinbarBearish = upperWick >= bodySize * 1.6 && upperWick >= recentRange * 0.45;
   const rejectionCandle = isPinbarBullish || isPinbarBearish;
+  const rejectionDirection: 'BULLISH' | 'BEARISH' | null = isPinbarBullish ? 'BULLISH' : (isPinbarBearish ? 'BEARISH' : null);
 
   // Engulfing pattern
   let engulfingPattern: 'BULLISH' | 'BEARISH' | null = null;
@@ -300,7 +304,9 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   // 5. Smart Money Concepts (SMC)
   // BOS (Break of structure) & CHoCH (Change of character)
   let bos = false;
+  let bosDirection: 'BULLISH' | 'BEARISH' | null = null;
   let choch = false;
+  let chochDirection: 'BULLISH' | 'BEARISH' | null = null;
   let liquiditySweep: 'HIGH' | 'LOW' | null = null;
 
   // Recent swing high/low
@@ -314,15 +320,19 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   // BOS: close above recent swing high in uptrend or close below recent swing low in downtrend
   if (trend === 'ALTA' && latest.close > recentSwingHigh) {
     bos = true;
+    bosDirection = 'BULLISH';
   } else if (trend === 'BAIXA' && latest.close < recentSwingLow) {
     bos = true;
+    bosDirection = 'BEARISH';
   }
 
   // CHoCH: trend reversal break
   if (trend === 'BAIXA' && latest.close > recentSwingHigh) {
     choch = true;
+    chochDirection = 'BULLISH';
   } else if (trend === 'ALTA' && latest.close < recentSwingLow) {
     choch = true;
+    chochDirection = 'BEARISH';
   }
 
   // Liquidity sweep: wick probed beyond swing high/low, but candle closed back inside
@@ -496,12 +506,15 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     sellerStrength,
     dominantForce,
     rejectionCandle,
+    rejectionDirection,
     engulfingPattern,
     candleSequences: { color: sequenceColor, count: sequenceCount },
     exhaustionDetected,
     momentumAccelerating,
     bos,
+    bosDirection,
     choch,
+    chochDirection,
     activeOrderBlock,
     activeFVG,
     liquiditySweep,
@@ -546,212 +559,235 @@ export function calculateConfluences(
   analysis: MarketAnalysis,
   settings: AppSettings
 ): ConfluenceBreakdown {
-  const { weights, thresholds } = settings;
+  const { weights, thresholds, analysisProfile = 'MODERADA' } = settings;
   const reasons: string[] = [];
 
-  let callScore = 0;
-  let putScore = 0;
-
-  // 1. Market Structure (Weight: default 25)
-  let msPoints = 0;
-  if (analysis.trend === 'ALTA') {
-    msPoints += 18;
-    reasons.push('Tendência principal de ALTA confirmada');
-  } else if (analysis.trend === 'BAIXA') {
-    msPoints += 18;
-    reasons.push('Tendência principal de BAIXA confirmada');
-  } else {
-    msPoints += 5; // Lateral / sem clareza
-  }
-
-  if (analysis.dominantForce === 'COMPRADOR' && analysis.trend === 'ALTA') {
-    msPoints += 7;
-    reasons.push('Domínio comprador alinhado à tendência');
-  } else if (analysis.dominantForce === 'VENDEDOR' && analysis.trend === 'BAIXA') {
-    msPoints += 7;
-    reasons.push('Domínio vendedor alinhado à tendência');
-  }
-
-  const normalizedMS = Math.min(weights.marketStructure, (msPoints / 25) * weights.marketStructure);
-  if (analysis.trend === 'ALTA') callScore += normalizedMS;
-  if (analysis.trend === 'BAIXA') putScore += normalizedMS;
-
-  // 2. Price Action (Weight: default 25)
   let paCall = 0;
   let paPut = 0;
+  let srCall = 0;
+  let srPut = 0;
+  let smcCall = 0;
+  let smcPut = 0;
+  let msCall = 0;
+  let msPut = 0;
+  let indCall = 0;
+  let indPut = 0;
 
+  // 1. ESTRUTURA DE MERCADO (Weight: default 25)
+  if (analysis.trend === 'ALTA') {
+    msCall += 18;
+    reasons.push('Tendência principal de ALTA confirmada');
+  } else if (analysis.trend === 'BAIXA') {
+    msPut += 18;
+    reasons.push('Tendência principal de BAIXA confirmada');
+  }
+
+  if (analysis.dominantForce === 'COMPRADOR') {
+    msCall += 7;
+    if (analysis.trend === 'ALTA') reasons.push('Domínio comprador alinhado à tendência');
+  } else if (analysis.dominantForce === 'VENDEDOR') {
+    msPut += 7;
+    if (analysis.trend === 'BAIXA') reasons.push('Domínio vendedor alinhado à tendência');
+  }
+
+  const normalizedMSCall = Math.min(weights.marketStructure, (msCall / 25) * weights.marketStructure);
+  const normalizedMSPut = Math.min(weights.marketStructure, (msPut / 25) * weights.marketStructure);
+
+  // 2. PRICE ACTION (Weight: default 25)
+  // Engolfo
   if (analysis.engulfingPattern === 'BULLISH') {
     paCall += 15;
-    reasons.push('Padrão Engolfo de Alta com forte expressão');
+    reasons.push('Padrão Engolfo de ALTA com forte absorção');
   } else if (analysis.engulfingPattern === 'BEARISH') {
     paPut += 15;
-    reasons.push('Padrão Engolfo de Baixa com forte expressão');
+    reasons.push('Padrão Engolfo de BAIXA com forte absorção');
   }
 
-  if (analysis.rejectionCandle) {
-    if (analysis.buyerStrength === 'FORTE' || analysis.trend === 'ALTA') {
-      paCall += 10;
-      reasons.push('Rejeição em mínima com pavio inferior expressivo');
-    } else if (analysis.sellerStrength === 'FORTE' || analysis.trend === 'BAIXA') {
-      paPut += 10;
-      reasons.push('Rejeição em máxima com pavio superior expressivo');
-    }
+  // Pinbar / Rejeição de pavio
+  if (analysis.rejectionDirection === 'BULLISH') {
+    paCall += 14;
+    reasons.push('Rejeição em mínima com pavio inferior longo (Martelo Bullish)');
+  } else if (analysis.rejectionDirection === 'BEARISH') {
+    paPut += 14;
+    reasons.push('Rejeição em máxima com pavio superior longo (Estrela Cadente Bearish)');
   }
 
+  // Aceleração de fluxo
   if (analysis.momentumAccelerating) {
-    if (analysis.dominantForce === 'COMPRADOR') {
-      paCall += 7;
+    if (analysis.dominantForce === 'COMPRADOR' || analysis.candleSequences.color === 'GREEN') {
+      paCall += 8;
       reasons.push('Aceleração de fluxo comprador');
-    } else if (analysis.dominantForce === 'VENDEDOR') {
-      paPut += 7;
+    } else if (analysis.dominantForce === 'VENDEDOR' || analysis.candleSequences.color === 'RED') {
+      paPut += 8;
       reasons.push('Aceleração de fluxo vendedor');
     }
   }
 
+  // Exaustão
   if (analysis.exhaustionDetected) {
     if (analysis.candleSequences.color === 'RED') {
-      paCall += 8;
-      reasons.push('Exaustão vendedora após sequência de candles');
+      paCall += 9;
+      reasons.push('Exaustão vendedora após sequência de velas vermelhas');
     } else if (analysis.candleSequences.color === 'GREEN') {
-      paPut += 8;
-      reasons.push('Exaustão compradora após sequência de candles');
+      paPut += 9;
+      reasons.push('Exaustão compradora após sequência de velas verdes');
     }
   }
 
   const normalizedPACall = Math.min(weights.priceAction, (paCall / 25) * weights.priceAction);
   const normalizedPAPut = Math.min(weights.priceAction, (paPut / 25) * weights.priceAction);
 
-  // 3. Support & Resistance (Weight: default 20)
-  let srCall = 0;
-  let srPut = 0;
-
+  // 3. SUPORTE E RESISTÊNCIA (Weight: default 20)
   if (analysis.nearSupport) {
-    srCall += 16;
-    reasons.push('Preço testando zona chave de SUPORTE com rejeição');
+    srCall += 18;
+    reasons.push('Preço em zona chave de SUPORTE com rejeição compradora');
   }
   if (analysis.nearResistance) {
-    srPut += 16;
-    reasons.push('Preço testando zona chave de RESISTÊNCIA com rejeição');
+    srPut += 18;
+    reasons.push('Preço em zona chave de RESISTÊNCIA com rejeição vendedora');
   }
 
-  // Penalize consolidation/chop
   if (analysis.inConsolidation) {
-    srCall = Math.max(0, srCall - 10);
-    srPut = Math.max(0, srPut - 10);
-    reasons.push('Mercado em consolidação estreita (filtro anti-ruído)');
+    if (analysisProfile === 'CONSERVADORA') {
+      srCall = 0;
+      srPut = 0;
+      reasons.push('Mercado em consolidação (filtrado no modo Conservador)');
+    } else {
+      srCall = Math.max(0, srCall - 6);
+      srPut = Math.max(0, srPut - 6);
+    }
   }
 
   const normalizedSRCall = Math.min(weights.supportResistance, (srCall / 20) * weights.supportResistance);
   const normalizedSRPut = Math.min(weights.supportResistance, (srPut / 20) * weights.supportResistance);
 
-  // 4. Smart Money Concepts (SMC) (Weight: default 20)
-  let smcCall = 0;
-  let smcPut = 0;
-
-  if (analysis.choch) {
-    if (analysis.trend === 'ALTA' || analysis.dominantForce === 'COMPRADOR') {
-      smcCall += 12;
-      reasons.push('SMC: Quebra de Caráter (CHoCH) para alta');
-    } else {
-      smcPut += 12;
-      reasons.push('SMC: Quebra de Caráter (CHoCH) para baixa');
-    }
-  } else if (analysis.bos) {
-    if (analysis.trend === 'ALTA') {
-      smcCall += 10;
-      reasons.push('SMC: Rompimento de Estrutura (BOS) a favor da alta');
-    } else if (analysis.trend === 'BAIXA') {
-      smcPut += 10;
-      reasons.push('SMC: Rompimento de Estrutura (BOS) a favor da baixa');
-    }
+  // 4. SMART MONEY CONCEPTS (SMC) (Weight: default 20)
+  // CHoCH (Quebra de Caráter)
+  if (analysis.chochDirection === 'BULLISH') {
+    smcCall += 14;
+    reasons.push('SMC: Quebra de Caráter (CHoCH) de reversão para ALTA');
+  } else if (analysis.chochDirection === 'BEARISH') {
+    smcPut += 14;
+    reasons.push('SMC: Quebra de Caráter (CHoCH) de reversão para BAIXA');
   }
 
+  // BOS (Rompimento Estrutural)
+  if (analysis.bosDirection === 'BULLISH') {
+    smcCall += 10;
+    reasons.push('SMC: Rompimento Estrutural (BOS) a favor da ALTA');
+  } else if (analysis.bosDirection === 'BEARISH') {
+    smcPut += 10;
+    reasons.push('SMC: Rompimento Estrutural (BOS) a favor da BAIXA');
+  }
+
+  // Liquidity Sweep
   if (analysis.liquiditySweep === 'LOW') {
     smcCall += 12;
-    reasons.push('SMC: Varredura de Liquidez (Liquidity Sweep) em fundos');
+    reasons.push('SMC: Captura de Liquidez em fundos com rejeição imediata');
   } else if (analysis.liquiditySweep === 'HIGH') {
     smcPut += 12;
-    reasons.push('SMC: Varredura de Liquidez (Liquidity Sweep) em topos');
+    reasons.push('SMC: Captura de Liquidez em topos com rejeição imediata');
   }
 
-  if (analysis.activeOrderBlock) {
-    if (analysis.activeOrderBlock.type === 'BULLISH' && !analysis.activeOrderBlock.mitigated) {
-      smcCall += 8;
-      reasons.push('SMC: Order Block comprador institucional ativo');
-    } else if (analysis.activeOrderBlock.type === 'BEARISH' && !analysis.activeOrderBlock.mitigated) {
-      smcPut += 8;
-      reasons.push('SMC: Order Block vendedor institucional ativo');
+  // Order Block
+  if (analysis.activeOrderBlock && !analysis.activeOrderBlock.mitigated) {
+    if (analysis.activeOrderBlock.type === 'BULLISH') {
+      smcCall += 10;
+      reasons.push('SMC: Order Block comprador institucional ativado');
+    } else if (analysis.activeOrderBlock.type === 'BEARISH') {
+      smcPut += 10;
+      reasons.push('SMC: Order Block vendedor institucional ativado');
     }
   }
 
+  // Fair Value Gap (FVG)
   if (analysis.activeFVG) {
     if (analysis.activeFVG.type === 'BULLISH') {
-      smcCall += 6;
-      reasons.push('SMC: Desequilíbrio Fair Value Gap (FVG) comprador');
+      smcCall += 8;
+      reasons.push('SMC: Desequilíbrio institucional FVG comprador preenchido');
     } else if (analysis.activeFVG.type === 'BEARISH') {
-      smcPut += 6;
-      reasons.push('SMC: Desequilíbrio Fair Value Gap (FVG) vendedor');
+      smcPut += 8;
+      reasons.push('SMC: Desequilíbrio institucional FVG vendedor preenchido');
     }
   }
 
   const normalizedSMCCall = Math.min(weights.smc, (smcCall / 20) * weights.smc);
   const normalizedSMCPut = Math.min(weights.smc, (smcPut / 20) * weights.smc);
 
-  // 5. Volatility Context (Weight: default 10)
+  // 5. VOLATILIDADE (Weight: default 10)
   let volScore = 0;
   if (analysis.volatilityStatus === 'NORMAL') {
     volScore = weights.volatility;
-    reasons.push('Volatilidade saudável para tempo de expiração curto');
   } else if (analysis.volatilityStatus === 'ALTA') {
-    volScore = weights.volatility * 0.7; // slight risk
-    reasons.push('Volatilidade elevada — expansão de spreads');
+    volScore = weights.volatility * 0.7;
   } else {
-    volScore = weights.volatility * 0.3; // low liquidity risk
+    volScore = weights.volatility * 0.4;
   }
 
-  // 6. Direct TradingView Signal Confluence
-  let tvCall = 0;
-  let tvPut = 0;
+  // 6. INDICADORES TÉCNICOS & TRADINGVIEW DIRECT (RSI, MACD, EMAs)
   if (analysis.tradingView) {
     if (analysis.tradingView.recommendation === 'FORTE COMPRA') {
-      tvCall += 12;
-      reasons.push('TradingView: FORTE COMPRA (Osciladores & Médias alinhadas)');
+      indCall += 14;
+      reasons.push('TradingView: FORTE COMPRA (Consenso técnico institucional)');
     } else if (analysis.tradingView.recommendation === 'COMPRA') {
-      tvCall += 8;
-      reasons.push('TradingView: Indicação técnica de COMPRA');
+      indCall += 8;
+      reasons.push('TradingView: Indicação de COMPRA');
     } else if (analysis.tradingView.recommendation === 'FORTE VENDA') {
-      tvPut += 12;
-      reasons.push('TradingView: FORTE VENDA (Osciladores & Médias alinhadas)');
+      indPut += 14;
+      reasons.push('TradingView: FORTE VENDA (Consenso técnico institucional)');
     } else if (analysis.tradingView.recommendation === 'VENDA') {
-      tvPut += 8;
-      reasons.push('TradingView: Indicação técnica de VENDA');
+      indPut += 8;
+      reasons.push('TradingView: Indicação de VENDA');
     }
 
-    if (analysis.tradingView.rsiCondition === 'SOBREVENDIDO') {
-      tvCall += 6;
-      reasons.push(`TradingView RSI (${analysis.tradingView.rsi}): Região de Sobrevenda extrema`);
-    } else if (analysis.tradingView.rsiCondition === 'SOBRECOMPRADO') {
-      tvPut += 6;
-      reasons.push(`TradingView RSI (${analysis.tradingView.rsi}): Região de Sobrecompra extrema`);
+    // RSI
+    if (analysis.tradingView.rsiCondition === 'SOBREVENDIDO' || analysis.tradingView.rsi <= 32) {
+      indCall += 12;
+      reasons.push(`RSI (${analysis.tradingView.rsi}): Região de SOBREVENDA (Repique de Alta)`);
+    } else if (analysis.tradingView.rsiCondition === 'SOBRECOMPRADO' || analysis.tradingView.rsi >= 68) {
+      indPut += 12;
+      reasons.push(`RSI (${analysis.tradingView.rsi}): Região de SOBRECOMPRA (Correção de Baixa)`);
+    }
+
+    // MACD
+    if (analysis.tradingView.macdSignal === 'BULLISH') {
+      indCall += 8;
+      reasons.push('MACD: Cruzamento comprador com histograma de alta');
+    } else if (analysis.tradingView.macdSignal === 'BEARISH') {
+      indPut += 8;
+      reasons.push('MACD: Cruzamento vendedor com histograma de baixa');
+    }
+
+    // EMA Cross
+    if (analysis.tradingView.emaCross === 'ALTA') {
+      indCall += 6;
+      reasons.push('EMAs: Médias móveis alinhadas para ALTA');
+    } else if (analysis.tradingView.emaCross === 'BAIXA') {
+      indPut += 6;
+      reasons.push('EMAs: Médias móveis alinhadas para BAIXA');
     }
   }
 
+  const normalizedIndCall = Math.min(15, indCall * 0.45);
+  const normalizedIndPut = Math.min(15, indPut * 0.45);
+
+  // SOMA TOTAL PONDERADA
   const totalCall = Math.round(
-    (analysis.trend === 'ALTA' ? normalizedMS : 0) +
+    normalizedMSCall +
     normalizedPACall +
     normalizedSRCall +
     normalizedSMCCall +
-    volScore +
-    tvCall * 0.4
+    normalizedIndCall +
+    volScore * 0.5
   );
 
   const totalPut = Math.round(
-    (analysis.trend === 'BAIXA' ? normalizedMS : 0) +
+    normalizedMSPut +
     normalizedPAPut +
     normalizedSRPut +
     normalizedSMCPut +
-    volScore +
-    tvPut * 0.4
+    normalizedIndPut +
+    volScore * 0.5
   );
 
   let direction: SignalDirection | 'NEUTRO' = 'NEUTRO';
@@ -761,27 +797,36 @@ export function calculateConfluences(
   let srScore = 0;
   let smcFinalScore = 0;
 
-  if (totalCall >= totalPut && totalCall >= 50 && !analysis.inConsolidation) {
+  const scoreDiff = totalCall - totalPut;
+
+  // Ajuste fino dos limiares de acordo com o modo/perfil
+  const minThreshold = analysisProfile === 'CONSERVADORA' ? 58 : (analysisProfile === 'AGRESSIVA' ? 48 : 52);
+  const minAdvantage = analysisProfile === 'CONSERVADORA' ? 5 : 3;
+
+  if (analysis.inConsolidation && analysisProfile === 'CONSERVADORA') {
+    direction = 'NEUTRO';
+    totalScore = Math.max(totalCall, totalPut);
+  } else if (scoreDiff >= minAdvantage && totalCall >= minThreshold) {
     direction = 'CALL';
-    totalScore = Math.min(100, totalCall);
-    msScore = analysis.trend === 'ALTA' ? normalizedMS : 0;
+    totalScore = Math.min(98, totalCall);
+    msScore = normalizedMSCall;
     paScore = normalizedPACall;
     srScore = normalizedSRCall;
     smcFinalScore = normalizedSMCCall;
-  } else if (totalPut > totalCall && totalPut >= 50 && !analysis.inConsolidation) {
+  } else if (scoreDiff <= -minAdvantage && totalPut >= minThreshold) {
     direction = 'PUT';
-    totalScore = Math.min(100, totalPut);
-    msScore = analysis.trend === 'BAIXA' ? normalizedMS : 0;
+    totalScore = Math.min(98, totalPut);
+    msScore = normalizedMSPut;
     paScore = normalizedPAPut;
     srScore = normalizedSRPut;
     smcFinalScore = normalizedSMCPut;
   } else {
     direction = 'NEUTRO';
     totalScore = Math.max(totalCall, totalPut);
-    msScore = 5;
-    paScore = 5;
-    srScore = 5;
-    smcFinalScore = 5;
+    msScore = Math.round((normalizedMSCall + normalizedMSPut) / 2);
+    paScore = Math.round((normalizedPACall + normalizedPAPut) / 2);
+    srScore = Math.round((normalizedSRCall + normalizedSRPut) / 2);
+    smcFinalScore = Math.round((normalizedSMCCall + normalizedSMCPut) / 2);
   }
 
   let classification: ConfluenceBreakdown['classification'] = 'SEM ENTRADA';

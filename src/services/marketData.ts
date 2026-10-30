@@ -259,7 +259,7 @@ export function generateDeterministicCandles(asset: Asset, timeframe: TimeFrame,
     const wave4h = Math.cos((tSec / 14400) * 2 * Math.PI) * volatility * 4.5;
     const wave1h = Math.sin((tSec / 3600) * 2 * Math.PI) * volatility * 2.2;
     const wave15m = Math.cos((tSec / 900) * 2 * Math.PI) * volatility * 1.1;
-    const rand = (seededRandom(assetHash ^ tSec) - 0.495) * volatility * 1.8;
+    const rand = (seededRandom(assetHash ^ tSec) - 0.5) * volatility * 1.8;
     return basePrice + wave24h + wave4h + wave1h + wave15m + rand;
   };
 
@@ -637,7 +637,7 @@ export class MarketDataManager {
       // Micro-oscilação natural em dias úteis ou fallback para cripto
       if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
         const volatility = this.currentAsset.pipDecimals === 5 ? 0.00004 : (this.currentAsset.pipDecimals === 3 ? 0.015 : 4.5);
-        const delta = (Math.random() - 0.495) * volatility;
+        const delta = (Math.random() - 0.5) * volatility;
         this.currentAsset.currentPrice = Number((this.currentAsset.currentPrice + delta).toFixed(this.currentAsset.pipDecimals));
         this.updateCurrentCandle(this.currentAsset.currentPrice);
       }

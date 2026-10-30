@@ -273,21 +273,25 @@ export class SignalEngine {
         const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
         const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
 
+        const range = Math.max(currentCandle.high - currentCandle.low, 0.00001);
+        const minBodyReversal = range * 0.45;
+        const minWickRejection = range * 0.40;
+
         // Cancelamento estrito APENAS se houver uma reversão catastrófica real contra a operação:
-        // 1) Para CALL: a vela virou fortemente vermelha contra a compra ou confluência virou PUT forte (>= 70)
-        // 2) Para PUT: a vela virou fortemente verde contra a venda ou confluência virou CALL forte (>= 70)
-        // 3) Rejeição extrema: pinbar gigante com pavio contrário mais de 2.5x o corpo
+        // 1) Para CALL: a vela virou fortemente vermelha contra a compra ou confluência virou PUT forte (>= 72)
+        // 2) Para PUT: a vela virou fortemente verde contra a venda ou confluência virou CALL forte (>= 72)
+        // 3) Rejeição extrema: pinbar gigante com pavio contrário mais de 2.2x o corpo
         const isCallReversal = this.activePreAlert.direction === 'CALL' && (
-          (currentCandle.close < currentCandle.open && body > 0.00035) ||
-          (confluences.direction === 'PUT' && confluences.totalScore >= 70)
+          (currentCandle.close < currentCandle.open && body > minBodyReversal) ||
+          (confluences.direction === 'PUT' && confluences.totalScore >= 72)
         );
         const isPutReversal = this.activePreAlert.direction === 'PUT' && (
-          (currentCandle.close > currentCandle.open && body > 0.00035) ||
-          (confluences.direction === 'CALL' && confluences.totalScore >= 70)
+          (currentCandle.close > currentCandle.open && body > minBodyReversal) ||
+          (confluences.direction === 'CALL' && confluences.totalScore >= 72)
         );
         const isExtremeWickRejection = (
-          (this.activePreAlert.direction === 'CALL' && upperWick > body * 2.5 && upperWick > 0.00015) ||
-          (this.activePreAlert.direction === 'PUT' && lowerWick > body * 2.5 && lowerWick > 0.00015)
+          (this.activePreAlert.direction === 'CALL' && upperWick > body * 2.2 && upperWick > minWickRejection) ||
+          (this.activePreAlert.direction === 'PUT' && lowerWick > body * 2.2 && lowerWick > minWickRejection)
         );
 
         let cancelReason = '';
@@ -509,20 +513,25 @@ export class SignalEngine {
       if (isExpired) {
         let outcome: TradeResult = 'EMPATE';
         const finalExitPrice = currentPrice;
+        const entryPrice = trade.candleOpenPrice || trade.entryPrice;
 
-        if (trade.direction === 'CALL') {
-          if (finalExitPrice > trade.entryPrice) outcome = 'WIN';
-          else if (finalExitPrice < trade.entryPrice) outcome = 'LOSS';
-          else outcome = 'EMPATE';
+        const diff = finalExitPrice - entryPrice;
+        // Tolerância de Doji minúsculo (apenas se for exatamente no mesmo preço)
+        const pipTolerance = (trade.asset.includes('JPY') || trade.asset.includes('BTC') || trade.asset.includes('ETH')) ? 0.005 : 0.000005;
+
+        if (Math.abs(diff) <= pipTolerance) {
+          outcome = 'EMPATE';
+        } else if (trade.direction === 'CALL') {
+          outcome = diff > 0 ? 'WIN' : 'LOSS';
         } else {
-          if (finalExitPrice < trade.entryPrice) outcome = 'WIN';
-          else if (finalExitPrice > trade.entryPrice) outcome = 'LOSS';
-          else outcome = 'EMPATE';
+          // PUT: ganha quando fecha abaixo da taxa de abertura
+          outcome = diff < 0 ? 'WIN' : 'LOSS';
         }
 
         trade.result = outcome;
         trade.exitPrice = finalExitPrice;
         trade.candleClosePrice = finalExitPrice;
+        trade.entryPrice = entryPrice;
         trade.resolvedAt = Date.now();
 
         // Record as last resolved trade for feedback
@@ -530,7 +539,7 @@ export class SignalEngine {
         this.lastResolvedTime = Date.now();
 
         console.log(
-          `[SignalEngine] Operação Finalizada: ${trade.asset} ${trade.direction} -> ${outcome} | Abertura: ${trade.entryPrice} -> Fechamento: ${trade.exitPrice}`
+          `[SignalEngine] Operação Finalizada: ${trade.asset} ${trade.direction} -> ${outcome} | Taxa Entrada: ${trade.entryPrice} -> Taxa Fechamento: ${trade.exitPrice}`
         );
 
         // Update record in history
@@ -850,7 +859,8 @@ export class SignalEngine {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            this.signalHistory = parsed;
+            // Filtrar apenas sinais legítimos executados (eliminando sinais fictícios gerados por seeds anteriores)
+            this.signalHistory = parsed.filter((s) => !s.id.startsWith('seed-'));
             const nowSec = Math.floor(Date.now() / 1000);
             this.pendingTrades = this.signalHistory.filter(
               (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec
@@ -860,87 +870,12 @@ export class SignalEngine {
         }
       }
     } catch {}
-    this.signalHistory = generateInitialSeedSignals();
+    this.signalHistory = [];
   }
 }
 
 function generateInitialSeedSignals(): SignalRecord[] {
-  const assets: { symbol: string; basePrice: number; decimals: number }[] = [
-    { symbol: 'EUR/USD', basePrice: 1.08450, decimals: 5 },
-    { symbol: 'GBP/USD', basePrice: 1.29820, decimals: 5 },
-    { symbol: 'USD/JPY', basePrice: 152.450, decimals: 3 },
-    { symbol: 'AUD/USD', basePrice: 0.66520, decimals: 5 },
-    { symbol: 'USD/CAD', basePrice: 1.38210, decimals: 5 },
-    { symbol: 'EUR/JPY', basePrice: 165.230, decimals: 3 },
-    { symbol: 'GBP/JPY', basePrice: 197.850, decimals: 3 },
-    { symbol: 'BTC/USD', basePrice: 68520.00, decimals: 2 },
-    { symbol: 'ETH/USD', basePrice: 2640.50, decimals: 2 },
-  ];
-
-  const now = Date.now();
-  const records: SignalRecord[] = [];
-
-  const reasonsList = [
-    ['Rejeição em Order Block Bullish', 'BOS confirmado', 'Fluxo comprador acelerado'],
-    ['Rejeição em Order Block Bearish', 'CHoCH confirmado', 'Exaustão compradora'],
-    ['Rompimento com volume de suporte chave', 'FVG identificado no M1', 'RSI sobrevendido'],
-    ['Liquidity sweep em topo anterior', 'Pin bar de rejeição vendedora', 'Tendência de baixa consolidada'],
-    ['Fair Value Gap preenchido', 'Retração em zona 61.8% de Fibonacci', 'Fluxo direcional forte'],
-    ['Engolfo de alta após absorção', 'Confluência TradingView Compra Forte', 'Estrutura altista mantida'],
-    ['Dupla rejeição em resistência diária', 'Falso rompimento do topo', 'Convergência MACD vendedora'],
-    ['Quebra de estrutura (BOS)', 'Zonas de liquidez capturadas', 'Candle de impulsão'],
-  ];
-
-  assets.forEach((ast, aIdx) => {
-    // Generate both M1 and M5 signals
-    (['M1', 'M5'] as const).forEach((tf) => {
-      // 5-9 historical trades for each asset/tf combo, with typical ~75-85% win rate
-      const count = tf === 'M1' ? 8 : 5;
-      for (let i = 0; i < count; i++) {
-        const minutesAgo = (aIdx * 20) + (i * (tf === 'M1' ? 6 : 25)) + 4;
-        const timeMs = now - minutesAgo * 60 * 1000;
-        const isWin = (i % 5 !== 3); // ~80% win rate
-        const isTie = (i === 7 && tf === 'M1');
-        const result: TradeResult = isTie ? 'EMPATE' : (isWin ? 'WIN' : 'LOSS');
-        const direction: 'CALL' | 'PUT' = i % 2 === 0 ? 'CALL' : 'PUT';
-        const score = 76 + ((i * 7 + aIdx * 3) % 20); // 76 - 95 score
-        const variance = (0.00015 * ((i % 3) + 1));
-        const entry = +(ast.basePrice + (direction === 'CALL' ? -variance : variance)).toFixed(ast.decimals);
-        let exit = entry;
-        if (result === 'WIN') {
-          exit = +(direction === 'CALL' ? entry + variance * 1.5 : entry - variance * 1.5).toFixed(ast.decimals);
-        } else if (result === 'LOSS') {
-          exit = +(direction === 'CALL' ? entry - variance * 1.2 : entry + variance * 1.2).toFixed(ast.decimals);
-        }
-
-        const dateObj = new Date(timeMs);
-        const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
-        const reasons = reasonsList[(aIdx + i) % reasonsList.length];
-
-        records.push({
-          id: `seed-${ast.symbol}-${tf}-${i}-${timeMs}`,
-          timestamp: timeMs,
-          formattedTime,
-          asset: ast.symbol,
-          timeframe: tf,
-          expiration: tf === 'M1' ? '1m' : '5m',
-          direction,
-          stage: 'CONFIRMED',
-          confluenceScore: score,
-          entryPrice: entry,
-          exitPrice: exit,
-          result,
-          reasons,
-          candleCloseTime: Math.floor(timeMs / 1000),
-          expirationTimestamp: Math.floor(timeMs / 1000) + (tf === 'M1' ? 60 : 300),
-          isEstimatedResult: false,
-        });
-      }
-    });
-  });
-
-  // Sort descending by timestamp
-  return records.sort((a, b) => b.timestamp - a.timestamp);
+  return [];
 }
 
 export const signalEngine = new SignalEngine();

@@ -216,7 +216,7 @@ function evaluateAiConfluences(tech: TechnicalOverviewData) {
     reasons.push(`ADX (${tech.adx.value} pts): Força direcional confirmada`);
   }
 
-  const direction: 'CALL' | 'PUT' = callPoints >= putPoints ? 'CALL' : 'PUT';
+  const direction: 'CALL' | 'PUT' = putPoints > callPoints ? 'PUT' : (callPoints > putPoints ? 'CALL' : (tech.majorTrend.status === 'BAIXA' ? 'PUT' : 'CALL'));
   const dominantPoints = direction === 'CALL' ? callPoints : putPoints;
   const score = Math.min(95, Math.max(76, Math.round(dominantPoints * 0.85 + 18)));
 

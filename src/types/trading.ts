@@ -56,6 +56,7 @@ export interface MarketAnalysis {
   
   // Price Action
   rejectionCandle: boolean;
+  rejectionDirection?: 'BULLISH' | 'BEARISH' | null;
   engulfingPattern: 'BULLISH' | 'BEARISH' | null;
   candleSequences: {
     color: 'GREEN' | 'RED';
@@ -66,7 +67,9 @@ export interface MarketAnalysis {
 
   // SMC
   bos: boolean;
+  bosDirection?: 'BULLISH' | 'BEARISH' | null;
   choch: boolean;
+  chochDirection?: 'BULLISH' | 'BEARISH' | null;
   activeOrderBlock: OrderBlock | null;
   activeFVG: FairValueGap | null;
   liquiditySweep: 'HIGH' | 'LOW' | null;
