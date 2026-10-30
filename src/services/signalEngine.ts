@@ -238,22 +238,22 @@ export class SignalEngine {
 
     // 0. Configuração dinâmica dos limiares de acordo com o PERFIL DE ANÁLISE selecionado na Aba Técnica
     const profile = settings.analysisProfile || 'MODERADA';
-    let preAlertMinScore = 60;
+    let preAlertMinScore = 68;
     let confirmMinScore = 75;
 
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
       // Exige confluências fortíssimas para ganho imediato e assertivo (tiro de sniper)
-      preAlertMinScore = 75;
-      confirmMinScore = 85;
+      preAlertMinScore = 78;
+      confirmMinScore = 82;
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagens):
       // Foco em alavancagem de banca, capturando momentum e fluxos rápidos
-      preAlertMinScore = 50;
-      confirmMinScore = 62;
+      preAlertMinScore = 58;
+      confirmMinScore = 68;
     } else {
       // Moderada (Mediana):
-      preAlertMinScore = 60;
+      preAlertMinScore = 68;
       confirmMinScore = 75;
     }
 
@@ -299,36 +299,49 @@ export class SignalEngine {
         const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
 
         const range = Math.max(currentCandle.high - currentCandle.low, 0.00001);
-        const minBodyReversal = range * 0.45;
-        const minWickRejection = range * 0.40;
+        const minBodyReversal = range * 0.40;
+        const minWickRejection = range * 0.35;
 
-        // Cancelamento estrito APENAS se houver uma reversão catastrófica real contra a operação:
-        // 1) Para CALL: a vela virou fortemente vermelha contra a compra ou confluência virou PUT forte (>= 72)
-        // 2) Para PUT: a vela virou fortemente verde contra a venda ou confluência virou CALL forte (>= 72)
-        // 3) Rejeição extrema: pinbar gigante com pavio contrário mais de 2.2x o corpo
+        // 1. O sinal DEVE permanecer na MESMA DIREÇÃO do pré-alerta!
+        const directionMismatch = confluences.direction !== this.activePreAlert.direction;
+
+        // 2. A pontuação DEVE atingir o limiar mínimo de confirmação (confirmMinScore)
+        const scoreTooLow = confluences.totalScore < confirmMinScore;
+
+        // 3. Reversão de vela nos segundos finais
         const isCallReversal = this.activePreAlert.direction === 'CALL' && (
           (currentCandle.close < currentCandle.open && body > minBodyReversal) ||
-          (confluences.direction === 'PUT' && confluences.totalScore >= 72)
+          confluences.direction === 'PUT'
         );
         const isPutReversal = this.activePreAlert.direction === 'PUT' && (
           (currentCandle.close > currentCandle.open && body > minBodyReversal) ||
-          (confluences.direction === 'CALL' && confluences.totalScore >= 72)
+          confluences.direction === 'CALL'
         );
         const isExtremeWickRejection = (
-          (this.activePreAlert.direction === 'CALL' && upperWick > body * 2.2 && upperWick > minWickRejection) ||
-          (this.activePreAlert.direction === 'PUT' && lowerWick > body * 2.2 && lowerWick > minWickRejection)
+          (this.activePreAlert.direction === 'CALL' && upperWick > body * 1.8 && upperWick > minWickRejection) ||
+          (this.activePreAlert.direction === 'PUT' && lowerWick > body * 1.8 && lowerWick > minWickRejection)
         );
 
+        // 4. Bloqueio de consolidação sem extremo
+        const isConsolidationTrap = (profile === 'CONSERVADORA' || profile === 'MODERADA') &&
+          marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
+
         let cancelReason = '';
-        if (isCallReversal) {
-          cancelReason = 'Reversão forte contra a compra nos segundos finais. Ordem abortada.';
+        if (directionMismatch) {
+          cancelReason = 'Confluência perdeu direcionamento nos segundos finais. Ordem abortada para proteção.';
+        } else if (scoreTooLow) {
+          cancelReason = `Pontuação insuficiente no fechamento (${confluences.totalScore}/${confirmMinScore} pts). Cancelado para evitar LOSS.`;
+        } else if (isCallReversal) {
+          cancelReason = 'Vela virou vendedora nos segundos finais contra a compra. Ordem abortada.';
         } else if (isPutReversal) {
-          cancelReason = 'Reversão forte contra a venda nos segundos finais. Ordem abortada.';
+          cancelReason = 'Vela virou compradora nos segundos finais contra a venda. Ordem abortada.';
         } else if (isExtremeWickRejection) {
-          cancelReason = 'Pavio de rejeição extrema contra o movimento. Ordem cancelada para proteção.';
+          cancelReason = 'Pavio de rejeição forte contra o movimento. Ordem cancelada para proteção.';
+        } else if (isConsolidationTrap) {
+          cancelReason = 'Mercado lateralizado sem rejeição de extremidade. Proteção de banca acionada.';
         }
 
-        const shouldCancel = isCallReversal || isPutReversal || isExtremeWickRejection;
+        const shouldCancel = directionMismatch || scoreTooLow || isCallReversal || isPutReversal || isExtremeWickRejection || isConsolidationTrap;
 
         if (shouldCancel) {
           // CANCELAMENTO POR SEGURANÇA
@@ -351,7 +364,6 @@ export class SignalEngine {
           return;
         } else {
           // CONFIRMADO! Entrada confirmada entre 15s e 5s!
-          // A ordem em andamento e contagem de expiração iniciam na abertura da vela do sinal
           const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
           const targetCandleTime = currentCandle.time + tfSec;
           const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
@@ -365,8 +377,8 @@ export class SignalEngine {
             formattedTime,
             entryPrice: currentCandle.close,
             candleOpenPrice: currentCandle.close,
-            isEntered: false, // Capturará oficialmente a abertura da vela no entryTimestamp
-            confluenceScore: Math.max(confirmMinScore, this.activePreAlert.confluenceScore),
+            isEntered: false,
+            confluenceScore: confluences.totalScore,
             reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
             result: 'PENDING',
             candleCloseTime: entryTimestamp,
@@ -400,7 +412,7 @@ export class SignalEngine {
       } else if (
         confluences.direction !== 'NEUTRO' &&
         confluences.totalScore >= confirmMinScore &&
-        !(profile === 'CONSERVADORA' && marketAnalysis?.inConsolidation)
+        !(marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance))
       ) {
         // Confirmação direta instantânea de alta convicção que surgiu entre 15s e 5s
         const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
@@ -478,7 +490,7 @@ export class SignalEngine {
       return;
     }
 
-    const isConsolidationBlocked = profile === 'CONSERVADORA' && marketAnalysis?.inConsolidation;
+    const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
 
     if (
       remainingSec <= 60 &&

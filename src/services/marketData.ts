@@ -607,7 +607,7 @@ export class MarketDataManager {
               const k = data.k;
               const closePrice = parseFloat(k.c);
               this.currentAsset.currentPrice = closePrice;
-              this.updateCurrentCandle(closePrice);
+              this.updateCurrentCandle(closePrice, k);
             }
           } catch {}
         };
@@ -658,7 +658,7 @@ export class MarketDataManager {
     }, 500);
   }
 
-  private updateCurrentCandle(price: number) {
+  private updateCurrentCandle(price: number, binanceK?: any) {
     const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
     const nowMs = Date.now() + this.serverOffsetMs;
     const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
@@ -680,9 +680,9 @@ export class MarketDataManager {
       // Start new candle
       const newCandle: Candle = {
         time: currentBoundary,
-        open: last.close,
-        high: Math.max(last.close, price),
-        low: Math.min(last.close, price),
+        open: binanceK ? parseFloat(binanceK.o) : last.close,
+        high: binanceK ? Math.max(parseFloat(binanceK.h), price) : Math.max(last.close, price),
+        low: binanceK ? Math.min(parseFloat(binanceK.l), price) : Math.min(last.close, price),
         close: price,
         volume: 1,
         isClosed: false,
@@ -696,8 +696,14 @@ export class MarketDataManager {
     } else {
       // Update existing candle
       last.close = price;
-      if (price > last.high) last.high = price;
-      if (price < last.low) last.low = price;
+      if (binanceK) {
+        last.high = Math.max(last.high, parseFloat(binanceK.h));
+        last.low = Math.min(last.low, parseFloat(binanceK.l));
+        if (binanceK.x) last.isClosed = true;
+      } else {
+        if (price > last.high) last.high = price;
+        if (price < last.low) last.low = price;
+      }
       last.volume += 1;
     }
 
