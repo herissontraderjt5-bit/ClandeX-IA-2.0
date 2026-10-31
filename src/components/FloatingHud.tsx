@@ -280,7 +280,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const handlePerformLogout = () => {
     try {
       localStorage.removeItem('clandex_user_session');
-    } catch {}
+    } catch { }
     if (onLogout) {
       onLogout();
     } else {
@@ -339,7 +339,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           dragRef.current.posY = parsed.y;
         }
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -366,7 +366,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         setIsDragging(false);
         try {
           localStorage.setItem('clandex_hud_pos', JSON.stringify(position));
-        } catch {}
+        } catch { }
       }
     };
 
@@ -448,14 +448,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         if (typeof import.meta !== 'undefined' && import.meta.env) {
           clientApiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
         }
-      } catch {}
+      } catch { }
       if (!clientApiKey && typeof window !== 'undefined') {
         clientApiKey = localStorage.getItem('clandex_gemini_api_key') || '';
       }
       if (clientApiKey && clientApiKey.includes('AIzaSyDlckr22NxUjJXWVp9ENtPFxuDoBy2LFZ4')) {
         try {
           localStorage.removeItem('clandex_gemini_api_key');
-        } catch {}
+        } catch { }
         clientApiKey = '';
       }
 
@@ -514,7 +514,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 replyText = resp.text;
                 break;
               }
-            } catch {}
+            } catch { }
           }
         } catch (directClientErr) {
           console.warn('[ClandeX-IA Chat] Tentativa direta falhou, tentando fallback:', directClientErr);
@@ -547,7 +547,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           if (data && data.success && data.reply) {
             replyText = data.reply;
           }
-        } catch {}
+        } catch { }
       }
 
       if (replyText) {
@@ -743,7 +743,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
       navigator.clipboard.writeText(text);
       setCopiedSignal(true);
       setTimeout(() => setCopiedSignal(false), 2000);
-    } catch {}
+    } catch { }
   };
 
   if (isClosed) {
@@ -1039,11 +1039,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1">
             <button
               onClick={() => setActiveTab('sinal')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'sinal'
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'sinal'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-              }`}
+                }`}
             >
               <Zap className="w-3.5 h-3.5 text-cyan-400" />
               <span>Sinal</span>
@@ -1054,11 +1053,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
             <button
               onClick={() => setActiveTab('analise')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'analise'
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'analise'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-              }`}
+                }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
               <span>Técnica</span>
@@ -1066,11 +1064,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
             <button
               onClick={() => setActiveTab('voz')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'voz'
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'voz'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-              }`}
+                }`}
             >
               <Mic className="w-3.5 h-3.5 text-cyan-400" />
               <span>Voz 3D</span>
@@ -1083,11 +1080,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                activeTab === 'chat'
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'chat'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-              }`}
+                }`}
             >
               <MessageSquare className="w-3.5 h-3.5 text-neutral-400" />
               <span>Chat</span>
@@ -1099,24 +1095,23 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-cyan-950/90 via-[#0a1222] to-neutral-950 border-b border-cyan-500/30 text-[10px] font-mono">
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    liveVoice.status === 'speaking'
+                  className={`w-2 h-2 rounded-full ${liveVoice.status === 'speaking'
                       ? 'bg-cyan-400 animate-ping'
                       : liveVoice.status === 'listening'
-                      ? liveVoice.isMuted
-                        ? 'bg-amber-400'
-                        : 'bg-emerald-400 animate-pulse'
-                      : 'bg-amber-400 animate-pulse'
-                  }`}
+                        ? liveVoice.isMuted
+                          ? 'bg-amber-400'
+                          : 'bg-emerald-400 animate-pulse'
+                        : 'bg-amber-400 animate-pulse'
+                    }`}
                 />
                 <span className="font-bold text-white tracking-wide">
                   {liveVoice.status === 'speaking'
                     ? 'IA FALANDO...'
                     : liveVoice.status === 'listening'
-                    ? liveVoice.isMuted
-                      ? 'MIC MUTADO'
-                      : 'IA OUVINDO...'
-                    : 'CONECTANDO...'}
+                      ? liveVoice.isMuted
+                        ? 'MIC MUTADO'
+                        : 'IA OUVINDO...'
+                      : 'CONECTANDO...'}
                 </span>
                 <div className="flex items-center gap-0.5 h-2.5">
                   {[6, 12, 16, 10, 6, 14, 8].map((h, i) => {
@@ -1125,9 +1120,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     return (
                       <span
                         key={i}
-                        className={`w-0.5 rounded-full transition-all duration-75 ${
-                          liveVoice.status === 'speaking' ? 'bg-cyan-400' : 'bg-emerald-400'
-                        }`}
+                        className={`w-0.5 rounded-full transition-all duration-75 ${liveVoice.status === 'speaking' ? 'bg-cyan-400' : 'bg-emerald-400'
+                          }`}
                         style={{ height: `${barH}px` }}
                       />
                     );
@@ -1139,11 +1133,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 {liveVoice.status === 'listening' && (
                   <button
                     onClick={liveVoice.toggleMute}
-                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${
-                      liveVoice.isMuted
+                    className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${liveVoice.isMuted
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                         : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
-                    }`}
+                      }`}
                   >
                     {liveVoice.isMuted ? 'Desmutar' : 'Mutar'}
                   </button>
@@ -1238,23 +1231,22 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                 {/* 2. MAIN SIGNAL CARD (RESUMIDO COM EFEITOS VISUAIS TECNOLÓGICOS) */}
                 <div
-                  className={`p-3.5 rounded-2xl border transition-all duration-300 shadow-xl relative overflow-hidden backdrop-blur-md ${
-                    isTradeRunning
+                  className={`p-3.5 rounded-2xl border transition-all duration-300 shadow-xl relative overflow-hidden backdrop-blur-md ${isTradeRunning
                       ? isWinning
                         ? 'bg-gradient-to-b from-emerald-950/60 via-[#07121b] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.25)]'
                         : 'bg-gradient-to-b from-rose-950/60 via-[#180a12] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
                       : hasResolvedTrade
-                      ? lastResolvedTrade?.result === 'WIN'
-                        ? 'bg-gradient-to-b from-emerald-950/50 via-[#061214] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
-                        : 'bg-gradient-to-b from-rose-950/50 via-[#140810] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)]'
-                      : hasConfirmed
-                      ? latestConfirmedSignal?.direction === 'CALL'
-                        ? 'bg-gradient-to-b from-emerald-950/50 via-[#07131a] to-black border-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
-                        : 'bg-gradient-to-b from-rose-950/50 via-[#180812] to-black border-rose-500/80 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
-                      : hasPreAlert
-                      ? 'bg-gradient-to-b from-amber-950/50 via-[#140e07] to-black border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
-                      : 'bg-[#090e18]/90 border-cyan-500/25 shadow-inner'
-                  }`}
+                        ? lastResolvedTrade?.result === 'WIN'
+                          ? 'bg-gradient-to-b from-emerald-950/50 via-[#061214] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                          : 'bg-gradient-to-b from-rose-950/50 via-[#140810] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)]'
+                        : hasConfirmed
+                          ? latestConfirmedSignal?.direction === 'CALL'
+                            ? 'bg-gradient-to-b from-emerald-950/50 via-[#07131a] to-black border-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
+                            : 'bg-gradient-to-b from-rose-950/50 via-[#180812] to-black border-rose-500/80 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
+                          : hasPreAlert
+                            ? 'bg-gradient-to-b from-amber-950/50 via-[#140e07] to-black border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                            : 'bg-[#090e18]/90 border-cyan-500/25 shadow-inner'
+                    }`}
                 >
                   {/* Holographic background cyber line effect */}
                   <div className="absolute inset-0 bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:18px_18px] opacity-15 pointer-events-none" />
@@ -1265,15 +1257,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 shadow-sm ${alertBadgeClass}`}
                     >
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isTradeRunning
+                        className={`w-1.5 h-1.5 rounded-full ${isTradeRunning
                             ? 'bg-cyan-400 animate-ping'
                             : hasConfirmed
-                            ? 'bg-emerald-400 animate-ping'
-                            : hasPreAlert
-                            ? 'bg-amber-400 animate-pulse'
-                            : 'bg-cyan-400 animate-pulse'
-                        }`}
+                              ? 'bg-emerald-400 animate-ping'
+                              : hasPreAlert
+                                ? 'bg-amber-400 animate-pulse'
+                                : 'bg-cyan-400 animate-pulse'
+                          }`}
                       />
                       {alertStatusText}
                     </span>
@@ -1302,13 +1293,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   {hasResolvedTrade && lastResolvedTrade ? (
                     <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
                       <div
-                        className={`p-3 rounded-xl border text-center space-y-1.5 ${
-                          lastResolvedTrade.result === 'WIN'
+                        className={`p-3 rounded-xl border text-center space-y-1.5 ${lastResolvedTrade.result === 'WIN'
                             ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
                             : lastResolvedTrade.result === 'LOSS'
-                            ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
-                            : 'bg-neutral-900 border-neutral-700 text-neutral-300'
-                        }`}
+                              ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
+                              : 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                          }`}
                       >
                         <div className="text-base font-black font-mono tracking-wider flex items-center justify-center gap-2">
                           {lastResolvedTrade.result === 'WIN' ? (
@@ -1342,17 +1332,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     /* ESTÁGIO 2: OPERAÇÃO EM ANDAMENTO (CRONÔMETRO DE EXPIRAÇÃO ATÉ O ZERO!) */
                     <div className="space-y-2.5 relative z-10">
                       <div
-                        className={`p-2.5 rounded-xl border flex items-center justify-between ${
-                          isCallTrade
+                        className={`p-2.5 rounded-xl border flex items-center justify-between ${isCallTrade
                             ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300'
                             : 'bg-rose-500/15 border-rose-500/60 text-rose-300'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <div
-                            className={`p-2 rounded-lg ${
-                              isCallTrade ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
-                            }`}
+                            className={`p-2 rounded-lg ${isCallTrade ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                              }`}
                           >
                             {isCallTrade ? (
                               <ArrowUpRight className="w-5 h-5 stroke-[3]" />
@@ -1390,15 +1378,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                       {/* Status Dinâmico Resumido */}
                       <div
-                        className={`p-1.5 rounded-lg text-center font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 border ${
-                          remainingExpSec === 0
+                        className={`p-1.5 rounded-lg text-center font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 border ${remainingExpSec === 0
                             ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-300 animate-pulse'
                             : isWinning
-                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-                            : isTied
-                            ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
-                            : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
-                        }`}
+                              ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                              : isTied
+                                ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                                : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                          }`}
                       >
                         {remainingExpSec === 0 ? (
                           <span>FECHAMENTO DA VELA • REGISTRANDO RESULTADO FINAL...</span>
@@ -1451,17 +1438,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     /* ESTÁGIO 4: ENTRADA CONFIRMADA NA ABERTURA DA VELA */
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
-                        className={`p-3 rounded-xl border flex items-center justify-between ${
-                          latestConfirmedSignal.direction === 'CALL'
+                        className={`p-3 rounded-xl border flex items-center justify-between ${latestConfirmedSignal.direction === 'CALL'
                             ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
                             : 'bg-rose-500/25 border-rose-400 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <div
-                            className={`p-2 rounded-lg ${
-                              latestConfirmedSignal.direction === 'CALL' ? 'bg-emerald-400 text-black shadow-lg shadow-emerald-400/50' : 'bg-rose-500 text-white shadow-lg shadow-rose-500/50'
-                            }`}
+                            className={`p-2 rounded-lg ${latestConfirmedSignal.direction === 'CALL' ? 'bg-emerald-400 text-black shadow-lg shadow-emerald-400/50' : 'bg-rose-500 text-white shadow-lg shadow-rose-500/50'
+                              }`}
                           >
                             {latestConfirmedSignal.direction === 'CALL' ? (
                               <ArrowUpRight className="w-6 h-6 stroke-[3]" />
@@ -1762,11 +1747,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <button
                             key={tf}
                             onClick={() => onSelectTimeframe(tf)}
-                            className={`py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer text-center ${
-                              isSelected
+                            className={`py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer text-center ${isSelected
                                 ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                                 : 'bg-neutral-950/80 text-neutral-400 border border-neutral-800 hover:text-white hover:border-neutral-700'
-                            }`}
+                              }`}
                           >
                             {tf}
                           </button>
@@ -1792,11 +1776,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     {/* CONSERVADORA (Sniper) */}
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                        (settings.analysisProfile || 'MODERADA') === 'CONSERVADORA'
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'CONSERVADORA'
                           ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
                           : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-cyan-300">
                         <span>🎯 Sniper</span>
@@ -1810,11 +1793,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     {/* MODERADA (Mediana) */}
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('MODERADA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                        (settings.analysisProfile || 'MODERADA') === 'MODERADA'
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'MODERADA'
                           ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
                           : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-emerald-300">
                         <span>⚖️ Mediana</span>
@@ -1828,11 +1810,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     {/* AGRESSIVA (Alavancagem) */}
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                        (settings.analysisProfile || 'MODERADA') === 'AGRESSIVA'
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'AGRESSIVA'
                           ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
                           : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-amber-300">
                         <span>⚡ Alavancagem</span>
@@ -1847,13 +1828,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                 {/* 2. TENDÊNCIA MAIOR DE ACORDO COM O TIMEFRAME SELECIONADO */}
                 <div
-                  className={`p-3 rounded-2xl border transition-all shadow-md ${
-                    technicalData.majorTrend.status === 'ALTA'
+                  className={`p-3 rounded-2xl border transition-all shadow-md ${technicalData.majorTrend.status === 'ALTA'
                       ? 'bg-emerald-950/20 border-emerald-500/40'
                       : technicalData.majorTrend.status === 'BAIXA'
-                      ? 'bg-rose-950/20 border-rose-500/40'
-                      : 'bg-amber-950/20 border-amber-500/40'
-                  }`}
+                        ? 'bg-rose-950/20 border-rose-500/40'
+                        : 'bg-amber-950/20 border-amber-500/40'
+                    }`}
                 >
                   <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
@@ -1861,13 +1841,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       TENDÊNCIA MAIOR ({timeframe})
                     </span>
                     <span
-                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
-                        technicalData.majorTrend.status === 'ALTA'
+                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${technicalData.majorTrend.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
                           : technicalData.majorTrend.status === 'BAIXA'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
-                      }`}
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                        }`}
                     >
                       {technicalData.majorTrend.status === 'ALTA' && <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
                       {technicalData.majorTrend.status === 'BAIXA' && <TrendingDown className="w-3.5 h-3.5 text-rose-400" />}
@@ -1897,13 +1876,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.rsi.condition === 'SOBRECOMPRADO'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.rsi.condition === 'SOBRECOMPRADO'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : technicalData.rsi.condition === 'SOBREVENDIDO'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.rsi.statusLabel}
                       </span>
@@ -1922,13 +1900,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.macd.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.macd.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.macd.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.macd.status}
                       </span>
@@ -1947,13 +1924,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.maShort.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maShort.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.maShort.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          }`}
                       >
                         {technicalData.maShort.status}
                       </span>
@@ -1972,13 +1948,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.maLong.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maLong.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.maLong.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          }`}
                       >
                         {technicalData.maLong.status}
                       </span>
@@ -1997,13 +1972,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.bollingerBands.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.bollingerBands.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.bollingerBands.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.bollingerBands.status}
                       </span>
@@ -2022,13 +1996,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.volume.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.volume.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.volume.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.volume.status}
                       </span>
@@ -2047,13 +2020,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.delta.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.delta.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.delta.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.delta.status}
                       </span>
@@ -2073,13 +2045,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.adx.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.adx.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.adx.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.adx.status}
                       </span>
@@ -2098,13 +2069,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.stochastic.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.stochastic.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.stochastic.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.stochastic.status}
                       </span>
@@ -2124,13 +2094,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.atr.status === 'ALTA'
+                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.atr.status === 'ALTA'
                             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                             : technicalData.atr.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
                       >
                         {technicalData.atr.status}
                       </span>
@@ -2172,23 +2141,21 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                         <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px] font-mono">
                           <span
-                            className={`px-1.5 py-0.5 rounded font-bold ${
-                              item.impact === 'HIGH'
+                            className={`px-1.5 py-0.5 rounded font-bold ${item.impact === 'HIGH'
                                 ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
                                 : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
-                            }`}
+                              }`}
                           >
                             {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO' : '🟡 MÉDIO IMPACTO'}
                           </span>
 
                           <span
-                            className={`px-1.5 py-0.5 rounded font-bold ${
-                              item.sentiment === 'BULLISH'
+                            className={`px-1.5 py-0.5 rounded font-bold ${item.sentiment === 'BULLISH'
                                 ? 'text-emerald-400 bg-emerald-950/40'
                                 : item.sentiment === 'BEARISH'
-                                ? 'text-rose-400 bg-rose-950/40'
-                                : 'text-neutral-400 bg-neutral-900'
-                            }`}
+                                  ? 'text-rose-400 bg-rose-950/40'
+                                  : 'text-neutral-400 bg-neutral-900'
+                              }`}
                           >
                             {item.sentiment === 'BULLISH' ? '↗ ALTA' : item.sentiment === 'BEARISH' ? '↘ BAIXA' : '⚪ NEUTRO'}
                           </span>
@@ -2213,17 +2180,16 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-white text-xs">CandleX-IA Voz ao Vivo</span>
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
+                          className={`w-1.5 h-1.5 rounded-full ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
                               ? 'bg-cyan-400 animate-ping'
                               : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                              ? 'bg-purple-400 animate-pulse'
-                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                              ? 'bg-emerald-400 animate-pulse'
-                              : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                              ? 'bg-amber-400 animate-ping'
-                              : 'bg-neutral-500'
-                          }`}
+                                ? 'bg-purple-400 animate-pulse'
+                                : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                                  ? 'bg-emerald-400 animate-pulse'
+                                  : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                    ? 'bg-amber-400 animate-ping'
+                                    : 'bg-neutral-500'
+                            }`}
                         />
                       </div>
                       <div className="text-[10px] text-neutral-400 font-mono">
@@ -2261,54 +2227,52 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     )}
 
                     <div
-                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-mono backdrop-blur-sm ${
-                        (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
+                      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-mono backdrop-blur-sm ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
                           ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300'
                           : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
-                          : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
-                          ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                          : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                          ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
-                          : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                          ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                          : liveVoice?.status === 'error'
-                          ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
-                          : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
-                      }`}
+                            ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
+                            : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                              ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                                ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+                                : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                  ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                                  : liveVoice?.status === 'error'
+                                    ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
+                                    : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
+                        }`}
                     >
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          (liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
+                        className={`w-1.5 h-1.5 rounded-full ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
                             ? 'bg-cyan-400 animate-ping'
                             : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                            ? 'bg-purple-400 animate-pulse'
-                            : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
-                            ? 'bg-amber-400'
-                            : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                            ? 'bg-emerald-400 animate-pulse'
-                            : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                            ? 'bg-amber-400 animate-ping'
-                            : liveVoice?.status === 'error'
-                            ? 'bg-rose-400'
-                            : 'bg-neutral-500'
-                        }`}
+                              ? 'bg-purple-400 animate-pulse'
+                              : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                                ? 'bg-amber-400'
+                                : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                                  ? 'bg-emerald-400 animate-pulse'
+                                  : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                    ? 'bg-amber-400 animate-ping'
+                                    : liveVoice?.status === 'error'
+                                      ? 'bg-rose-400'
+                                      : 'bg-neutral-500'
+                          }`}
                       />
                       <span>
                         {liveVoice?.isMuted
                           ? 'MUTADO'
                           : liveVoice?.assistantState ||
-                            (liveVoice?.status === 'speaking'
-                              ? 'FALANDO'
-                              : liveVoice?.isProcessing
+                          (liveVoice?.status === 'speaking'
+                            ? 'FALANDO'
+                            : liveVoice?.isProcessing
                               ? 'PROCESSANDO'
                               : liveVoice?.status === 'listening'
-                              ? 'OUVINDO'
-                              : liveVoice?.status === 'connecting'
-                              ? 'CONECTANDO'
-                              : liveVoice?.status === 'error'
-                              ? 'ERRO'
-                              : 'DESCONECTADO')}
+                                ? 'OUVINDO'
+                                : liveVoice?.status === 'connecting'
+                                  ? 'CONECTANDO'
+                                  : liveVoice?.status === 'error'
+                                    ? 'ERRO'
+                                    : 'DESCONECTADO')}
                       </span>
                     </div>
                   </div>
@@ -2365,11 +2329,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       {liveVoice.hasMicPermission ? (
                         <button
                           onClick={liveVoice.toggleMute}
-                          className={`flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            liveVoice.isMuted
+                          className={`flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${liveVoice.isMuted
                               ? 'bg-amber-500/25 hover:bg-amber-500/35 text-amber-200 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
                               : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
-                          }`}
+                            }`}
                         >
                           {liveVoice.isMuted ? (
                             <MicOff className="w-4 h-4 text-amber-400 animate-pulse" />
@@ -2432,11 +2395,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </div>
                     <button
                       onClick={() => liveVoice?.setVoiceAnnouncements && liveVoice.setVoiceAnnouncements(!liveVoice.voiceAnnouncements)}
-                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-all ${
-                        liveVoice?.voiceAnnouncements
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-all ${liveVoice?.voiceAnnouncements
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-                      }`}
+                        }`}
                       title="Ativar/Desativar avisos por voz para sinais confirmados e cancelamentos"
                     >
                       {liveVoice?.voiceAnnouncements ? 'LIGADO' : 'DESLIG'}
@@ -2595,11 +2557,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
 
                       <div
-                        className={`max-w-[92%] p-2.5 rounded-2xl text-[11px] leading-relaxed select-text ${
-                          msg.role === 'user'
+                        className={`max-w-[92%] p-2.5 rounded-2xl text-[11px] leading-relaxed select-text ${msg.role === 'user'
                             ? 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-500/40 text-cyan-100 rounded-tr-xs'
                             : 'bg-[#101522] border border-[#1c273e] text-neutral-200 rounded-tl-xs whitespace-pre-wrap'
-                        }`}
+                          }`}
                       >
                         {msg.text}
                       </div>
