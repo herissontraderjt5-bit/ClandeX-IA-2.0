@@ -638,12 +638,23 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   const expSecs = remainingExpSec % 60;
   const formattedExpCountdown = `${String(expMins).padStart(2, '0')}:${String(expSecs).padStart(2, '0')}`;
 
-  // Se o cronômetro zerou (00:00) na tela, aciona a apuração imediata no fechamento da vela
+  // Se o cronômetro zerou (00:00) na tela E a operação cumpriu seu tempo integral, aciona a apuração no fechamento
   useEffect(() => {
-    if (activeTrade && activeTrade.result === 'PENDING' && isTradeRunning && remainingExpSec <= 0) {
-      signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice, marketDataManager.getCandles());
+    if (
+      activeTrade &&
+      activeTrade.result === 'PENDING' &&
+      isTradeRunning &&
+      activeTrade.expirationTimestamp &&
+      nowSec >= activeTrade.expirationTimestamp &&
+      remainingExpSec <= 0
+    ) {
+      const expSec = (activeTrade.timeframe === 'M2' || activeTrade.expiration === '2m') ? 120 : ((activeTrade.timeframe === 'M1' || activeTrade.expiration === '1m') ? 60 : 300);
+      const tradeAge = Math.floor((Date.now() - activeTrade.timestamp) / 1000);
+      if (tradeAge >= expSec - 3) {
+        signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice, marketDataManager.getCandles());
+      }
     }
-  }, [activeTrade, isTradeRunning, remainingExpSec, asset.currentPrice]);
+  }, [activeTrade, isTradeRunning, remainingExpSec, asset.currentPrice, nowSec]);
 
   // Confirmação recente aguardando a abertura da vela do sinal
   const isWaitingEntry = !!latestConfirmedSignal && !isTradeRunning && (

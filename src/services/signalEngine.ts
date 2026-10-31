@@ -118,7 +118,7 @@ export class SignalEngine {
     const nowSec = Math.floor(Date.now() / 1000);
     // A contagem e status de operação em andamento inicia estritamente a partir da abertura da vela do sinal (nowSec >= entryTimestamp)
     const active = this.pendingTrades.find(
-      (t) => (!t.entryTimestamp || nowSec >= t.entryTimestamp) && t.result === 'PENDING' && nowSec < t.expirationTimestamp
+      (t) => (!t.entryTimestamp || nowSec >= t.entryTimestamp) && t.result === 'PENDING'
     );
     return active || null;
   }
@@ -293,6 +293,7 @@ export class SignalEngine {
     const activeRunningTrade = this.getActiveTrade();
     const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
     const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
+    const candleBoundary = now - (((now % tfSec) + tfSec) % tfSec);
 
     // Momento exato da ABERTURA DA VELA (segundo 00:00 ou primeiros 2 segundos da nova vela)
     const isAtCandleOpening = remainingSec >= tfSec - 2;
@@ -339,6 +340,8 @@ export class SignalEngine {
         } else {
           // CONFIRMAÇÃO OFICIAL NA ABERTURA DA VELA!
           const entryPrice = currentCandle.open;
+          const officialEntryTime = Math.max(currentCandle.time, candleBoundary);
+          const officialExpTime = officialEntryTime + expirationSeconds;
           const confirmed: SignalRecord = {
             ...this.activePreAlert,
             id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -351,9 +354,9 @@ export class SignalEngine {
             confluenceScore: confluences.totalScore,
             reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
             result: 'PENDING',
-            candleCloseTime: currentCandle.time,
-            entryTimestamp: currentCandle.time,
-            expirationTimestamp: currentCandle.time + expirationSeconds,
+            candleCloseTime: officialEntryTime,
+            entryTimestamp: officialEntryTime,
+            expirationTimestamp: officialExpTime,
             isEstimatedResult: false,
           };
 
@@ -386,6 +389,8 @@ export class SignalEngine {
       ) {
         // Confirmação direta instantânea de alta convicção que abriu na nova vela
         const entryPrice = currentCandle.open;
+        const officialEntryTime = Math.max(currentCandle.time, candleBoundary);
+        const officialExpTime = officialEntryTime + expirationSeconds;
         const confirmed: SignalRecord = {
           id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           timestamp: Date.now(),
@@ -401,9 +406,9 @@ export class SignalEngine {
           confluenceScore: confluences.totalScore,
           reasons: [...confluences.reasons],
           result: 'PENDING',
-          candleCloseTime: currentCandle.time,
-          entryTimestamp: currentCandle.time,
-          expirationTimestamp: currentCandle.time + expirationSeconds,
+          candleCloseTime: officialEntryTime,
+          entryTimestamp: officialEntryTime,
+          expirationTimestamp: officialExpTime,
           isEstimatedResult: false,
         };
 
@@ -478,7 +483,7 @@ export class SignalEngine {
       !activeRunningTrade &&
       this.lastEvaluatedCandleTime !== currentCandle.time
     ) {
-      const targetCandleTime = currentCandle.time + tfSec;
+      const targetCandleTime = Math.max(currentCandle.time + tfSec, candleBoundary + tfSec);
       const preAlert: SignalRecord = {
         id: `sig_pre_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
@@ -529,6 +534,16 @@ export class SignalEngine {
 
     let updated = false;
     this.pendingTrades = this.pendingTrades.filter((trade) => {
+      const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
+      const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
+
+      // 1. TRAVA ABSOLUTA DE DURAÇÃO MÍNIMA:
+      // Se a operação foi iniciada há menos de (expirationSec - 3) segundos E o timestamp de expiração
+      // ainda não foi atingido, ela NUNCA pode ser apurada! Mantém a operação em andamento.
+      if (tradeAge < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
+        return true;
+      }
+
       const candleList = (allCandles && allCandles.length > 0)
         ? allCandles
         : marketDataManager.getCandlesForAsset(trade.asset, trade.timeframe);
@@ -538,17 +553,17 @@ export class SignalEngine {
       const targetCandle = candleList.find((c) => Math.abs(c.time - targetTime) < 5) ||
         (currentCandle && Math.abs(currentCandle.time - targetTime) < 5 ? currentCandle : null);
 
-      // A vela do sinal é considerada oficialmente encerrada quando:
-      // 1. Já existe vela subsequente no histórico (time > targetTime + 2)
-      // 2. A própria vela do sinal tem isClosed === true
-      // 3. O timestamp de expiração foi atingido (nowSec >= trade.expirationTimestamp)
-      // 4. O cronômetro zerou no momento exato de encerramento da vela
-      const hasNextCandle = candleList.some((c) => c.time > targetTime + 2);
-      const isCandleClosed = targetCandle?.isClosed === true;
+      // A vela do sinal encerra quando:
+      // - O tempo de expiração foi atingido (nowSec >= trade.expirationTimestamp)
+      // - OU a duração integral da vela foi cumprida (tradeAge >= expirationSec - 2)
+      // E confirmação de encerramento da vela (próxima vela já aberta, candle fechada ou timer zerado)
       const isTimeExpired = nowSec >= trade.expirationTimestamp;
-      const isTimerZero = remainingSec !== undefined && remainingSec === 0 && nowSec >= trade.expirationTimestamp - 1;
+      const hasNextCandle = candleList.some((c) => c.time >= trade.expirationTimestamp);
+      const isTimerZero = remainingSec !== undefined && remainingSec === 0 && tradeAge >= expirationSec - 2;
+      const isCandleClosed = targetCandle?.isClosed === true && tradeAge >= expirationSec - 2;
+      const isTimeoutSafety = tradeAge >= expirationSec + 5; // Segurança para não travar se o feed congelar
 
-      const isExpired = hasNextCandle || isCandleClosed || isTimeExpired || isTimerZero;
+      const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeAge >= expirationSec)) || isTimeoutSafety;
 
       if (isExpired) {
         // Taxa de abertura oficial da vela do sinal
@@ -628,7 +643,16 @@ export class SignalEngine {
     const trade = this.pendingTrades.find((t) => t.id === tradeId);
     if (!trade) return;
     const nowSec = Math.floor(Date.now() / 1000);
-    trade.expirationTimestamp = nowSec;
+    const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
+    const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
+
+    // Proteção absoluta: nunca apurar prematuramente antes da duração mínima da vela
+    if (tradeAge < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
+      console.warn(`[SignalEngine] forceResolveTrade bloqueado: operação ${trade.id} ainda está em andamento (${tradeAge}s decorridos).`);
+      return;
+    }
+
+    trade.expirationTimestamp = Math.min(trade.expirationTimestamp, nowSec);
     this.resolvePendingTrades(currentPrice, nowSec, 0, allCandles);
   }
 
@@ -746,7 +770,6 @@ export class SignalEngine {
     // 2. Após 5 segundos: Confirmar entrada e iniciar contagem regressiva da expiração
     setTimeout(() => {
       const confirmedNow = Math.floor(Date.now() / 1000);
-      const entryTimestamp = confirmedNow + 3; // 3 segundos de confirmação antes da abertura
       const confirmed: SignalRecord = {
         ...preAlert,
         stage: 'CONFIRMED',
@@ -754,9 +777,10 @@ export class SignalEngine {
         formattedTime: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
         entryPrice: currentPrice,
         candleOpenPrice: currentPrice,
-        isEntered: false,
-        entryTimestamp,
-        expirationTimestamp: entryTimestamp + simulationExpSec,
+        isEntered: true,
+        entryTimestamp: confirmedNow,
+        candleCloseTime: confirmedNow,
+        expirationTimestamp: confirmedNow + simulationExpSec,
       };
 
       this.activePreAlert = null;
