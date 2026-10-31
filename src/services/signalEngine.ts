@@ -37,6 +37,7 @@ export class SignalEngine {
   private lastResolvedTrade: SignalRecord | null = null;
   private lastResolvedTime = 0;
   private lastEvaluatedCandleTime = 0;
+  private lastConfirmedCandleTime = 0;
   private onSignalsUpdated: ((
     history: SignalRecord[],
     preAlert: SignalRecord | null,
@@ -290,61 +291,34 @@ export class SignalEngine {
     }
 
     const activeRunningTrade = this.getActiveTrade();
+    const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
+    const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
 
-    // 3. DECISION WINDOW: Confirmação da entrada nos 15 a 5 segundos restantes
-    if (remainingSec <= 15 && remainingSec >= 5 && this.lastEvaluatedCandleTime !== currentCandle.time && !activeRunningTrade) {
+    // Momento exato da ABERTURA DA VELA (segundo 00:00 ou primeiros 2 segundos da nova vela)
+    const isAtCandleOpening = remainingSec >= tfSec - 2;
+    const isNewCandle = this.lastConfirmedCandleTime !== currentCandle.time;
+
+    // 3. CONFIRMAÇÃO EXATA NA ABERTURA DA VELA (SEGUNDO 00:00)
+    if (isAtCandleOpening && isNewCandle && !activeRunningTrade) {
       if (this.activePreAlert) {
-        const body = Math.abs(currentCandle.close - currentCandle.open);
-        const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
-        const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
+        // Validação da confluência no momento exato em que a vela abre
+        const directionMatches = confluences.direction === this.activePreAlert.direction;
+        const scoreSufficient = confluences.totalScore >= confirmMinScore;
 
-        const range = Math.max(currentCandle.high - currentCandle.low, 0.00001);
-        const minBodyReversal = range * 0.40;
-        const minWickRejection = range * 0.35;
-
-        // 1. O sinal DEVE permanecer na MESMA DIREÇÃO do pré-alerta!
-        const directionMismatch = confluences.direction !== this.activePreAlert.direction;
-
-        // 2. A pontuação DEVE atingir o limiar mínimo de confirmação (confirmMinScore)
-        const scoreTooLow = confluences.totalScore < confirmMinScore;
-
-        // 3. Reversão de vela nos segundos finais
-        const isCallReversal = this.activePreAlert.direction === 'CALL' && (
-          (currentCandle.close < currentCandle.open && body > minBodyReversal) ||
-          confluences.direction === 'PUT'
-        );
-        const isPutReversal = this.activePreAlert.direction === 'PUT' && (
-          (currentCandle.close > currentCandle.open && body > minBodyReversal) ||
-          confluences.direction === 'CALL'
-        );
-        const isExtremeWickRejection = (
-          (this.activePreAlert.direction === 'CALL' && upperWick > body * 1.8 && upperWick > minWickRejection) ||
-          (this.activePreAlert.direction === 'PUT' && lowerWick > body * 1.8 && lowerWick > minWickRejection)
-        );
-
-        // 4. Bloqueio de consolidação sem extremo
         const isConsolidationTrap = (profile === 'CONSERVADORA' || profile === 'MODERADA') &&
           marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
 
-        let cancelReason = '';
-        if (directionMismatch) {
-          cancelReason = 'Confluência perdeu direcionamento nos segundos finais. Ordem abortada para proteção.';
-        } else if (scoreTooLow) {
-          cancelReason = `Pontuação insuficiente no fechamento (${confluences.totalScore}/${confirmMinScore} pts). Cancelado para evitar LOSS.`;
-        } else if (isCallReversal) {
-          cancelReason = 'Vela virou vendedora nos segundos finais contra a compra. Ordem abortada.';
-        } else if (isPutReversal) {
-          cancelReason = 'Vela virou compradora nos segundos finais contra a venda. Ordem abortada.';
-        } else if (isExtremeWickRejection) {
-          cancelReason = 'Pavio de rejeição forte contra o movimento. Ordem cancelada para proteção.';
-        } else if (isConsolidationTrap) {
-          cancelReason = 'Mercado lateralizado sem rejeição de extremidade. Proteção de banca acionada.';
-        }
+        if (!directionMatches || !scoreSufficient || isConsolidationTrap) {
+          // CANCELAMENTO NA ABERTURA (PROTEÇÃO DE BANCA)
+          let cancelReason = '';
+          if (!directionMatches) {
+            cancelReason = 'Vela anterior fechou sem confirmação do direcionamento técnico. Entrada abortada.';
+          } else if (!scoreSufficient) {
+            cancelReason = `Pontuação insuficiente na abertura da vela (${confluences.totalScore}/${confirmMinScore} pts). Evitando LOSS.`;
+          } else if (isConsolidationTrap) {
+            cancelReason = 'Mercado lateralizado sem rejeição de extremidade. Entrada abortada.';
+          }
 
-        const shouldCancel = directionMismatch || scoreTooLow || isCallReversal || isPutReversal || isExtremeWickRejection || isConsolidationTrap;
-
-        if (shouldCancel) {
-          // CANCELAMENTO POR SEGURANÇA
           const cancelled: SignalRecord = {
             ...this.activePreAlert,
             stage: 'CANCELLED',
@@ -353,7 +327,7 @@ export class SignalEngine {
           };
           this.lastCancelledSignal = cancelled;
           this.lastCancelledTime = Date.now();
-          this.lastEvaluatedCandleTime = currentCandle.time;
+          this.lastConfirmedCandleTime = currentCandle.time;
           this.activePreAlert = null;
 
           audioAlerts.playCancelAlert();
@@ -363,31 +337,27 @@ export class SignalEngine {
           this.notify();
           return;
         } else {
-          // CONFIRMADO! Entrada confirmada entre 15s e 5s!
-          const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
-          const targetCandleTime = currentCandle.time + tfSec;
-          const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
-          const entryTimestamp = targetCandleTime;
-          const expirationTimestamp = targetCandleTime + expirationSeconds;
-
+          // CONFIRMAÇÃO OFICIAL NA ABERTURA DA VELA!
+          const entryPrice = currentCandle.open;
           const confirmed: SignalRecord = {
             ...this.activePreAlert,
+            id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             stage: 'CONFIRMED',
             timestamp: Date.now(),
             formattedTime,
-            entryPrice: currentCandle.close,
-            candleOpenPrice: currentCandle.close,
-            isEntered: false,
+            entryPrice,
+            candleOpenPrice: entryPrice,
+            isEntered: true, // Já inicia operando no segundo 00 da nova vela!
             confluenceScore: confluences.totalScore,
             reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
             result: 'PENDING',
-            candleCloseTime: entryTimestamp,
-            entryTimestamp,
-            expirationTimestamp,
+            candleCloseTime: currentCandle.time,
+            entryTimestamp: currentCandle.time,
+            expirationTimestamp: currentCandle.time + expirationSeconds,
             isEstimatedResult: false,
           };
 
-          this.lastEvaluatedCandleTime = currentCandle.time;
+          this.lastConfirmedCandleTime = currentCandle.time;
           this.latestConfirmedSignal = confirmed;
           this.latestConfirmedTime = Date.now();
           this.activePreAlert = null;
@@ -414,13 +384,8 @@ export class SignalEngine {
         confluences.totalScore >= confirmMinScore &&
         !(marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance))
       ) {
-        // Confirmação direta instantânea de alta convicção que surgiu entre 15s e 5s
-        const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
-        const targetCandleTime = currentCandle.time + tfSec;
-        const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
-        const entryTimestamp = targetCandleTime;
-        const expirationTimestamp = targetCandleTime + expirationSeconds;
-
+        // Confirmação direta instantânea de alta convicção que abriu na nova vela
+        const entryPrice = currentCandle.open;
         const confirmed: SignalRecord = {
           id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           timestamp: Date.now(),
@@ -430,19 +395,19 @@ export class SignalEngine {
           expiration: settings.defaultExpiration,
           direction: confluences.direction,
           stage: 'CONFIRMED',
-          entryPrice: currentCandle.close,
-          candleOpenPrice: currentCandle.close,
-          isEntered: false,
+          entryPrice,
+          candleOpenPrice: entryPrice,
+          isEntered: true,
           confluenceScore: confluences.totalScore,
           reasons: [...confluences.reasons],
           result: 'PENDING',
-          candleCloseTime: entryTimestamp,
-          entryTimestamp,
-          expirationTimestamp,
+          candleCloseTime: currentCandle.time,
+          entryTimestamp: currentCandle.time,
+          expirationTimestamp: currentCandle.time + expirationSeconds,
           isEstimatedResult: false,
         };
 
-        this.lastEvaluatedCandleTime = currentCandle.time;
+        this.lastConfirmedCandleTime = currentCandle.time;
         this.latestConfirmedSignal = confirmed;
         this.latestConfirmedTime = Date.now();
         this.lastCancelledSignal = null;
@@ -465,47 +430,57 @@ export class SignalEngine {
       }
     }
 
-    // 4. Cancelamento de segurança se ultrapassar 5 segundos sem confirmação
-    if (remainingSec < 5 && this.activePreAlert) {
-      const cancelled: SignalRecord = {
-        ...this.activePreAlert,
-        stage: 'CANCELLED',
-        cancelledAt: Date.now(),
-        cancelReason: `Janela de confirmação (15s a 5s) expirou sem confirmação plena. Abortado para proteção de banca.`,
-      };
-      this.lastCancelledSignal = cancelled;
-      this.lastCancelledTime = Date.now();
-      this.lastEvaluatedCandleTime = currentCandle.time;
-      this.activePreAlert = null;
-      audioAlerts.playCancelAlert();
-      this.dispatchSignalEvent(cancelled, 'CANCELLED');
-      this.notify();
-      return;
+    // 4. CANCELAMENTO DO PRÉ-ALERTA SE HOUVER REVERSÃO FORTE DURANTE O FECHAMENTO DA VELA ANTERIOR
+    if (this.activePreAlert && remainingSec < tfSec - 3 && remainingSec <= 15) {
+      const body = Math.abs(currentCandle.close - currentCandle.open);
+      const range = Math.max(currentCandle.high - currentCandle.low, 0.00001);
+      const minBodyReversal = range * 0.40;
+
+      const isCallReversal = this.activePreAlert.direction === 'CALL' && (
+        (currentCandle.close < currentCandle.open && body > minBodyReversal) ||
+        confluences.direction === 'PUT'
+      );
+      const isPutReversal = this.activePreAlert.direction === 'PUT' && (
+        (currentCandle.close > currentCandle.open && body > minBodyReversal) ||
+        confluences.direction === 'CALL'
+      );
+
+      if (isCallReversal || isPutReversal) {
+        const cancelled: SignalRecord = {
+          ...this.activePreAlert,
+          stage: 'CANCELLED',
+          cancelledAt: Date.now(),
+          cancelReason: 'Vela reverteu nos segundos finais antes da abertura. Pré-alerta abortado.',
+        };
+        this.lastCancelledSignal = cancelled;
+        this.lastCancelledTime = Date.now();
+        this.activePreAlert = null;
+        audioAlerts.playCancelAlert();
+        this.dispatchSignalEvent(cancelled, 'CANCELLED');
+        this.notify();
+        return;
+      }
     }
 
-    // 5. Stage 1: PRÉ-ALERTA (Disparo estritamente dos 60 até aos 15 segundos restantes quando probabilidade for detectada)
-    // SE NÃO HOUVER CONFLUÊNCIAS REAIS, PERMANEÇA ANALISANDO O MERCADO!
+    // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação na abertura da próxima)
     if (confluences.direction === 'NEUTRO' || confluences.totalScore < preAlertMinScore) {
-      // Sem confluências: permanece analisando o mercado sem disparar alertas falsos
       return;
     }
 
     const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
 
     if (
-      remainingSec <= 60 &&
-      remainingSec > 15 &&
+      remainingSec < tfSec - 4 &&
+      remainingSec >= 3 &&
       confluences.totalScore >= preAlertMinScore &&
       !isConsolidationBlocked &&
       !this.activePreAlert &&
       !activeRunningTrade &&
       this.lastEvaluatedCandleTime !== currentCandle.time
     ) {
-      const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
       const targetCandleTime = currentCandle.time + tfSec;
-      const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
       const preAlert: SignalRecord = {
-        id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `sig_pre_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
         formattedTime,
         asset: assetSymbol,
@@ -527,6 +502,7 @@ export class SignalEngine {
 
       this.activePreAlert = preAlert;
       this.lastCancelledSignal = null;
+      this.lastEvaluatedCandleTime = currentCandle.time;
 
       if (settings.preAlertSound) {
         audioAlerts.playPreAlert();

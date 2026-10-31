@@ -714,7 +714,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     glowBorderClass = latestConfirmedSignal.direction === 'CALL' ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
   } else if (hasPreAlert && activePreAlert) {
 
-    alertStatusText = `⚡ PRÉ-ALERTA [60s-15s]: ${activePreAlert.direction}`;
+    alertStatusText = `⚡ PRÉ-ALERTA: ${activePreAlert.direction} (ABERTURA EM ${formattedCountdown})`;
     alertBadgeClass = 'bg-amber-500/25 text-amber-300 border-amber-500/70 animate-pulse shadow-sm';
     glowBorderClass = 'glow-alert border-amber-500/50';
   } else if (confluences.classification === 'CONFLUÊNCIA MUITO FORTE') {
@@ -1427,7 +1427,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </div>
                           <div>
                             <div className="text-[9px] uppercase font-bold tracking-wider text-rose-400">
-                              PROTEÇÃO DE CAPITAL (JANELA 15s-5s)
+                              PROTEÇÃO DE BANCA (CONFIRMAÇÃO ABORTADA)
                             </div>
                             <div className="text-sm font-black font-mono tracking-wide text-white">
                               SINAL CANCELADO • NÃO ENTRAR
@@ -1444,11 +1444,11 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <XCircle className="w-3 h-3" />
                           <span>Motivo da Invalidação:</span>
                         </div>
-                        <div>{lastCancelledSignal.cancelReason || 'Confluência < 60% na janela de 15s. Ordem abortada.'}</div>
+                        <div>{lastCancelledSignal.cancelReason || 'Confluência insuficiente na abertura. Ordem abortada.'}</div>
                       </div>
                     </div>
                   ) : hasConfirmed && latestConfirmedSignal ? (
-                    /* ESTÁGIO 4: ENTRADA CONFIRMADA (JANELA 15s A 5s • ENTRADA NA ABERTURA DA VELA) */
+                    /* ESTÁGIO 4: ENTRADA CONFIRMADA NA ABERTURA DA VELA */
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border flex items-center justify-between ${
@@ -1520,7 +1520,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </div>
                           <div>
                             <div className="text-[9px] uppercase font-bold tracking-wider text-amber-400 animate-pulse">
-                              PRÉ-ALERTA DA IA • AGUARDANDO ENTRADA
+                              PRÉ-ALERTA DA IA • CONFIRMAÇÃO NA ABERTURA
                             </div>
                             <div className="text-lg font-black font-mono tracking-wide text-white">
                               {activePreAlert.direction === 'CALL' ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
@@ -1534,16 +1534,17 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
-                      {/* Decisão entre 15s e 10s */}
-                      <div className="p-2 bg-black/70 border border-amber-500/40 rounded-xl text-center space-y-0.5">
-                        <div className="text-[9px] font-mono text-amber-300 uppercase font-bold">
-                          {remainingSeconds > 15 ? 'Janela de Decisão (Confirmação/Cancelamento):' : 'Momento de Confirmação (15s a 5s):'}
+                      {/* Contagem regressiva até a abertura da vela */}
+                      <div className="p-2.5 bg-black/80 border border-amber-500/50 rounded-xl text-center space-y-1 shadow-[inset_0_0_15px_rgba(245,158,11,0.15)]">
+                        <div className="text-[10px] font-mono text-amber-300 uppercase font-bold flex items-center justify-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                          <span>CONFIRMAÇÃO NA ABERTURA DA VELA EM:</span>
                         </div>
-                        <div className="text-base font-black font-mono text-white">
-                          {remainingSeconds > 15 ? `Em ${remainingSeconds - 15} segundos` : 'AVALIANDO FECHAMENTO AGORA...'}
+                        <div className="text-2xl font-black font-mono text-white tracking-widest flex items-center justify-center gap-1">
+                          <span className="text-amber-400">{formattedCountdown}</span>
                         </div>
-                        <div className="text-[9px] text-neutral-400 font-mono">
-                          Prepare a boleta na Hiove. Confiança calculada: <strong className="text-amber-400">{activePreAlert.confluenceScore}%</strong>
+                        <div className="text-[9px] text-neutral-300 font-mono">
+                          Prepare a boleta na Hiove. Confirmação instantânea logo na abertura (segundo 00:00).
                         </div>
                       </div>
 
