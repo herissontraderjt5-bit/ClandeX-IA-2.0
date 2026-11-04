@@ -469,8 +469,13 @@ export class SignalEngine {
           profile
         );
 
+        const isBuyingAtResistance = stratDecision?.direction === 'CALL' && marketAnalysis?.nearResistance;
+        const isSellingAtSupport = stratDecision?.direction === 'PUT' && marketAnalysis?.nearSupport;
+
         const isAlignedWithConfluence =
           stratDecision &&
+          !isBuyingAtResistance &&
+          !isSellingAtSupport &&
           confluences.direction === stratDecision.direction &&
           confluences.totalScore >= confirmMinScore &&
           stratDecision.score >= confirmMinScore &&
@@ -587,7 +592,16 @@ export class SignalEngine {
     let stratWinRate: number | undefined = undefined;
 
     if (stratDecision) {
-      // FILTRO RIGOROSO DE TENDÊNCIA E MERCADO:
+      // 1. TRAVA ABSOLUTA: PROIBIDO COMPRAR (CALL) EM RESISTÊNCIA E VENDER (PUT) EM SUPORTE!
+      const isBuyingAtResistance = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance;
+      const isSellingAtSupport = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport;
+
+      if (isBuyingAtResistance || isSellingAtSupport) {
+        // Bloqueio rigoroso: nunca compra em teto de resistência nem vende em chão de suporte
+        return;
+      }
+
+      // 2. FILTRO RIGOROSO DE TENDÊNCIA E MERCADO:
       // Se a confluência geral for contrária à decisão da estratégia, anula para proteger a banca
       const isOpposingMarket = (stratDecision.direction === 'CALL' && confluences.direction === 'PUT') ||
                                (stratDecision.direction === 'PUT' && confluences.direction === 'CALL');
@@ -602,15 +616,6 @@ export class SignalEngine {
         stratBadge = stratDecision.strategy.badge;
         const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
         stratWinRate = bRes?.winRate;
-      }
-    } else if (confluences.direction !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
-      const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
-      if (!isConsolidationBlocked) {
-        signalDirection = confluences.direction;
-        signalScore = confluences.totalScore;
-        signalReasons = confluences.reasons.length > 0 ? [...confluences.reasons] : [`Confluência direcional para ${confluences.direction}`];
-        stratName = 'Confluência Multi-Indicadores';
-        stratBadge = '🎯 MULTI-CONFLUÊNCIA';
       }
     }
 

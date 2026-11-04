@@ -308,9 +308,11 @@ export function evaluateSingleStrategy(
       // CALL NO PULLBACK:
       // Tendência de alta (EMA 9 > EMA 21). Vela fez correção saudável tocando a EMA 21 ou EMA 9,
       // rejeitou a queda com pavio inferior e fechou verde ou martelo a favor da alta.
+      // TRAVA DE OURO: NUNCA COMPRA SE ESTIVER EM CIMA DE UMA RESISTÊNCIA!
       const touchedEmaCall = current.low <= ema9 + zoneTolerance && current.close >= ema9;
       const isCallPullback =
         isUptrend &&
+        !nearRes &&
         touchedEmaCall &&
         lowerWick >= range * 0.35 &&
         consecutiveGreen <= 3 &&
@@ -319,9 +321,11 @@ export function evaluateSingleStrategy(
       // PUT NO PULLBACK:
       // Tendência de baixa (EMA 9 < EMA 21). Vela fez correção saudável subindo até a EMA 21 ou EMA 9,
       // rejeitou a subida com pavio superior e fechou vermelha ou estrela a favor da baixa.
+      // TRAVA DE OURO: NUNCA VENDE SE ESTIVER EM CIMA DE UM SUPORTE!
       const touchedEmaPut = current.high >= ema9 - zoneTolerance && current.close <= ema9;
       const isPutPullback =
         isDowntrend &&
+        !nearSup &&
         touchedEmaPut &&
         upperWick >= range * 0.35 &&
         consecutiveRed <= 3 &&
@@ -452,8 +456,10 @@ export function evaluateSingleStrategy(
 
       // CALL: Vela anterior vermelha consistente. Vela atual verde dominante engolfa 100% do corpo anterior
       // e fecha firme perto da máxima (pouco pavio superior) em região favorável.
+      // TRAVA DE OURO: NUNCA COMPRA SE ESTIVER EM CIMA DE RESISTÊNCIA!
       const isCallEngulf =
         isGreen &&
+        !nearRes &&
         prevIsRed &&
         prevBody >= atr * 0.35 &&
         current.close > prev.open &&
@@ -464,8 +470,10 @@ export function evaluateSingleStrategy(
 
       // PUT: Vela anterior verde consistente. Vela atual vermelha dominante engolfa 100% do corpo anterior
       // e fecha firme perto da mínima (pouco pavio inferior) em região favorável.
+      // TRAVA DE OURO: NUNCA VENDE SE ESTIVER EM CIMA DE SUPORTE!
       const isPutEngulf =
         isRed &&
+        !nearSup &&
         prevIsGreen &&
         prevBody >= atr * 0.35 &&
         current.close < prev.open &&

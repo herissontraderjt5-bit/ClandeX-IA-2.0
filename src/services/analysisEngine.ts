@@ -665,26 +665,30 @@ export function calculateConfluences(
   const normalizedPACall = Math.min(weights.priceAction, (paCall / 25) * weights.priceAction);
   const normalizedPAPut = Math.min(weights.priceAction, (paPut / 25) * weights.priceAction);
 
-  // 3. SUPORTE E RESISTÊNCIA COM VALIDAÇÃO DE REJEIÇÃO REAL
+  // 3. SUPORTE E RESISTÊNCIA (REGRA DE OURO INSTITUCIONAL: EM SUPORTE SÓ SE COMPRA COM REJEIÇÃO, EM RESISTÊNCIA SÓ SE VENDE COM REJEIÇÃO)
   if (analysis.nearSupport) {
-    if (analysis.rejectionDirection === 'BULLISH' || analysis.dominantForce === 'COMPRADOR' || analysis.engulfingPattern === 'BULLISH') {
-      srCall += 18;
+    // Em cima de suporte: É ESTRITAMENTE PROIBIDO VENDER (PUT)!
+    paPut = 0;
+    srPut = 0;
+    msPut = Math.min(msPut, 4);
+
+    // Só pontua para COMPRA (CALL) se houver rejeição comprovada (pavio inferior ou engolfo de alta)
+    if (analysis.rejectionDirection === 'BULLISH' || analysis.engulfingPattern === 'BULLISH' || (analysis.dominantForce === 'COMPRADOR' && analysis.candleSequences.color === 'GREEN')) {
+      srCall += 22;
       reasons.push('Defesa compradora comprovada em zona de SUPORTE');
-    } else if (analysis.dominantForce === 'VENDEDOR' && analysis.trend === 'BAIXA') {
-      // Rompimento de suporte com força vendedora!
-      srPut += 12;
-      reasons.push('Pressão de rompimento vendedor em suporte');
     }
   }
 
   if (analysis.nearResistance) {
-    if (analysis.rejectionDirection === 'BEARISH' || analysis.dominantForce === 'VENDEDOR' || analysis.engulfingPattern === 'BEARISH') {
-      srPut += 18;
+    // Em cima de resistência: É ESTRITAMENTE PROIBIDO COMPRAR (CALL)!
+    paCall = 0;
+    srCall = 0;
+    msCall = Math.min(msCall, 4);
+
+    // Só pontua para VENDA (PUT) se houver rejeição comprovada (pavio superior ou engolfo de baixa)
+    if (analysis.rejectionDirection === 'BEARISH' || analysis.engulfingPattern === 'BEARISH' || (analysis.dominantForce === 'VENDEDOR' && analysis.candleSequences.color === 'RED')) {
+      srPut += 22;
       reasons.push('Defesa vendedora comprovada em zona de RESISTÊNCIA');
-    } else if (analysis.dominantForce === 'COMPRADOR' && analysis.trend === 'ALTA') {
-      // Rompimento de resistência com força compradora!
-      srCall += 12;
-      reasons.push('Pressão de rompimento comprador em resistência');
     }
   }
 
@@ -897,8 +901,13 @@ export function calculateConfluences(
     direction = 'NEUTRO';
     totalScore = 0;
   } else if (scoreDiff >= minAdvantage && totalCall >= minThreshold && hasCallPillars) {
-    // Filtro Institucional: se TradingView oficial indica VENDA ou FORTE VENDA, não abra CALL contra a maré
-    if (tvRec === 'FORTE VENDA' || tvRec === 'VENDA') {
+    // TRAVA ANTI-LOSS: NUNCA COMPRE (CALL) EM CIMA DE RESISTÊNCIA!
+    if (analysis.nearResistance) {
+      direction = 'NEUTRO';
+      totalScore = 40;
+      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: COMPRA (CALL) BLOQUEADA! O preço está em cima de uma RESISTÊNCIA.');
+    } else if (tvRec === 'FORTE VENDA' || tvRec === 'VENDA') {
+      // Filtro Institucional: se TradingView oficial indica VENDA ou FORTE VENDA, não abra CALL contra a maré
       direction = 'NEUTRO';
       totalScore = Math.min(totalCall, 50);
       reasons.unshift(`Proteção Anti-Loss: CALL abortado pois o TradingView indica ${tvRec}`);
@@ -911,8 +920,13 @@ export function calculateConfluences(
       smcFinalScore = normalizedSMCCall;
     }
   } else if (scoreDiff <= -minAdvantage && totalPut >= minThreshold && hasPutPillars) {
-    // Filtro Institucional: se TradingView oficial indica COMPRA ou FORTE COMPRA, não abra PUT contra a maré
-    if (tvRec === 'FORTE COMPRA' || tvRec === 'COMPRA') {
+    // TRAVA ANTI-LOSS: NUNCA VENDA (PUT) EM CIMA DE SUPORTE!
+    if (analysis.nearSupport) {
+      direction = 'NEUTRO';
+      totalScore = 40;
+      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: VENDA (PUT) BLOQUEADA! O preço está em cima de um SUPORTE.');
+    } else if (tvRec === 'FORTE COMPRA' || tvRec === 'COMPRA') {
+      // Filtro Institucional: se TradingView oficial indica COMPRA ou FORTE COMPRA, não abra PUT contra a maré
       direction = 'NEUTRO';
       totalScore = Math.min(totalPut, 50);
       reasons.unshift(`Proteção Anti-Loss: PUT abortado pois o TradingView indica ${tvRec}`);
