@@ -365,7 +365,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       if (!isDragging) return;
       const dx = e.clientX - dragRef.current.startX;
       const dy = e.clientY - dragRef.current.startY;
-      const newX = Math.max(10, Math.min(window.innerWidth - 380, dragRef.current.posX + dx));
+      const newX = Math.max(10, Math.min(window.innerWidth - 420, dragRef.current.posX + dx));
       const newY = Math.max(10, Math.min(window.innerHeight - 80, dragRef.current.posY + dy));
       setPosition({ x: newX, y: newY });
     };
@@ -805,54 +805,46 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   return (
     <div
       style={{ left: `${position.x}px`, top: `${position.y}px` }}
-      className={`fixed z-40 w-[360px] md:w-[380px] bg-neutral-950/95 backdrop-blur-xl border rounded-2xl shadow-2xl transition-shadow duration-300 select-none ${glowBorderClass}`}
+      className={`fixed z-40 w-[390px] sm:w-[410px] md:w-[420px] max-w-[98vw] bg-neutral-950/95 backdrop-blur-xl border rounded-2xl shadow-2xl transition-shadow duration-300 select-none overflow-hidden ${glowBorderClass}`}
     >
-      {/* HUD Draggable Titlebar */}
+      {/* HUD Draggable Titlebar - Ajustado com precisão milimétrica, sem estourar para fora */}
       <div
         onMouseDown={handleMouseDown}
-        className="flex items-center justify-between px-3.5 py-2.5 bg-neutral-900/80 border-b border-neutral-800/80 rounded-t-2xl cursor-grab active:cursor-grabbing"
+        className="flex items-center justify-between px-3 py-2 bg-neutral-900/90 border-b border-neutral-800/80 rounded-t-2xl cursor-grab active:cursor-grabbing gap-2 select-none"
       >
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isDepositLocked ? 'bg-amber-400 animate-pulse' : 'bg-cyan-400 animate-ping'}`} />
-          <span className="font-bold tracking-wider text-xs text-white">CLANDEX-IA</span>
+        <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${isDepositLocked ? 'bg-amber-400 animate-pulse' : 'bg-cyan-400 animate-ping'}`} />
+          <span className="font-extrabold tracking-wider text-xs text-white whitespace-nowrap">CLANDEX-IA</span>
           {isDepositLocked ? (
-            <span className="text-[10px] text-amber-300 font-mono font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1">
-              <Lock className="w-2.5 h-2.5 text-amber-400" />
+            <span className="text-[10px] text-amber-300 font-mono font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1 whitespace-nowrap">
+              <Lock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
               <span>DEPÓSITO PENDENTE</span>
             </span>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/70 px-1.5 py-0.5 rounded border border-cyan-500/40 whitespace-nowrap">
                 {asset.symbol} • {timeframe}
               </span>
               <span
                 title="Horário Oficial de Brasília (BRT - UTC-3)"
-                className="text-[10px] text-cyan-200 font-mono font-bold bg-black/60 px-2 py-0.5 rounded-lg border border-cyan-500/40 flex items-center gap-1 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+                className="hidden xs:inline-flex sm:inline-flex items-center gap-1 text-[10px] text-cyan-200 font-mono font-bold bg-black/60 px-1.5 py-0.5 rounded border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)] whitespace-nowrap"
               >
-                <Clock className="w-2.5 h-2.5 text-cyan-400 animate-pulse" />
+                <Clock className="w-2.5 h-2.5 text-cyan-400 animate-pulse shrink-0" />
                 <span>{currentBrasiliaClock} BRT</span>
               </span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 text-neutral-400">
-          {/* Real-Time Live Voice with 3D Technological Avatar (oculto se bloqueado) */}
-          {!isDepositLocked && (
+        <div className="flex items-center gap-1 shrink-0 text-neutral-400">
+          {/* BOTÃO ADM EXCLUSIVO: Visível APENAS para herisson.trader.jt5@gmail.com */}
+          {isAdmin && (
             <button
-              onClick={() => {
-                setActiveTab('voz');
-                setIsMinimized(false);
-                if (onOpenVoice) onOpenVoice();
-                if (liveVoice && liveVoice.status === 'idle') {
-                  liveVoice.startLiveConversation();
-                }
-              }}
-              title="Conversar por Voz com a IA (Avatar Tecnológico 3D)"
-              className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/50 text-cyan-300 rounded-lg text-[10px] font-mono font-bold transition-all shadow-[0_0_12px_rgba(6,182,212,0.25)] cursor-pointer"
+              onClick={onOpenAdminPanel}
+              title="Painel de Administrador Master (Membros Hiove)"
+              className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-mono font-black text-[10px] flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.5)] border border-amber-300 hover:scale-105 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />
-              <span>Voz 3D</span>
+              <span>👑 ADM</span>
             </button>
           )}
 
@@ -860,7 +852,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={onToggleSound}
               title={settings.soundEnabled ? 'Silenciar Alertas' : 'Ativar Alertas Sonoros'}
-              className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
             >
               {settings.soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5 text-neutral-500" />}
             </button>
@@ -870,7 +862,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={onOpenWebhook}
               title={settings.webhook?.enabled ? 'Webhook Ativo — Configurar Automação' : 'Configurar Webhook / Automação'}
-              className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors relative cursor-pointer"
+              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors relative cursor-pointer shrink-0"
             >
               <Send className={`w-3.5 h-3.5 ${settings.webhook?.enabled ? 'text-emerald-400' : 'text-neutral-400'}`} />
               {settings.webhook?.enabled && (
@@ -879,23 +871,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             </button>
           )}
 
-          {/* BOTÃO ADM EXCLUSIVO: Visível APENAS para herisson.trader.jt5@gmail.com */}
-          {isAdmin && (
-            <button
-              onClick={onOpenAdminPanel}
-              title="Painel de Administrador Master (Membros Hiove)"
-              className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-mono font-black text-[10px] flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.5)] border border-amber-300 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-            >
-              <span>👑 ADM</span>
-            </button>
-          )}
-
           {/* Configurações: Oculto se bloqueado por falta de depósito */}
           {!isDepositLocked && (
             <button
               onClick={onOpenSettings}
               title="Configurações de Confluência"
-              className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -906,7 +887,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={handlePerformLogout}
               title="Voltar ao Login (Trocar E-mail)"
-              className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="w-6 h-6 flex items-center justify-center text-neutral-400 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
             >
               <LogOut className="w-3.5 h-3.5 text-neutral-400 hover:text-amber-300" />
             </button>
@@ -915,14 +896,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             title={isMinimized ? 'Expandir' : 'Minimizar'}
-            className="p-1 hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+            className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setIsClosed(true)}
             title="Fechar Painel"
-            className="p-1 hover:text-rose-400 rounded hover:bg-neutral-800 transition-colors cursor-pointer"
+            className="w-6 h-6 flex items-center justify-center hover:text-rose-400 rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1092,69 +1073,69 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
           <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1">
             <button
               onClick={() => setActiveTab('sinal')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'sinal'
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'sinal'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Sinal</span>
-              {isTradeRunning && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />}
-              {activePreAlert && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />}
-              {hasConfirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+              {isTradeRunning && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />}
+              {activePreAlert && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />}
+              {hasConfirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />}
             </button>
 
             <button
               onClick={() => setActiveTab('analise')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'analise'
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'analise'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+              <BarChart3 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Técnica</span>
             </button>
 
             <button
               onClick={() => setActiveTab('noticias')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'noticias'
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'noticias'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Newspaper className="w-3.5 h-3.5 text-cyan-400" />
+              <Newspaper className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Notícias</span>
               {relevantEvents.upcomingHighImpact ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
               ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/50" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/50 shrink-0" />
               )}
             </button>
 
             <button
               onClick={() => setActiveTab('voz')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'voz'
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Mic className="w-3.5 h-3.5 text-cyan-400" />
+              <Mic className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Voz 3D</span>
               {liveVoice && liveVoice.status !== 'idle' ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
               ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60 shrink-0" />
               )}
             </button>
 
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'chat'
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'chat'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <MessageSquare className="w-3.5 h-3.5 text-neutral-400" />
+              <MessageSquare className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
               <span>Chat</span>
             </button>
           </div>
@@ -1260,9 +1241,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <span>PLACAR DO DIA</span>
                       <span className="text-[10px] text-cyan-400 font-semibold">({todayDateString})</span>
                     </div>
-                    <span className="text-[10px] font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
-                      {todayWinRate}% ASSERTIVO
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        title="Horário Oficial de Brasília (BRT - UTC-3)"
+                        className="text-[10px] font-mono font-bold text-cyan-200 bg-black/60 px-2 py-0.5 rounded-lg border border-cyan-500/40 flex items-center gap-1 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+                      >
+                        <Clock className="w-2.5 h-2.5 text-cyan-400 animate-pulse" />
+                        <span>{currentBrasiliaClock} BRT</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
+                        {todayWinRate}% ASSERTIVO
+                      </span>
+                    </div>
                   </div>
 
                   {/* Scoreboard Metrics Grid */}

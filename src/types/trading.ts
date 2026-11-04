@@ -53,7 +53,7 @@ export interface MarketAnalysis {
   buyerStrength: 'FORTE' | 'MODERADA' | 'FRACA';
   sellerStrength: 'FORTE' | 'MODERADA' | 'FRACA';
   dominantForce: 'COMPRADOR' | 'VENDEDOR' | 'EQUILIBRADO';
-  
+
   // Price Action
   rejectionCandle: boolean;
   rejectionDirection?: 'BULLISH' | 'BEARISH' | null;
@@ -101,10 +101,10 @@ export interface MarketAnalysis {
 }
 
 export type SignalDirection = 'CALL' | 'PUT';
-export type ConfluenceClassification = 
-  | 'SEM ENTRADA' 
-  | 'OPORTUNIDADE EM OBSERVAÇÃO' 
-  | 'CONFLUÊNCIA FORTE' 
+export type ConfluenceClassification =
+  | 'SEM ENTRADA'
+  | 'OPORTUNIDADE EM OBSERVAÇÃO'
+  | 'CONFLUÊNCIA FORTE'
   | 'CONFLUÊNCIA MUITO FORTE';
 
 export interface ConfluenceBreakdown {

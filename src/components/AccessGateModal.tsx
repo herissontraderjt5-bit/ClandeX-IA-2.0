@@ -47,7 +47,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
     // 0. Grava IMEDIATAMENTE a tentativa de login no Supabase Cloud
     // Garante que todo e qualquer e-mail digitado fica registrado no banco de dados
     // e aparece instantaneamente no Painel ADM do Herisson para liberação de dias
-    await recordUserLoginAttempt(cleanEmail).catch(() => {});
+    await recordUserLoginAttempt(cleanEmail).catch(() => { });
 
     // 1. Bypass Imediato para o Administrador Master (Herisson)
     const MASTER_ADMIN_EMAIL = 'herisson.trader.jt5@gmail.com';
@@ -67,9 +67,9 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
 
       try {
         localStorage.setItem('clandex_user_session', JSON.stringify(session));
-      } catch {}
+      } catch { }
 
-      recordUserHeartbeat(session).catch(() => {});
+      recordUserHeartbeat(session).catch(() => { });
 
       setTimeout(() => {
         onSuccess(session);
@@ -107,9 +107,9 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
 
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(session));
-        } catch {}
+        } catch { }
 
-        recordUserHeartbeat(session).catch(() => {});
+        recordUserHeartbeat(session).catch(() => { });
 
         setTimeout(() => {
           onSuccess(session);
@@ -150,9 +150,9 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
 
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(session));
-        } catch {}
+        } catch { }
 
-        recordUserHeartbeat(session).catch(() => {});
+        recordUserHeartbeat(session).catch(() => { });
 
         setTimeout(() => {
           onSuccess(session);
@@ -160,7 +160,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       } else {
         setErrorMessage(
           data.message ||
-            'Não conseguimos validar agora, tente em alguns minutos.'
+          'Não conseguimos validar agora, tente em alguns minutos.'
         );
       }
     } catch {
