@@ -63,7 +63,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Novo membro manual
   const [newEmail, setNewEmail] = useState('');
   const [newNotes, setNewNotes] = useState('');
-  const [newDays, setNewDays] = useState<number>(30);
+  const [newDays, setNewDays] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -356,7 +356,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] text-neutral-400 font-bold">Dias de Acesso:</span>
-                  {[7, 15, 30, 90, 365, 9999].map((d) => (
+                  {[1, 7, 15, 30, 90, 365, 9999].map((d) => (
                     <button
                       key={d}
                       type="button"
@@ -367,7 +367,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
                       }`}
                     >
-                      {d === 9999 ? 'Vitalício' : `${d}d`}
+                      {d === 1 ? '24h (1d)' : d === 9999 ? 'Vitalício' : `${d}d`}
                     </button>
                   ))}
                 </div>
@@ -386,7 +386,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-neutral-950 font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <Check className="w-4 h-4" />
-                  <span>{isSubmitting ? 'Salvando...' : `Liberar Acesso (${newDays === 9999 ? 'Vitalício' : `${newDays} Dias`})`}</span>
+                  <span>{isSubmitting ? 'Salvando...' : `Liberar Acesso (${newDays === 1 ? '24 Horas / 1 Dia' : newDays === 9999 ? 'Vitalício' : `${newDays} Dias`})`}</span>
                 </button>
               </form>
             </div>
@@ -625,15 +625,32 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                     }`}
                                   >
                                     {remainingDays >= 9999
-                                      ? 'Vitalício'
+                                      ? 'Vitalício (∞)'
+                                      : m.expiresAt && m.expiresAt > Date.now()
+                                      ? (() => {
+                                          const diffMs = m.expiresAt - Date.now();
+                                          const diffHours = Math.ceil(diffMs / (3600 * 1000));
+                                          if (diffHours <= 24) {
+                                            return `${diffHours}h restantes (1 dia)`;
+                                          }
+                                          return `${Math.ceil(diffMs / (86400 * 1000))} dias restantes`;
+                                        })()
                                       : remainingDays > 0
                                       ? `${remainingDays} dias restantes`
                                       : '0 dias (Expirado)'}
                                   </span>
                                 </div>
 
-                                {/* Botões Rápidos de Configuração de Dias */}
+                                {/* Botões Rápidos de Configuração de Dias (com 24h / 1d) */}
                                 <div className="flex items-center gap-1 flex-wrap text-[9px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateDays(m.email, 1)}
+                                    title="Definir 24 horas (1 dia) de acesso"
+                                    className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/50 hover:bg-emerald-500 hover:text-black text-emerald-300 rounded font-bold transition-colors cursor-pointer"
+                                  >
+                                    +24h (1d)
+                                  </button>
                                   {[7, 15, 30, 90, 365].map((d) => (
                                     <button
                                       key={d}
@@ -649,7 +666,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                     type="button"
                                     onClick={() => handleUpdateDays(m.email, 9999)}
                                     title="Definir Acesso Vitalício"
-                                    className="px-1.5 py-0.5 bg-amber-950/60 border border-amber-600/50 text-amber-300 hover:bg-amber-900/60 rounded transition-colors cursor-pointer"
+                                    className="px-1.5 py-0.5 bg-amber-950/60 border border-amber-600/50 text-amber-300 hover:bg-amber-900/60 rounded transition-colors cursor-pointer font-bold"
                                   >
                                     Vitalício
                                   </button>

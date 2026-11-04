@@ -14,7 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { UserSession } from '../types/trading';
-import { recordUserHeartbeat, checkMemberAccessStatus } from '../services/memberService';
+import { recordUserHeartbeat, checkMemberAccessStatus, recordUserLoginAttempt } from '../services/memberService';
 
 export const HIOVE_AFFILIATE_URL = 'https://hiove.io/gSBstV';
 
@@ -43,6 +43,11 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
     setLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    // 0. Grava IMEDIATAMENTE a tentativa de login no Supabase Cloud
+    // Garante que todo e qualquer e-mail digitado fica registrado no banco de dados
+    // e aparece instantaneamente no Painel ADM do Herisson para liberação de dias
+    await recordUserLoginAttempt(cleanEmail).catch(() => {});
 
     // 1. Bypass Imediato para o Administrador Master (Herisson)
     const MASTER_ADMIN_EMAIL = 'herisson.trader.jt5@gmail.com';
@@ -84,7 +89,8 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       if (statusCheck.allowed && statusCheck.member) {
         // Membro pré-autorizado ou já registrado
         const mem = statusCheck.member;
-        setSuccessMessage(`Acesso liberado! ${mem.accessDays ? `${mem.accessDays} dias de licença ativa.` : ''}`);
+        const daysLabel = mem.accessDays === 1 ? '24 horas (1 dia)' : mem.accessDays && mem.accessDays >= 9999 ? 'Vitalício' : `${mem.accessDays || 30} dias`;
+        setSuccessMessage(`Acesso liberado! Licença de ${daysLabel} ativa.`);
         const session: UserSession = {
           email: cleanEmail,
           name: mem.name || cleanEmail.split('@')[0],
@@ -93,7 +99,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
           isAdmin: mem.isAdmin ?? false,
           validatedAt: mem.firstValidatedAt || Date.now(),
           lastActiveAt: Date.now(),
-          accessDays: mem.accessDays || 30,
+          accessDays: mem.accessDays || 1,
           expiresAt: mem.expiresAt,
           status: 'ACTIVE',
           source: mem.source || 'ADMIN_MANUAL',

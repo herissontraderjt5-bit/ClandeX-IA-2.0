@@ -221,8 +221,8 @@ export interface UserSession {
   validatedAt: number;
   lastActiveAt?: number;
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
-  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
-  accessDays?: number; // Dias de acesso concedidos (ex: 7, 15, 30, 90, 365, 9999)
+  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS' | 'LOGIN_ATTEMPT' | 'HIOVE_LOGIN';
+  accessDays?: number; // Dias de acesso concedidos (ex: 1 [24h], 7, 15, 30, 90, 365, 9999 [Vitalício])
   expiresAt?: number; // Timestamp em que o acesso expira
 }
 
@@ -233,7 +233,7 @@ export interface MemberRecord {
   hasDeposit?: boolean;
   isAdmin: boolean;
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
-  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
+  source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS' | 'LOGIN_ATTEMPT' | 'HIOVE_LOGIN';
   firstValidatedAt: number;
   lastCheckedAt: number;
   lastActiveAt?: number;

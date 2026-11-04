@@ -14,11 +14,14 @@ export interface MemberRecord {
   hasAccess: boolean;
   hasDeposit?: boolean;
   isAdmin: boolean;
-  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
   firstValidatedAt: number;
   lastCheckedAt: number;
+  lastActiveAt?: number;
+  accessDays?: number;
+  expiresAt?: number;
   notes?: string;
-  source: 'HIOVE_API' | 'ADMIN_MANUAL' | 'ADMIN_BYPASS';
+  source: 'HIOVE_API' | 'ADMIN_MANUAL' | 'ADMIN_BYPASS' | 'LOGIN_ATTEMPT' | 'HIOVE_LOGIN';
 }
 
 const DATA_DIR = path.resolve(__dirname, '..', 'data');
@@ -58,7 +61,10 @@ export function loadRegistry() {
     status: 'ACTIVE',
     firstValidatedAt: membersMap[ADMIN_EMAIL]?.firstValidatedAt || Date.now(),
     lastCheckedAt: Date.now(),
+    lastActiveAt: Date.now(),
     source: 'ADMIN_BYPASS',
+    accessDays: 9999,
+    expiresAt: Date.now() + 9999 * 86400 * 1000,
     notes: 'Administrador Master CandleX-IA',
   };
 
@@ -76,14 +82,65 @@ function saveRegistryFile() {
 }
 
 /**
- * Sincroniza em segundo plano com a tabela app_settings do Supabase
+ * Sincroniza bidirecionalmente em segundo plano com a tabela app_settings do Supabase
+ * Mescla com os dados existentes na nuvem para que nenhum usuário registrado pelo frontend seja perdido
  */
-async function syncWithSupabaseAsync() {
+export async function syncWithSupabaseAsync() {
   const sbUrl = process.env.SUPABASE_URL;
   const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!sbUrl || !sbKey) return;
 
   try {
+    // 1. Lê os membros atuais salvos no Supabase na chave members_registry
+    const getRes = await fetch(`${sbUrl}/rest/v1/app_settings?id=eq.members_registry`, {
+      method: 'GET',
+      headers: {
+        apikey: sbKey,
+        Authorization: `Bearer ${sbKey}`,
+      },
+    });
+
+    if (getRes.ok) {
+      const rows = await getRes.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].weights) {
+        const cloudWeights = rows[0].weights as Record<string, MemberRecord>;
+        // Mescla: mantém o que já está na nuvem e adiciona/atualiza da memória local
+        for (const [em, cloudMember] of Object.entries(cloudWeights)) {
+          if (!membersMap[em]) {
+            membersMap[em] = cloudMember;
+          } else {
+            // Preserva a liberação mais recente ou status ativo
+            if (cloudMember.hasAccess && !membersMap[em].hasAccess) {
+              membersMap[em] = cloudMember;
+            }
+          }
+        }
+      }
+    }
+
+    saveRegistryFile();
+
+    // 2. Grava de volta na chave principal members_registry (lida pelo frontend e painel ADM)
+    await fetch(`${sbUrl}/rest/v1/app_settings`, {
+      method: 'POST',
+      headers: {
+        apikey: sbKey,
+        Authorization: `Bearer ${sbKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        id: 'members_registry',
+        weights: membersMap,
+        thresholds: {
+          totalUsers: Object.keys(membersMap).length,
+          lastUpdated: Date.now(),
+        },
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    // 3. Grava também no hiove_access_registry para compatibilidade total
     const list = Object.values(membersMap).map((m) => ({
       email: m.email,
       name: m.name,
@@ -91,6 +148,8 @@ async function syncWithSupabaseAsync() {
       isAdmin: m.isAdmin,
       status: m.status,
       validatedAt: m.firstValidatedAt,
+      accessDays: m.accessDays,
+      expiresAt: m.expiresAt,
     }));
 
     await fetch(`${sbUrl}/rest/v1/app_settings`, {
@@ -121,21 +180,101 @@ export function getMember(email: string): MemberRecord | null {
   return membersMap[clean] || null;
 }
 
-export function grantMemberManual(email: string, notes?: string): MemberRecord {
+/**
+ * Registra qualquer tentativa de login na plataforma para aparecer no Painel ADM
+ */
+export function recordLoginAttempt(emailInput: string, source: string = 'HIOVE_LOGIN'): MemberRecord {
+  const clean = emailInput.toLowerCase().trim();
+  const isAdmin = clean === ADMIN_EMAIL;
+  const existing = membersMap[clean];
+  const now = Date.now();
+
+  const accessDays = existing?.accessDays ?? (isAdmin ? 9999 : 0);
+  const expiresAt = existing?.expiresAt ?? (isAdmin ? now + 9999 * 86400 * 1000 : 0);
+  const isExpired = !isAdmin && expiresAt > 0 && now > expiresAt;
+  const hasAccess = isAdmin ? true : (existing?.hasAccess ?? false) && !isExpired;
+  const status = isAdmin ? 'ACTIVE' : (isExpired ? 'EXPIRED' : (existing?.status || 'PENDING_DEPOSIT'));
+
+  const record: MemberRecord = {
+    email: clean,
+    name: existing?.name || clean.split('@')[0],
+    hasAccess,
+    hasDeposit: existing?.hasDeposit ?? isAdmin,
+    isAdmin,
+    status,
+    firstValidatedAt: existing?.firstValidatedAt || now,
+    lastCheckedAt: now,
+    lastActiveAt: now,
+    accessDays,
+    expiresAt,
+    source: existing?.source || (source as any),
+    notes: existing?.notes || (hasAccess ? 'Usuário ativo' : 'Login realizado na tela inicial (Aguardando liberação de dias)'),
+  };
+
+  membersMap[clean] = record;
+  saveRegistryFile();
+  syncWithSupabaseAsync();
+  return record;
+}
+
+/**
+ * Atualiza os dias de acesso de um usuário (1 dia [24h], 7d, 15d, 30d, 9999d vitalício)
+ */
+export function updateMemberDays(emailInput: string, days: number): MemberRecord {
+  const clean = emailInput.toLowerCase().trim();
+  const existing = membersMap[clean];
+  const now = Date.now();
+  const accessDays = Math.max(1, days);
+  const expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
+
+  const record: MemberRecord = {
+    email: clean,
+    name: existing?.name || clean.split('@')[0],
+    hasAccess: true,
+    hasDeposit: existing?.hasDeposit ?? true,
+    isAdmin: clean === ADMIN_EMAIL || existing?.isAdmin === true,
+    status: 'ACTIVE',
+    firstValidatedAt: existing?.firstValidatedAt || now,
+    lastCheckedAt: now,
+    lastActiveAt: existing?.lastActiveAt || now,
+    accessDays,
+    expiresAt,
+    source: existing?.source || 'ADMIN_MANUAL',
+    notes: accessDays === 1
+      ? `Acesso liberado por 24 horas (1 dia) em ${new Date().toLocaleString('pt-BR')}`
+      : `Acesso renovado para ${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias`} em ${new Date().toLocaleDateString('pt-BR')}`,
+  };
+
+  membersMap[clean] = record;
+  saveRegistryFile();
+  syncWithSupabaseAsync();
+  return record;
+}
+
+export function grantMemberManual(email: string, notes?: string, days: number = 1): MemberRecord {
   const clean = email.toLowerCase().trim();
   const isAdmin = clean === ADMIN_EMAIL;
   const name = clean === ADMIN_EMAIL ? 'Herisson' : clean.split('@')[0];
+  const now = Date.now();
+  const accessDays = Math.max(1, days);
+  const expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
 
   const record: MemberRecord = {
     email: clean,
     name,
     hasAccess: true,
+    hasDeposit: true,
     isAdmin,
     status: 'ACTIVE',
-    firstValidatedAt: membersMap[clean]?.firstValidatedAt || Date.now(),
-    lastCheckedAt: Date.now(),
+    firstValidatedAt: membersMap[clean]?.firstValidatedAt || now,
+    lastCheckedAt: now,
+    lastActiveAt: now,
+    accessDays,
+    expiresAt,
     source: 'ADMIN_MANUAL',
-    notes: notes || 'Liberado manualmente pelo administrador',
+    notes: notes || (accessDays === 1
+      ? `Liberado por 24 horas (1 dia) pelo administrador`
+      : `Liberado manualmente pelo administrador (${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias`})`),
   };
 
   membersMap[clean] = record;
@@ -180,9 +319,6 @@ export function deleteMember(email: string): boolean {
 /**
  * Consulta a API da Hiove de forma segura no servidor
  * POST https://access.hiove.io/api/v1/access-check
- * Authorization: Bearer process.env.HIOVE_KEY
- * Content-Type: application/json
- * Body: {"email": "cliente@exemplo.com"}
  */
 export async function queryHioveApi(emailInput: string): Promise<{
   status: number;
@@ -222,16 +358,7 @@ export async function queryHioveApi(emailInput: string): Promise<{
 }
 
 /**
- * Fluxo de validação de acesso conforme as especificações oficiais:
- * 1. Admin Master -> Acesso imediato liberado
- * 2. Já liberado na base (access: true guardado) -> Retorna direto sem consultar a API Hiove
- * 3. Usuário novo ou quem veio false -> Consulta a API da Hiove (POST /api/v1/access-check)
- *    - {"access": true} -> É cliente cadastrado pelo link e já fez depósito na corretora. Pode liberar.
- *    - {"access": false} -> Não liberar (não tem cadastro pelo link ou ainda não depositou).
- * 4. Tratamento de erros:
- *    - 400: e-mail vazio ou inválido
- *    - 401, 429, 500 ou falha de conexão: NÃO LIBERAR.
- *      Mostra: "Não conseguimos validar agora, tente em alguns minutos."
+ * Fluxo de validação de acesso
  */
 export async function validateUserAccess(emailInput: string): Promise<{
   success: boolean;
@@ -241,7 +368,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
   name: string;
   email: string;
   cached: boolean;
-  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
   message: string;
   errorCode?: string;
 }> {
@@ -276,9 +403,17 @@ export async function validateUserAccess(emailInput: string): Promise<{
     };
   }
 
-  // 2. Regra: "Consulte uma vez e guarde o resultado. Quando vier true, marque o usuário como liberado na sua base e não consulte de novo a cada login."
+  // 2. Se já estiver liberado na base com acesso ativo e dentro do prazo
   const cachedMember = membersMap[email];
-  if (cachedMember && cachedMember.hasAccess && cachedMember.status === 'ACTIVE') {
+  const now = Date.now();
+  const isExpired = cachedMember?.expiresAt ? now > cachedMember.expiresAt : false;
+
+  if (cachedMember && cachedMember.hasAccess && cachedMember.status === 'ACTIVE' && !isExpired) {
+    cachedMember.lastActiveAt = now;
+    cachedMember.lastCheckedAt = now;
+    saveRegistryFile();
+    syncWithSupabaseAsync();
+
     return {
       success: true,
       access: true,
@@ -288,17 +423,17 @@ export async function validateUserAccess(emailInput: string): Promise<{
       email,
       cached: true,
       status: 'ACTIVE',
-      message: 'Acesso ativo e validado na corretora Hiove.',
+      message: 'Acesso ativo e validado na plataforma.',
     };
   }
 
-  // 3. Regra: "Quem veio false você pode consultar de novo depois, por exemplo quando a pessoa disser que já depositou."
+  // 3. Consulta à API da Hiove
   try {
     const hioveResult = await queryHioveApi(email);
 
     if (hioveResult.status === 200) {
       if (hioveResult.access === true) {
-        // {"access": true} → é cliente cadastrado pelo seu link e já fez depósito na corretora. Pode liberar.
+        // {"access": true} → é cliente cadastrado pelo link e já fez depósito na corretora. Pode liberar.
         const record: MemberRecord = {
           email,
           name: email.split('@')[0],
@@ -306,8 +441,11 @@ export async function validateUserAccess(emailInput: string): Promise<{
           hasDeposit: true,
           isAdmin: false,
           status: 'ACTIVE',
-          firstValidatedAt: cachedMember?.firstValidatedAt || Date.now(),
-          lastCheckedAt: Date.now(),
+          firstValidatedAt: cachedMember?.firstValidatedAt || now,
+          lastCheckedAt: now,
+          lastActiveAt: now,
+          accessDays: cachedMember?.accessDays || 30,
+          expiresAt: cachedMember?.expiresAt || (now + 30 * 86400 * 1000),
           source: 'HIOVE_API',
           notes: 'Validado via API Hiove (cadastro e depósito confirmados)',
         };
@@ -327,7 +465,7 @@ export async function validateUserAccess(emailInput: string): Promise<{
           message: 'Conta Hiove validada com sucesso! Depósito confirmado e acesso liberado.',
         };
       } else {
-        // {"access": false} → não liberar (não tem cadastro pelo seu link ou ainda não depositou).
+        // {"access": false} → não liberar, MAS SALVA NO SUPABASE para aparecer no Painel ADM
         const record: MemberRecord = {
           email,
           name: email.split('@')[0],
@@ -335,13 +473,17 @@ export async function validateUserAccess(emailInput: string): Promise<{
           hasDeposit: false,
           isAdmin: false,
           status: 'PENDING_DEPOSIT',
-          firstValidatedAt: cachedMember?.firstValidatedAt || Date.now(),
-          lastCheckedAt: Date.now(),
+          firstValidatedAt: cachedMember?.firstValidatedAt || now,
+          lastCheckedAt: now,
+          lastActiveAt: now,
+          accessDays: 0,
+          expiresAt: 0,
           source: 'HIOVE_API',
-          notes: 'Não liberado pela API Hiove (sem cadastro pelo link ou sem depósito)',
+          notes: 'Login realizado via Hiove (sem depósito confirmado ou aguardando liberação manual)',
         };
         membersMap[email] = record;
         saveRegistryFile();
+        syncWithSupabaseAsync();
 
         return {
           success: false,
@@ -352,29 +494,13 @@ export async function validateUserAccess(emailInput: string): Promise<{
           email,
           cached: false,
           status: 'PENDING_DEPOSIT',
-          message: 'Acesso não liberado. Certifique-se de que cadastrou sua conta na Hiove pelo nosso link e efetuou o depósito para ativar o acesso.',
+          message: 'Acesso pendente. E-mail registrado no sistema. Aguarde a liberação ou entre em contato com o suporte.',
           errorCode: 'NO_ACCESS',
         };
       }
-    } else if (hioveResult.status === 400) {
-      // 400: e-mail vazio ou inválido
-      return {
-        success: false,
-        access: false,
-        hasDeposit: false,
-        isAdmin: false,
-        name: '',
-        email,
-        cached: false,
-        status: 'PENDING_DEPOSIT',
-        message: 'E-mail vazio ou inválido na corretora Hiove.',
-        errorCode: 'INVALID_EMAIL_400',
-      };
     } else {
-      // 401: chave errada ou desativada
-      // 429: limite de consultas atingido (30/min, 3000/dia)
-      // 500 ou outros: falha no servidor
-      // Regra: "Se der erro (401, 429, 500 ou falha de conexão), não libere o acesso. Mostre algo como 'não conseguimos validar agora, tente em alguns minutos'."
+      // Outro status HTTP da Hiove: salva o usuário para que o ADM possa liberá-lo manualmente
+      recordLoginAttempt(email, 'HIOVE_LOGIN');
       return {
         success: false,
         access: false,
@@ -384,13 +510,13 @@ export async function validateUserAccess(emailInput: string): Promise<{
         email,
         cached: false,
         status: 'PENDING_DEPOSIT',
-        message: 'Não conseguimos validar agora, tente em alguns minutos.',
-        errorCode: `HTTP_${hioveResult.status}`,
+        message: 'Não conseguimos validar agora na Hiove. Seu login foi registrado para liberação pelo administrador.',
+        errorCode: 'API_ERROR',
       };
     }
   } catch (err: any) {
-    console.error('[Hiove API] Erro na consulta ou falha de conexão:', err?.message || err);
-    // Regra: falha de conexão -> não liberar o acesso e mostrar mensagem padrão
+    // Falha de conexão: registra o e-mail no Supabase
+    recordLoginAttempt(email, 'HIOVE_LOGIN');
     return {
       success: false,
       access: false,
@@ -400,11 +526,8 @@ export async function validateUserAccess(emailInput: string): Promise<{
       email,
       cached: false,
       status: 'PENDING_DEPOSIT',
-      message: 'Não conseguimos validar agora, tente em alguns minutos.',
+      message: 'Não conseguimos validar agora na Hiove. Seu login foi registrado para liberação pelo administrador.',
       errorCode: 'CONNECTION_ERROR',
     };
   }
 }
-
-// Inicializar na importação
-loadRegistry();

@@ -10,6 +10,8 @@ import {
   validateUserAccess,
   getAllMembers,
   grantMemberManual,
+  updateMemberDays,
+  recordLoginAttempt,
   revokeMember,
   deleteMember,
   queryHioveApi,
@@ -110,23 +112,60 @@ app.get('/api/admin/members', (req: Request, res: Response) => {
   });
 });
 
-// Painel do Administrador: Liberação Manual de Membro
+// Painel do Administrador: Liberação Manual de Membro (com dias configuráveis: 1 [24h], 7, 15, 30, etc.)
 app.post('/api/admin/manual-grant', (req: Request, res: Response) => {
   const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
   if (adminEmail !== ADMIN_EMAIL) {
     return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
   }
 
-  const { email, notes } = req.body;
+  const { email, notes, days } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ success: false, error: 'E-mail inválido.' });
   }
 
   try {
-    const member = grantMemberManual(email, notes);
-    res.json({ success: true, member, message: `Acesso liberado com sucesso para ${email}.` });
+    const accessDays = Number(days) || 1;
+    const member = grantMemberManual(email, notes, accessDays);
+    res.json({ success: true, member, message: `Acesso liberado com sucesso para ${email} (${accessDays >= 9999 ? 'Vitalício' : `${accessDays}d`}).` });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Painel do Administrador: Atualizar Dias de Acesso (ex: 1 dia [24h], 7d, 15d, 30d, 9999d)
+app.post('/api/admin/update-days', (req: Request, res: Response) => {
+  const adminEmail = (req.headers['x-admin-email'] || req.body.adminEmail || '').toString().toLowerCase().trim();
+  if (adminEmail !== ADMIN_EMAIL) {
+    return res.status(403).json({ success: false, error: 'Acesso restrito ao Administrador Master.' });
+  }
+
+  const { email, days } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'E-mail inválido.' });
+  }
+
+  try {
+    const accessDays = Number(days) || 1;
+    const member = updateMemberDays(email, accessDays);
+    res.json({ success: true, member, message: `Dias de acesso de ${email} atualizados para ${accessDays >= 9999 ? 'Vitalício' : `${accessDays}d`}.` });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Registro de Tentativa de Login (captura qualquer e-mail digitado no login para aparecer no Painel ADM)
+app.post('/api/admin/record-login', (req: Request, res: Response) => {
+  const { email, source } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'E-mail inválido.' });
+  }
+
+  try {
+    const member = recordLoginAttempt(email, source || 'HIOVE_LOGIN');
+    res.json({ success: true, member });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
