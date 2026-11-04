@@ -1257,6 +1257,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <Calendar className="w-3.5 h-3.5 text-cyan-400" />
                       <span>PLACAR DO DIA</span>
                       <span className="text-[10px] text-cyan-400 font-semibold">({todayDateString})</span>
+                      <button
+                        onClick={() => signalEngine.clearHistory()}
+                        title="Zerar placar do dia"
+                        className="ml-1 text-neutral-400 hover:text-cyan-300 p-1 rounded hover:bg-neutral-800 transition-colors cursor-pointer flex items-center gap-0.5 text-[9px]"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span className="text-[8px] opacity-70">Zerar</span>
+                      </button>
                     </div>
                     <div className="flex items-center gap-2">
                       <span

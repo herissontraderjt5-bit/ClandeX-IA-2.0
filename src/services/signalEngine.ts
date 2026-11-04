@@ -460,6 +460,7 @@ export class SignalEngine {
         }
       } else {
         // Confirmação direta instantânea de alta convicção faltando 10 segundos
+        // EXIGE que a estratégia E as confluências técnicas de mercado estejam 100% alinhadas
         const activeStrategies = settings.activeStrategies || getStoredActiveStrategies();
         const stratDecision = getBestActiveStrategySignal(
           allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
@@ -468,9 +469,18 @@ export class SignalEngine {
           profile
         );
 
-        if (stratDecision) {
+        const isAlignedWithConfluence =
+          stratDecision &&
+          confluences.direction === stratDecision.direction &&
+          confluences.totalScore >= confirmMinScore &&
+          stratDecision.score >= confirmMinScore &&
+          !marketAnalysis?.inConsolidation;
+
+        if (isAlignedWithConfluence && stratDecision) {
           const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
           const refPrice = currentCandle.close;
+          const combinedScore = Math.round((stratDecision.score + confluences.totalScore) / 2);
+
           const confirmed: SignalRecord = {
             id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             timestamp: Date.now(),
@@ -485,12 +495,12 @@ export class SignalEngine {
             entryPrice: refPrice,
             candleOpenPrice: refPrice,
             isEntered: false,
-            confluenceScore: stratDecision.score,
+            confluenceScore: combinedScore,
             strategyId: stratDecision.strategy.id,
             strategyName: stratDecision.strategy.name,
             strategyBadge: stratDecision.strategy.badge,
             strategyWinRate: bRes?.winRate,
-            reasons: [...stratDecision.reasons],
+            reasons: [...stratDecision.reasons, ...confluences.reasons.slice(0, 2)],
             result: 'PENDING',
             candleCloseTime: targetEntryTimestamp,
             entryTimestamp: targetEntryTimestamp,
@@ -559,7 +569,7 @@ export class SignalEngine {
     }
 
     // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação faltando 10s)
-    // 5.1 Prioridade para as ESTRATÉGIAS MODULARES ATIVAS SELECIONADAS PELO USUÁRIO
+    // 5.1 Prioridade para as ESTRATÉGIAS MODULARES ATIVAS SELECIONADAS PELO USUÁRIO COM FILTRO DE CONFLUÊNCIA
     const activeStrategies = settings.activeStrategies || getStoredActiveStrategies();
     const stratDecision = getBestActiveStrategySignal(
       allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
@@ -577,14 +587,22 @@ export class SignalEngine {
     let stratWinRate: number | undefined = undefined;
 
     if (stratDecision) {
-      signalDirection = stratDecision.direction;
-      signalScore = stratDecision.score;
-      signalReasons = [...stratDecision.reasons];
-      stratId = stratDecision.strategy.id;
-      stratName = stratDecision.strategy.name;
-      stratBadge = stratDecision.strategy.badge;
-      const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
-      stratWinRate = bRes?.winRate;
+      // FILTRO RIGOROSO DE TENDÊNCIA E MERCADO:
+      // Se a confluência geral for contrária à decisão da estratégia, anula para proteger a banca
+      const isOpposingMarket = (stratDecision.direction === 'CALL' && confluences.direction === 'PUT') ||
+                               (stratDecision.direction === 'PUT' && confluences.direction === 'CALL');
+      const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
+
+      if (!isOpposingMarket && !isConsolidationBlocked && stratDecision.score >= preAlertMinScore) {
+        signalDirection = stratDecision.direction;
+        signalScore = Math.round((stratDecision.score + confluences.totalScore) / 2);
+        signalReasons = [...stratDecision.reasons, ...confluences.reasons.slice(0, 2)];
+        stratId = stratDecision.strategy.id;
+        stratName = stratDecision.strategy.name;
+        stratBadge = stratDecision.strategy.badge;
+        const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
+        stratWinRate = bRes?.winRate;
+      }
     } else if (confluences.direction !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
       const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
       if (!isConsolidationBlocked) {
