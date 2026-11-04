@@ -74,6 +74,7 @@ import { computeTechnicalOverview, TechnicalOverviewData } from '../services/tec
 import { marketDataManager, isForexMarketOpen } from '../services/marketData';
 import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 
 interface FloatingHudProps {
   asset: Asset;
@@ -392,6 +393,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'noticias' | 'voz' | 'chat'>('sinal');
   const [copiedSignal, setCopiedSignal] = useState(false);
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
+
+  // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
+  const [currentBrasiliaClock, setCurrentBrasiliaClock] = useState(() => formatBrasiliaTime());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentBrasiliaClock(formatBrasiliaTime());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Market status & Economic News
   const isForexOpen = isForexMarketOpen();
@@ -762,6 +772,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   // Copy signal to clipboard
   const handleCopySignal = () => {
     const dir = isCall ? 'CALL (COMPRA) ↗' : isPut ? 'PUT (VENDA) ↘' : confluences.direction;
+    const signalTime = activeTrade?.entryTimeFormatted || latestConfirmedSignal?.entryTimeFormatted || activePreAlert?.entryTimeFormatted || formatBrasiliaTime();
     const text = `🎯 CLANDEX-IA SIGNAL
 📊 Par: ${asset.symbol}
 ⏱️ Timeframe: ${timeframe}
@@ -770,7 +781,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 💵 Cotação: ${asset.currentPrice.toFixed(asset.pipDecimals)}
 ⭐ Confluência: ${confluences.totalScore}% (${confluences.classification})
 📅 Placar Hoje: ${todayWins} WIN x ${todayLosses} LOSS (${todayWinRate}%)
-🕒 Horário: ${new Date().toLocaleTimeString('pt-BR')}`;
+⏰ Horário da Entrada: ${signalTime} (Horário Oficial de Brasília - BRT)`;
     try {
       navigator.clipboard.writeText(text);
       setCopiedSignal(true);
@@ -809,9 +820,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               <span>DEPÓSITO PENDENTE</span>
             </span>
           ) : (
-            <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
-              {asset.symbol} • {timeframe}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
+                {asset.symbol} • {timeframe}
+              </span>
+              <span
+                title="Horário Oficial de Brasília (BRT - UTC-3)"
+                className="text-[10px] text-cyan-200 font-mono font-bold bg-black/60 px-2 py-0.5 rounded-lg border border-cyan-500/40 flex items-center gap-1 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+              >
+                <Clock className="w-2.5 h-2.5 text-cyan-400 animate-pulse" />
+                <span>{currentBrasiliaClock} BRT</span>
+              </span>
+            </div>
           )}
         </div>
 
@@ -1370,9 +1390,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
                         </div>
 
-                        <div className="flex items-center justify-between text-[10px] font-mono text-neutral-300 bg-black/40 py-1 px-3 rounded-lg border border-white/10">
-                          <span>Horário da Compra/Venda: <strong className="text-cyan-300">{lastResolvedTrade.entryTimeFormatted || lastResolvedTrade.formattedTime}</strong></span>
-                          <span>Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
+                        <div className="p-2.5 bg-gradient-to-r from-cyan-950/70 via-black to-neutral-950 rounded-xl border border-cyan-500/50 flex items-center justify-between font-mono shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+                          <div className="flex items-center gap-1.5 text-neutral-300">
+                            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[11px] text-neutral-400 font-bold">Entrada (Brasília):</span>
+                            <span className="text-cyan-300 font-black text-xs bg-black/80 px-2 py-0.5 rounded border border-cyan-400/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
+                              {lastResolvedTrade.entryTimeFormatted || lastResolvedTrade.formattedTime}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-neutral-300">Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
                         </div>
 
                         <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
@@ -1419,18 +1445,19 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
 
                       {/* Horário Oficial da Compra/Venda e Preço Oficial de Abertura */}
-                      <div className="p-2 bg-black/60 rounded-xl border border-cyan-500/30 flex items-center justify-between text-[11px] font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-neutral-400">Horário:</span>
-                          <span className="text-cyan-300 font-bold">{activeTrade.entryTimeFormatted || activeTrade.formattedTime}</span>
+                      <div className="p-2.5 bg-gradient-to-r from-cyan-950/70 via-black to-neutral-950 rounded-xl border border-cyan-500/50 space-y-1.5 font-mono shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs text-neutral-300">
+                            <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                            <span className="font-bold text-neutral-400">Entrada (Brasília):</span>
+                          </div>
+                          <span className="text-cyan-300 font-black text-sm bg-black/80 px-2.5 py-0.5 rounded-lg border border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.4)]">
+                            {activeTrade.entryTimeFormatted || activeTrade.formattedTime} <span className="text-[10px] text-neutral-400">BRT</span>
+                          </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-neutral-400">Abertura:</span>
-                          <span className="text-white font-bold">{activeTrade.entryPrice.toFixed(asset.pipDecimals)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-neutral-400">Término:</span>
-                          <span className="text-neutral-300">{activeTrade.expirationTimeFormatted || 'Fechamento'}</span>
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800 text-neutral-300">
+                          <span>Abertura: <strong className="text-white">{activeTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Término: <strong className="text-emerald-300">{activeTrade.expirationTimeFormatted || 'Fechamento'} BRT</strong></span>
                         </div>
                       </div>
 
@@ -1540,15 +1567,22 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
-                      {/* Horário Oficial da Compra ou Venda */}
-                      <div className="p-2.5 bg-gradient-to-r from-cyan-950/60 to-emerald-950/60 rounded-xl border border-cyan-500/60 flex items-center justify-between text-xs font-mono shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                        <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                          <Clock className="w-4 h-4 text-cyan-400 animate-pulse" />
-                          <span>HORÁRIO DA COMPRA/VENDA:</span>
+                      {/* Horário Oficial da Compra ou Venda (Horário de Brasília com Super Destaque) */}
+                      <div className="p-3 bg-gradient-to-r from-cyan-950 via-[#0a1828] to-emerald-950 rounded-2xl border-2 border-cyan-400 shadow-[0_0_25px_rgba(6,182,212,0.4)] flex items-center justify-between font-mono">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-black uppercase tracking-wider">
+                            <Clock className="w-4 h-4 animate-spin text-cyan-400" />
+                            <span>ENTRADA NA VELA DAS:</span>
+                          </div>
+                          <div className="text-[10px] text-cyan-200/80 font-bold">
+                            Horário Oficial de Brasília (BRT)
+                          </div>
                         </div>
-                        <span className="text-white font-black text-sm bg-black/60 px-2.5 py-0.5 rounded-lg border border-cyan-400/40">
-                          {latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime}
-                        </span>
+                        <div className="text-center px-4 py-1 bg-black/85 rounded-xl border-2 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.6)]">
+                          <span className="text-2xl font-black text-cyan-300 tracking-wider font-mono">
+                            {latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Contador até abertura da vela do sinal */}
@@ -1561,8 +1595,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <span className="text-cyan-400">00:</span>
                           <span className="text-emerald-400">{String(secondsToCandleOpen).padStart(2, '0')}</span>
                         </div>
-                        <div className="text-[9px] font-mono text-neutral-300">
-                          Prepare sua boleta na corretora. Clique às <strong>{latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime}</strong> na abertura da vela!
+                        <div className="text-[9.5px] font-mono text-neutral-200">
+                          Prepare sua boleta na corretora. Clique às <strong className="text-cyan-300">{latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime} (Brasília)</strong> na abertura da vela!
                         </div>
                       </div>
 
@@ -1599,11 +1633,22 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
-                      {/* Horário Previsto da Compra/Venda */}
-                      <div className="p-2 bg-black/60 rounded-xl border border-amber-500/30 flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-neutral-400">Horário Previsto:</span>
-                        <span className="text-amber-300 font-bold">{activePreAlert.entryTimeFormatted || 'Próxima Vela'}</span>
-                        <span className="text-neutral-400">Confirmação: <strong className="text-amber-400">Faltando 10s</strong></span>
+                      {/* Horário Previsto da Compra/Venda (Horário de Brasília com Destaque) */}
+                      <div className="p-2.5 bg-gradient-to-r from-amber-950/70 via-black to-neutral-950 rounded-2xl border-2 border-amber-500/60 flex items-center justify-between font-mono shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold uppercase tracking-wider">
+                            <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                            <span>ENTRADA PREVISTA (BRT):</span>
+                          </div>
+                          <div className="text-[10px] text-amber-200/80 font-bold">
+                            Horário de Brasília • Confirma aos 10s
+                          </div>
+                        </div>
+                        <div className="px-3.5 py-1 bg-black/85 rounded-xl border border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+                          <span className="text-xl font-black text-amber-300 font-mono tracking-wider">
+                            {activePreAlert.entryTimeFormatted || 'Próxima Vela'}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Contagem regressiva até a confirmação nos 10s finais */}
@@ -1615,8 +1660,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <div className="text-2xl font-black font-mono text-white tracking-widest flex items-center justify-center gap-1">
                           <span className="text-amber-400">{formattedCountdown}</span>
                         </div>
-                        <div className="text-[9px] text-neutral-300 font-mono">
-                          Prepare sua boleta. Se o padrão confirmar faltando 10s, o alarme tocará para entrada às <strong>{activePreAlert.entryTimeFormatted || '00:00'}</strong>.
+                        <div className="text-[9.5px] text-neutral-200 font-mono">
+                          Prepare sua boleta. Se o padrão confirmar faltando 10s, o alarme tocará para entrada às <strong className="text-amber-300">{activePreAlert.entryTimeFormatted || '00:00'} (Brasília)</strong>.
                         </div>
                       </div>
 
@@ -2867,7 +2912,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </>
                         )}
                         <span>
-                          {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          {formatBrasiliaTime(msg.timestamp, false)}
                         </span>
                       </div>
 

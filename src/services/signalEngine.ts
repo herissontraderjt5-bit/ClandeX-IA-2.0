@@ -11,6 +11,7 @@ import {
 } from '../types/trading';
 import { audioAlerts } from './audioAlerts';
 import { isForexMarketOpen, marketDataManager, getTimeframeSeconds } from './marketData';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 import {
   fetchSignalsFromSupabase,
   upsertSignalToSupabase,
@@ -262,8 +263,7 @@ export class SignalEngine {
     allCandles?: Candle[]
   ) {
     const now = Math.floor(Date.now() / 1000);
-    const dateObj = new Date();
-    const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+    const formattedTime = formatBrasiliaTime();
 
     // 0. Configuração dinâmica dos limiares de acordo com o PERFIL DE ANÁLISE selecionado na Aba Técnica
     const profile = settings.analysisProfile || 'MODERADA';
@@ -329,13 +329,11 @@ export class SignalEngine {
     const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 1;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
-    // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela)
+    // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela no Horário de Brasília)
     const targetEntryTimestamp = candleBoundary + tfSec;
     const targetExpirationTimestamp = targetEntryTimestamp + expirationSeconds;
-    const entryDate = new Date(targetEntryTimestamp * 1000);
-    const entryTimeFormatted = entryDate.toLocaleTimeString('pt-BR', { hour12: false });
-    const expDate = new Date(targetExpirationTimestamp * 1000);
-    const expirationTimeFormatted = expDate.toLocaleTimeString('pt-BR', { hour12: false });
+    const entryTimeFormatted = formatBrasiliaTime(targetEntryTimestamp);
+    const expirationTimeFormatted = formatBrasiliaTime(targetExpirationTimestamp);
 
     // 3. CONFIRMAÇÃO OFICIAL FALTANDO 10 SEGUNDOS PARA ABRIR A NOVA VELA
     if (isConfirmationWindow && isNewCandleConfirmation && !activeRunningTrade) {
@@ -525,10 +523,8 @@ export class SignalEngine {
     ) {
       const targetCandleTime = candleBoundary + tfSec;
       const targetExpTime = targetCandleTime + expirationSeconds;
-      const preEntryDate = new Date(targetCandleTime * 1000);
-      const preEntryTimeFormatted = preEntryDate.toLocaleTimeString('pt-BR', { hour12: false });
-      const preExpDate = new Date(targetExpTime * 1000);
-      const preExpTimeFormatted = preExpDate.toLocaleTimeString('pt-BR', { hour12: false });
+      const preEntryTimeFormatted = formatBrasiliaTime(targetCandleTime);
+      const preExpTimeFormatted = formatBrasiliaTime(targetExpTime);
 
       const preAlert: SignalRecord = {
         id: `sig_pre_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -727,8 +723,7 @@ export class SignalEngine {
     remainingSec: number = 45
   ): SignalRecord {
     const now = Math.floor(Date.now() / 1000);
-    const dateObj = new Date();
-    const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+    const formattedTime = formatBrasiliaTime();
     const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
     const expirationSeconds = (expiration === '2m' || timeframe === 'M2') ? 120 : ((expiration === '1m' || timeframe === 'M1') ? 60 : 300);
     const currentBoundary = now - (((now % tfSec) + tfSec) % tfSec);
@@ -793,8 +788,7 @@ export class SignalEngine {
     timeframe: TimeFrame = 'M1'
   ) {
     const now = Math.floor(Date.now() / 1000);
-    const dateObj = new Date();
-    const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+    const formattedTime = formatBrasiliaTime();
     // For test simulation, use 25s expiration so user doesn't have to wait 5 minutes
     const simulationExpSec = 25;
 
@@ -829,14 +823,14 @@ export class SignalEngine {
       const confirmedNow = Math.floor(Date.now() / 1000);
       const entryTimestamp = confirmedNow + 10; // 10 segundos de preparação até a abertura
       const targetExpTimestamp = entryTimestamp + simulationExpSec;
-      const entryTimeFormatted = new Date(entryTimestamp * 1000).toLocaleTimeString('pt-BR', { hour12: false });
-      const expirationTimeFormatted = new Date(targetExpTimestamp * 1000).toLocaleTimeString('pt-BR', { hour12: false });
+      const entryTimeFormatted = formatBrasiliaTime(entryTimestamp);
+      const expirationTimeFormatted = formatBrasiliaTime(targetExpTimestamp);
 
       const confirmed: SignalRecord = {
         ...preAlert,
         stage: 'CONFIRMED',
         timestamp: Date.now(),
-        formattedTime: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
+        formattedTime: formatBrasiliaTime(),
         entryTimeFormatted,
         expirationTimeFormatted,
         entryPrice: currentPrice,
@@ -873,8 +867,7 @@ export class SignalEngine {
     currentPrice = 1.08450
   ) {
     const now = Math.floor(Date.now() / 1000);
-    const dateObj = new Date();
-    const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour12: false });
+    const formattedTime = formatBrasiliaTime();
 
     const preAlert: SignalRecord = {
       id: `sig_sim_cancel_${Date.now()}`,

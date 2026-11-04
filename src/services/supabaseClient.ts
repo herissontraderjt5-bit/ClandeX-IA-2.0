@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AppSettings, SignalRecord, WebhookLog } from '../types/trading';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 
 export const DEFAULT_SUPABASE_URL = 'https://qxojtaqselrgitdmmora.supabase.co';
 export const DEFAULT_SUPABASE_ANON_KEY =
@@ -110,7 +111,9 @@ export function mapRowToSignal(row: any): SignalRecord {
   return {
     id: row.id,
     timestamp: Number(row.timestamp),
-    formattedTime: row.formatted_time || new Date(Number(row.timestamp)).toLocaleTimeString('pt-BR'),
+    formattedTime: row.formatted_time || formatBrasiliaTime(Number(row.timestamp)),
+    entryTimeFormatted: row.entry_time_formatted || (row.entry_timestamp ? formatBrasiliaTime(Number(row.entry_timestamp)) : undefined),
+    expirationTimeFormatted: row.expiration_time_formatted || (row.expiration_timestamp ? formatBrasiliaTime(Number(row.expiration_timestamp)) : undefined),
     asset: row.asset,
     timeframe: row.timeframe,
     expiration: row.expiration,

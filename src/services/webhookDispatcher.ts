@@ -1,4 +1,5 @@
 import { SignalRecord, WebhookConfig, WebhookLog } from '../types/trading';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 import {
   insertWebhookLogToSupabase,
   fetchWebhookLogsFromSupabase,
@@ -59,7 +60,7 @@ class WebhookDispatcherService {
       const log: WebhookLog = {
         id: `wh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
-        formattedTime: new Date().toLocaleTimeString('pt-BR'),
+        formattedTime: formatBrasiliaTime(),
         event,
         url: config.url,
         status: data.success ? 'SUCCESS' : 'ERROR',
@@ -73,7 +74,7 @@ class WebhookDispatcherService {
       const log: WebhookLog = {
         id: `wh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
-        formattedTime: new Date().toLocaleTimeString('pt-BR'),
+        formattedTime: formatBrasiliaTime(),
         event,
         url: config.url,
         status: 'ERROR',
@@ -114,7 +115,7 @@ class WebhookDispatcherService {
       const log: WebhookLog = {
         id: `wh_test_${Date.now()}`,
         timestamp: Date.now(),
-        formattedTime: new Date().toLocaleTimeString('pt-BR'),
+        formattedTime: formatBrasiliaTime(),
         event: 'TEST',
         url: config.url,
         status: data.success ? 'SUCCESS' : 'ERROR',

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Asset, Candle, MarketAnalysis, SignalRecord, TimeFrame } from '../types/trading';
 import { ArrowUp, ArrowDown, TrendingUp, TrendingDown, Target, Shield } from 'lucide-react';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 
 interface CandleChartProps {
   candles: Candle[];
@@ -337,7 +338,7 @@ export const CandleChart: React.FC<CandleChartProps> = ({
 
         <div className="flex items-center gap-2 font-mono text-[10px]">
           <span className="text-neutral-500">Última atualização:</span>
-          <span className="text-neutral-300">{new Date().toLocaleTimeString()}</span>
+          <span className="text-neutral-300">{formatBrasiliaTime()} BRT</span>
         </div>
       </div>
     </div>

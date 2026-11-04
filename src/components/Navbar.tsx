@@ -12,6 +12,7 @@ import {
   Clock
 } from 'lucide-react';
 import { AppSettings, DataSourceInfo } from '../types/trading';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 
 interface NavbarProps {
   dataSource: DataSourceInfo;
@@ -32,11 +33,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSound,
   onOpenExtensionModal,
 }) => {
-  const [time, setTime] = React.useState(new Date().toLocaleTimeString('pt-BR'));
+  const [time, setTime] = React.useState(() => formatBrasiliaTime());
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setTime(new Date().toLocaleTimeString('pt-BR'));
+      setTime(formatBrasiliaTime());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -95,10 +96,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Live Feed Status & Quick Controls */}
         <div className="flex items-center gap-3">
-          {/* Market Clock */}
-          <div className="hidden lg:flex items-center gap-1.5 font-mono text-xs text-neutral-400 bg-neutral-900/60 px-3 py-1.5 rounded-lg border border-neutral-800/80">
-            <Clock className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{time}</span>
+          {/* Market Clock (Horário de Brasília) */}
+          <div
+            title="Horário Oficial de Brasília (BRT - UTC-3)"
+            className="hidden lg:flex items-center gap-1.5 font-mono text-xs text-neutral-300 bg-neutral-900/80 px-3 py-1.5 rounded-lg border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.15)]"
+          >
+            <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            <span className="font-bold">{time}</span>
+            <span className="text-[10px] text-cyan-400 font-semibold">BRT</span>
           </div>
 
           {/* Connection status */}

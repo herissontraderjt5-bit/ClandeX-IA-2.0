@@ -25,10 +25,10 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
 
   const handleExportCsv = () => {
     if (signals.length === 0) return;
-    const headers = ['ID', 'Horario', 'Ativo', 'TF', 'Direcao', 'Score', 'PrecoEntrada', 'Resultado', 'Motivo'];
+    const headers = ['ID', 'Horario_Brasilia', 'Ativo', 'TF', 'Direcao', 'Score', 'PrecoEntrada', 'Resultado', 'Motivo'];
     const rows = signals.map((s) => [
       s.id,
-      s.formattedTime,
+      s.entryTimeFormatted || s.formattedTime,
       s.asset,
       s.timeframe,
       s.direction,
@@ -138,8 +138,9 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                     {sig.result === 'EMPATE' && <span className="text-neutral-400">EMPATE</span>}
                     {sig.result === 'PENDING' && <span className="text-amber-400 animate-pulse">Em execução</span>}
                   </div>
-                  <div className="text-[10px] text-cyan-300 font-mono font-medium">
-                    Horário: {sig.entryTimeFormatted || sig.formattedTime}
+                  <div className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/70 px-2 py-0.5 rounded-lg border border-cyan-500/40 inline-flex items-center gap-1 shadow-[0_0_8px_rgba(6,182,212,0.2)] mt-1">
+                    <Clock className="w-3 h-3 text-cyan-400" />
+                    <span>{sig.entryTimeFormatted || sig.formattedTime} (Brasília)</span>
                   </div>
                 </div>
               </div>

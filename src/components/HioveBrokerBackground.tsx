@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { isForexMarketOpen } from '../services/marketData';
 import { TradingViewWidget } from './TradingViewWidget';
+import { formatBrasiliaTime } from '../utils/timeFormat';
 
 export const HIOVE_LOGIN_URL = 'https://app.hiove.com/auth/login?redirect=%2Ftraderoom%3Fticker%3DETHUSDT';
 
@@ -131,7 +132,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
 
     setLastExecutedTrade({
       direction: dir,
-      time: new Date().toLocaleTimeString('pt-BR'),
+      time: formatBrasiliaTime(),
       amount: tradeAmount,
       price: currentPrice,
     });

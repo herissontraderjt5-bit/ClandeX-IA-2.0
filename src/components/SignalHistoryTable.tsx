@@ -66,7 +66,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
     if (signals.length === 0) return;
     const headers = [
       'ID',
-      'Horário da Compra/Venda',
+      'Horário da Compra/Venda (Brasília)',
       'Ativo',
       'Timeframe',
       'Direção',
@@ -198,7 +198,12 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
         <table className="w-full text-left text-xs">
           <thead className="bg-neutral-950/90 text-neutral-400 uppercase text-[10px] tracking-wider border-b border-neutral-800 font-mono">
             <tr>
-              <th className="py-2.5 px-3">Horário da Compra/Venda</th>
+              <th className="py-2.5 px-3 text-cyan-400 font-bold">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Horário (Brasília)</span>
+                </div>
+              </th>
               <th className="py-2.5 px-3">Ativo</th>
               <th className="py-2.5 px-3">TF</th>
               <th className="py-2.5 px-3">Direção</th>
@@ -214,7 +219,17 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
               const isCall = sig.direction === 'CALL';
               return (
                 <tr key={sig.id} className="hover:bg-neutral-800/30 transition-colors">
-                  <td className="py-2 px-3 text-cyan-300 font-bold whitespace-nowrap">{sig.entryTimeFormatted || sig.formattedTime}</td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-cyan-950/70 border border-cyan-500/50 rounded-lg shadow-[0_0_10px_rgba(6,182,212,0.25)]">
+                      <Clock className="w-3 h-3 text-cyan-400" />
+                      <span className="text-cyan-300 font-black text-xs tracking-wider">
+                        {sig.entryTimeFormatted || sig.formattedTime}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-neutral-400 block font-mono pl-1 pt-0.5">
+                      Horário de Brasília
+                    </span>
+                  </td>
                   <td className="py-2 px-3 font-bold text-white whitespace-nowrap">{sig.asset}</td>
                   <td className="py-2 px-3 text-cyan-400 whitespace-nowrap">{sig.timeframe}</td>
                   <td className="py-2 px-3 whitespace-nowrap">
