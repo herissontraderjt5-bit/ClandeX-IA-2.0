@@ -475,6 +475,9 @@ export default function App() {
         expiration={expiration}
         candles={candles}
         remainingSeconds={remainingSeconds}
+        isAdmin={isAdmin}
+        soundEnabled={settings.soundEnabled}
+        isDepositLocked={isDepositLocked}
         onSelectAsset={handleSelectAsset}
         onSelectTimeframe={handleSelectTimeframe}
         onSelectExpiration={handleSelectExpiration}
@@ -487,6 +490,8 @@ export default function App() {
           if (isDepositLocked) return;
           setIsWebhookModalOpen(true);
         }}
+        onOpenAdminPanel={() => setIsAdminModalOpen(true)}
+        onToggleSound={handleToggleSound}
       />
 
       {/* FOREGROUND: Floating Draggable ClandeX-IA HUD */}

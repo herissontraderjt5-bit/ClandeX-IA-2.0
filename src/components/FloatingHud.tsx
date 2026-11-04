@@ -837,51 +837,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         </div>
 
         <div className="flex items-center gap-1 shrink-0 text-neutral-400">
-          {/* BOTÃO ADM EXCLUSIVO: Visível APENAS para herisson.trader.jt5@gmail.com */}
-          {isAdmin && (
-            <button
-              onClick={onOpenAdminPanel}
-              title="Painel de Administrador Master (Membros Hiove)"
-              className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-mono font-black text-[10px] flex items-center gap-1 shadow-[0_0_12px_rgba(245,158,11,0.5)] border border-amber-300 hover:scale-105 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <span>👑 ADM</span>
-            </button>
-          )}
-
-          {!isDepositLocked && (
-            <button
-              onClick={onToggleSound}
-              title={settings.soundEnabled ? 'Silenciar Alertas' : 'Ativar Alertas Sonoros'}
-              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
-            >
-              {settings.soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-cyan-400" /> : <VolumeX className="w-3.5 h-3.5 text-neutral-500" />}
-            </button>
-          )}
-
-          {!isDepositLocked && (
-            <button
-              onClick={onOpenWebhook}
-              title={settings.webhook?.enabled ? 'Webhook Ativo — Configurar Automação' : 'Configurar Webhook / Automação'}
-              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors relative cursor-pointer shrink-0"
-            >
-              <Send className={`w-3.5 h-3.5 ${settings.webhook?.enabled ? 'text-emerald-400' : 'text-neutral-400'}`} />
-              {settings.webhook?.enabled && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 absolute top-0.5 right-0.5 animate-ping" />
-              )}
-            </button>
-          )}
-
-          {/* Configurações: Oculto se bloqueado por falta de depósito */}
-          {!isDepositLocked && (
-            <button
-              onClick={onOpenSettings}
-              title="Configurações de Confluência"
-              className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-          )}
-
           {/* Botão rápido para Voltar ao Login */}
           {isDepositLocked && (
             <button
