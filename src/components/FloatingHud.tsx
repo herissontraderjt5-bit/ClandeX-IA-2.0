@@ -418,13 +418,24 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   });
 
   const [backtestList, setBacktestList] = useState<StrategyBacktestResult[]>(() => {
-    return runRealtimeBacktest(candles, activeStrategyIds);
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      return runRealtimeBacktest(list, activeStrategyIds || []);
+    } catch (e) {
+      console.error('[FloatingHud] Error initializing backtestList:', e);
+      return [];
+    }
   });
 
   // Atualização em tempo real do backtest conforme as velas chegam
   useEffect(() => {
-    const results = runRealtimeBacktest(candles, activeStrategyIds);
-    setBacktestList(results);
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const results = runRealtimeBacktest(list, activeStrategyIds || []);
+      setBacktestList(results);
+    } catch (e) {
+      console.error('[FloatingHud] Error updating backtestList:', e);
+    }
   }, [candles, activeStrategyIds]);
 
   const handleToggleStrategy = (stratId: string) => {
@@ -2047,11 +2058,13 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                   {/* List of Strategy Cards */}
                   <div className="space-y-2">
-                    {backtestList.map((strat) => {
-                      const isActive = activeStrategyIds.includes(strat.id);
-                      const isHighAssertive = strat.winRate >= 65;
-                      const isDecent = strat.winRate >= 50 && strat.winRate < 65;
-                      const isLow = strat.winRate > 0 && strat.winRate < 50;
+                    {(backtestList || []).map((strat) => {
+                      if (!strat) return null;
+                      const isActive = (activeStrategyIds || []).includes(strat.id);
+                      const winRate = Number(strat.winRate) || 0;
+                      const isHighAssertive = winRate >= 65;
+                      const isDecent = winRate >= 50 && winRate < 65;
+                      const isLow = winRate > 0 && winRate < 50;
 
                       return (
                         <div
@@ -2069,7 +2082,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <div className="flex items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-xs font-black font-mono text-white truncate">
-                                {strat.badge}
+                                {strat.badge || strat.name}
                               </span>
                             </div>
 
@@ -2086,7 +2099,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                                     : 'bg-neutral-800 text-neutral-400 border-neutral-700'
                                 }`}
                               >
-                                {strat.winRate}% Assertivo
+                                {winRate}% Assertivo
                               </span>
 
                               {/* Toggle Button */}
@@ -2116,15 +2129,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <div className="pt-1 border-t border-neutral-800/80 flex items-center justify-between text-[9px] font-mono text-neutral-400">
                             <div className="flex items-center gap-2">
                               <span>
-                                Placar: <strong className="text-emerald-400">{strat.wins}W</strong> - <strong className="text-rose-400">{strat.losses}L</strong>
-                                {strat.ties > 0 && <span> - <strong className="text-neutral-300">{strat.ties}E</strong></span>}
+                                Placar: <strong className="text-emerald-400">{strat.wins || 0}W</strong> - <strong className="text-rose-400">{strat.losses || 0}L</strong>
+                                {(strat.ties || 0) > 0 && <span> - <strong className="text-neutral-300">{strat.ties}E</strong></span>}
                               </span>
                               <span>•</span>
                               <span>
-                                Velas: <strong className="text-neutral-200">{strat.totalTrades}</strong>
+                                Velas: <strong className="text-neutral-200">{strat.totalTrades || 0}</strong>
                               </span>
                             </div>
-                            {strat.consecutiveWins > 0 && (
+                            {(strat.consecutiveWins || 0) > 0 && (
                               <span className="text-emerald-400 font-bold flex items-center gap-0.5">
                                 <Flame className="w-2.5 h-2.5 text-amber-400 inline" />
                                 {strat.consecutiveWins} seguidos

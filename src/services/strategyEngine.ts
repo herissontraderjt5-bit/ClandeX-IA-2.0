@@ -85,7 +85,8 @@ export function getStoredActiveStrategies(): string[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const valid = parsed.filter((id) => typeof id === 'string' && AVAILABLE_STRATEGIES.some((s) => s.id === id));
+        if (valid.length > 0) return valid;
       }
     }
   } catch {}
@@ -116,50 +117,77 @@ export function evaluateSingleStrategy(
   candles: Candle[],
   index: number
 ): { direction: SignalDirection | null; score: number; reasons: string[] } {
-  if (index < 10 || index >= candles.length) {
+  // Precisa de pelo menos 18 candles anteriores para computar médias (12), suporte/resistência (15) e RSI com folga
+  if (!candles || !Array.isArray(candles) || index < 18 || index >= candles.length) {
     return { direction: null, score: 0, reasons: [] };
   }
 
   const current = candles[index];
   const prev = candles[index - 1];
   const prev2 = candles[index - 2];
+  if (!current || !prev || !prev2) {
+    return { direction: null, score: 0, reasons: [] };
+  }
 
   const body = Math.abs(current.close - current.open);
   const range = Math.max(current.high - current.low, 0.00001);
   const upperWick = current.high - Math.max(current.open, current.close);
   const lowerWick = Math.min(current.open, current.close) - current.low;
 
-  // Médias rápidas para contexto
+  // Médias rápidas para contexto (com limites seguros)
   let sumShort = 0;
-  for (let k = index - 4; k <= index; k++) sumShort += candles[k].close;
-  const sma5 = sumShort / 5;
+  let countShort = 0;
+  const startShort = Math.max(0, index - 4);
+  for (let k = startShort; k <= index; k++) {
+    if (candles[k]) {
+      sumShort += candles[k].close;
+      countShort++;
+    }
+  }
+  const sma5 = countShort > 0 ? sumShort / countShort : current.close;
 
   let sumLong = 0;
-  for (let k = index - 11; k <= index; k++) sumLong += candles[k].close;
-  const sma12 = sumLong / 12;
+  let countLong = 0;
+  const startLong = Math.max(0, index - 11);
+  for (let k = startLong; k <= index; k++) {
+    if (candles[k]) {
+      sumLong += candles[k].close;
+      countLong++;
+    }
+  }
+  const sma12 = countLong > 0 ? sumLong / countLong : current.close;
 
   const isUptrend = sma5 > sma12;
   const isDowntrend = sma5 < sma12;
 
-  // Suporte e resistência locais dos últimos 15 candles
+  // Suporte e resistência locais dos candles anteriores (com limites seguros)
   let localHigh = -Infinity;
   let localLow = Infinity;
-  for (let k = index - 15; k < index; k++) {
-    if (candles[k].high > localHigh) localHigh = candles[k].high;
-    if (candles[k].low < localLow) localLow = candles[k].low;
+  const startSr = Math.max(0, index - 15);
+  for (let k = startSr; k < index; k++) {
+    if (candles[k]) {
+      if (candles[k].high > localHigh) localHigh = candles[k].high;
+      if (candles[k].low < localLow) localLow = candles[k].low;
+    }
   }
+  if (!isFinite(localHigh)) localHigh = current.high;
+  if (!isFinite(localLow)) localLow = current.low;
+
   const nearRes = Math.abs(current.high - localHigh) <= range * 0.5 || current.high >= localHigh;
   const nearSup = Math.abs(current.low - localLow) <= range * 0.5 || current.low <= localLow;
 
-  // RSI simplificado de 7 períodos
+  // RSI simplificado de 7 períodos (com limites seguros)
   let gains = 0;
   let losses = 0;
-  for (let k = index - 6; k <= index; k++) {
-    const diff = candles[k].close - candles[k - 1].close;
-    if (diff > 0) gains += diff;
-    else losses += Math.abs(diff);
+  const startRsi = Math.max(1, index - 6);
+  for (let k = startRsi; k <= index; k++) {
+    if (candles[k] && candles[k - 1]) {
+      const diff = candles[k].close - candles[k - 1].close;
+      if (diff > 0) gains += diff;
+      else losses += Math.abs(diff);
+    }
   }
-  const rs = losses === 0 ? 100 : gains / losses;
+  const rs = losses === 0 ? 100 : gains / (losses || 0.00001);
   const rsi = 100 - (100 / (1 + rs));
 
   switch (strategyId) {
@@ -379,10 +407,12 @@ export function evaluateSingleStrategy(
  * sobre o histórico de velas atual do ativo e timeframe.
  */
 export function runRealtimeBacktest(
-  candles: Candle[],
+  candles?: Candle[],
   activeStrategyIds: string[] = getStoredActiveStrategies()
 ): StrategyBacktestResult[] {
-  if (!candles || candles.length < 25) {
+  const safeActiveIds = Array.isArray(activeStrategyIds) ? activeStrategyIds : getStoredActiveStrategies();
+
+  if (!candles || !Array.isArray(candles) || candles.length < 25) {
     // Retorna resultados padrão se ainda não tiver velas suficientes
     return AVAILABLE_STRATEGIES.map((strat) => ({
       id: strat.id,
@@ -396,7 +426,7 @@ export function runRealtimeBacktest(
       totalTrades: 0,
       winRate: 0,
       consecutiveWins: 0,
-      isActive: activeStrategyIds.includes(strat.id),
+      isActive: safeActiveIds.includes(strat.id),
     }));
   }
 
@@ -406,9 +436,26 @@ export function runRealtimeBacktest(
     resultsMap[s.id] = { wins: 0, losses: 0, ties: 0, consecutiveWins: 0, currentStreak: 0 };
   });
 
-  // Simula vela por vela a partir do candle 15 até o penúltimo candle (pois o penúltimo tem o candle fechado seguinte)
+  // Simula vela por vela com limites protegidos contra bounds inválidos
   const maxEvalIndex = candles.length - 2;
-  const startEvalIndex = Math.max(12, candles.length - 80); // Avalia os últimos ~60 a 80 candles recentes
+  const startEvalIndex = Math.max(18, candles.length - 80); // Avalia a partir do candle 18 até max
+
+  if (startEvalIndex > maxEvalIndex) {
+    return AVAILABLE_STRATEGIES.map((strat) => ({
+      id: strat.id,
+      name: strat.name,
+      badge: strat.badge,
+      category: strat.category,
+      description: strat.description,
+      wins: 0,
+      losses: 0,
+      ties: 0,
+      totalTrades: 0,
+      winRate: 0,
+      consecutiveWins: 0,
+      isActive: safeActiveIds.includes(strat.id),
+    }));
+  }
 
   for (let i = startEvalIndex; i <= maxEvalIndex; i++) {
     const outcomeCandle = candles[i + 1];
@@ -419,9 +466,10 @@ export function runRealtimeBacktest(
 
     AVAILABLE_STRATEGIES.forEach((strat) => {
       const evalRes = evaluateSingleStrategy(strat.id, candles, i);
-      if (!evalRes.direction) return;
+      if (!evalRes || !evalRes.direction) return;
 
       const record = resultsMap[strat.id];
+      if (!record) return;
       record.lastSignal = { dir: evalRes.direction, time: candles[i].time };
 
       let isWin = false;
@@ -452,7 +500,7 @@ export function runRealtimeBacktest(
 
   // Monta e ordena os resultados pela maior taxa de assertividade (%)
   const compiled: StrategyBacktestResult[] = AVAILABLE_STRATEGIES.map((strat) => {
-    const r = resultsMap[strat.id];
+    const r = resultsMap[strat.id] || { wins: 0, losses: 0, ties: 0, consecutiveWins: 0, currentStreak: 0 };
     const totalTrades = r.wins + r.losses + r.ties;
     const decisiveTrades = r.wins + r.losses;
     const winRate = decisiveTrades > 0 ? Number(((r.wins / decisiveTrades) * 100).toFixed(1)) : 0;
@@ -471,7 +519,7 @@ export function runRealtimeBacktest(
       consecutiveWins: recordStreak(r.consecutiveWins),
       lastSignalDirection: r.lastSignal?.dir,
       lastSignalTime: r.lastSignal?.time,
-      isActive: activeStrategyIds.includes(strat.id),
+      isActive: safeActiveIds.includes(strat.id),
     };
   });
 
@@ -483,7 +531,7 @@ export function runRealtimeBacktest(
 }
 
 function recordStreak(streak: number): number {
-  return Math.max(0, streak);
+  return Math.max(0, streak || 0);
 }
 
 /**
@@ -496,7 +544,7 @@ export function getBestActiveStrategySignal(
   backtestResults?: StrategyBacktestResult[],
   profile: AnalysisProfile = 'MODERADA'
 ): StrategySignalDecision | null {
-  if (!candles || candles.length < 15) return null;
+  if (!candles || !Array.isArray(candles) || candles.length < 20) return null;
 
   const lastIndex = candles.length - 1;
   const decisions: StrategySignalDecision[] = [];
@@ -509,7 +557,9 @@ export function getBestActiveStrategySignal(
     });
   }
 
-  for (const stratId of activeStrategyIds) {
+  const safeActiveIds = Array.isArray(activeStrategyIds) ? activeStrategyIds : getStoredActiveStrategies();
+
+  for (const stratId of safeActiveIds) {
     const strat = AVAILABLE_STRATEGIES.find((s) => s.id === stratId);
     if (!strat) continue;
 
@@ -519,7 +569,7 @@ export function getBestActiveStrategySignal(
     }
 
     const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex);
-    if (evalRes.direction) {
+    if (evalRes && evalRes.direction) {
       const historicalWinRate = winRateMap[stratId] || 70;
       // Se a estratégia no backtest estiver com assertividade muito baixa (<40%), descarta no modo moderado/conservador
       if (profile !== 'AGRESSIVA' && historicalWinRate > 0 && historicalWinRate < 45) {
