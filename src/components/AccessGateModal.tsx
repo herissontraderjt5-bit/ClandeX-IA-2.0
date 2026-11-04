@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { UserSession } from '../types/trading';
+import { recordUserHeartbeat, checkMemberAccessStatus } from '../services/memberService';
 
 export const HIOVE_AFFILIATE_URL = 'https://hiove.io/gSBstV';
 
@@ -44,7 +45,6 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
     setSuccessMessage(null);
 
     // 1. Bypass Imediato para o Administrador Master (Herisson)
-    // Permite logar instantaneamente sem depender de backend, conexão ou saldo
     const MASTER_ADMIN_EMAIL = 'herisson.trader.jt5@gmail.com';
     if (cleanEmail === MASTER_ADMIN_EMAIL) {
       setSuccessMessage('Bem-vindo, Herisson! Acesso de Administrador Master liberado.');
@@ -54,6 +54,8 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         hasAccess: true,
         isAdmin: true,
         validatedAt: Date.now(),
+        lastActiveAt: Date.now(),
+        accessDays: 9999,
         status: 'ACTIVE',
         source: 'ADMIN_BYPASS',
       };
@@ -62,12 +64,57 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         localStorage.setItem('clandex_user_session', JSON.stringify(session));
       } catch {}
 
+      recordUserHeartbeat(session).catch(() => {});
+
       setTimeout(() => {
         onSuccess(session);
       }, 500);
       return;
     }
 
+    // 2. Consulta prévia de status no registro do Administrador (Supabase Cloud)
+    try {
+      const statusCheck = await checkMemberAccessStatus(cleanEmail);
+      if (statusCheck.reason === 'REVOKED' || statusCheck.reason === 'EXPIRED') {
+        setErrorMessage(statusCheck.message || 'Acesso não autorizado.');
+        setLoading(false);
+        return;
+      }
+
+      if (statusCheck.allowed && statusCheck.member) {
+        // Membro pré-autorizado ou já registrado
+        const mem = statusCheck.member;
+        setSuccessMessage(`Acesso liberado! ${mem.accessDays ? `${mem.accessDays} dias de licença ativa.` : ''}`);
+        const session: UserSession = {
+          email: cleanEmail,
+          name: mem.name || cleanEmail.split('@')[0],
+          hasAccess: true,
+          hasDeposit: mem.hasDeposit ?? true,
+          isAdmin: mem.isAdmin ?? false,
+          validatedAt: mem.firstValidatedAt || Date.now(),
+          lastActiveAt: Date.now(),
+          accessDays: mem.accessDays || 30,
+          expiresAt: mem.expiresAt,
+          status: 'ACTIVE',
+          source: mem.source || 'ADMIN_MANUAL',
+        };
+
+        try {
+          localStorage.setItem('clandex_user_session', JSON.stringify(session));
+        } catch {}
+
+        recordUserHeartbeat(session).catch(() => {});
+
+        setTimeout(() => {
+          onSuccess(session);
+        }, 500);
+        return;
+      }
+    } catch (e) {
+      console.warn('[AccessGate] Verificação de registro falhou, tentando API Hiove:', e);
+    }
+
+    // 3. Validação Direta com a Corretora Hiove
     try {
       const response = await fetch('/api/auth/validate-access', {
         method: 'POST',
@@ -88,6 +135,9 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
           hasDeposit: true,
           isAdmin: false,
           validatedAt: Date.now(),
+          lastActiveAt: Date.now(),
+          accessDays: 30,
+          expiresAt: Date.now() + 30 * 86400 * 1000,
           status: 'ACTIVE',
           source: data.cached ? 'CACHE' : 'HIOVE_API',
         };
@@ -95,6 +145,8 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(session));
         } catch {}
+
+        recordUserHeartbeat(session).catch(() => {});
 
         setTimeout(() => {
           onSuccess(session);

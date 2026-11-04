@@ -10,7 +10,7 @@ import {
   ExpirationTime,
 } from '../types/trading';
 import { audioAlerts } from './audioAlerts';
-import { isForexMarketOpen, marketDataManager } from './marketData';
+import { isForexMarketOpen, marketDataManager, getTimeframeSeconds } from './marketData';
 import {
   fetchSignalsFromSupabase,
   upsertSignalToSupabase,
@@ -18,6 +18,34 @@ import {
   getSupabase,
   mapRowToSignal,
 } from './supabaseClient';
+
+export function getExpirationForTimeframe(tf: TimeFrame): ExpirationTime {
+  switch (tf) {
+    case 'M1': return '1m';
+    case 'M2': return '2m';
+    case 'M5': return '5m';
+    case 'M15': return '15m';
+    case 'M30': return '30m';
+    case 'H1': return '1h';
+    default: return '1m';
+  }
+}
+
+export function getSecondsForExpiration(exp?: ExpirationTime, tf?: TimeFrame): number {
+  if (tf) {
+    const tfSec = getTimeframeSeconds(tf);
+    if (tfSec > 0) return tfSec;
+  }
+  switch (exp) {
+    case '1m': return 60;
+    case '2m': return 120;
+    case '5m': return 300;
+    case '15m': return 900;
+    case '30m': return 1800;
+    case '1h': return 3600;
+    default: return 60;
+  }
+}
 
 export interface ActiveSignalState {
   currentStage: SignalStage | null;
@@ -291,8 +319,10 @@ export class SignalEngine {
     }
 
     const activeRunningTrade = this.getActiveTrade();
-    const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
-    const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
+    const tfSec = getTimeframeSeconds(timeframe);
+    // Vincula a expiração do sinal estritamente ao timeframe selecionado no gráfico!
+    const activeExpiration: ExpirationTime = getExpirationForTimeframe(timeframe);
+    const expirationSeconds = tfSec;
     const candleBoundary = now - (((now % tfSec) + tfSec) % tfSec);
 
     // Momento exato da CONFIRMAÇÃO FALTANDO 10 SEGUNDOS RESTANTES na vela atual
@@ -356,6 +386,8 @@ export class SignalEngine {
             formattedTime,
             entryTimeFormatted,
             expirationTimeFormatted,
+            timeframe,
+            expiration: activeExpiration,
             entryPrice: refPrice,
             candleOpenPrice: refPrice,
             isEntered: false, // Inicia oficialmente na abertura da próxima vela (segundo 00:00)
@@ -405,7 +437,7 @@ export class SignalEngine {
           expirationTimeFormatted,
           asset: assetSymbol,
           timeframe,
-          expiration: settings.defaultExpiration,
+          expiration: activeExpiration,
           direction: confluences.direction,
           stage: 'CONFIRMED',
           entryPrice: refPrice,
@@ -506,7 +538,7 @@ export class SignalEngine {
         expirationTimeFormatted: preExpTimeFormatted,
         asset: assetSymbol,
         timeframe,
-        expiration: settings.defaultExpiration,
+        expiration: activeExpiration,
         direction: confluences.direction,
         stage: 'PRE_ALERT',
         confluenceScore: confluences.totalScore,
@@ -552,7 +584,7 @@ export class SignalEngine {
 
     let updated = false;
     this.pendingTrades = this.pendingTrades.filter((trade) => {
-      const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
+      const expirationSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
       const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
       const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : tradeAge;
 
@@ -665,7 +697,7 @@ export class SignalEngine {
     const trade = this.pendingTrades.find((t) => t.id === tradeId);
     if (!trade) return;
     const nowSec = Math.floor(Date.now() / 1000);
-    const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
+    const expirationSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
     const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : Math.floor((Date.now() - trade.timestamp) / 1000);
 
     // Proteção absoluta: nunca apurar prematuramente antes da abertura e duração mínima da vela

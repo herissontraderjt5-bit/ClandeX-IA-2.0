@@ -46,6 +46,8 @@ import {
   ExternalLink,
   Coins,
   LogOut,
+  Newspaper,
+  Globe,
 } from 'lucide-react';
 import {
   Asset,
@@ -61,7 +63,13 @@ import {
 } from '../types/trading';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
-import { getRelevantEconomicEvents, getCurrentMarketSession, getRealMarketNews, MarketNewsItem } from '../services/economicCalendar';
+import {
+  getRelevantEconomicEvents,
+  getCurrentMarketSession,
+  getRealMarketNews,
+  getEconomicCalendar,
+  MarketNewsItem,
+} from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
 import { marketDataManager, isForexMarketOpen } from '../services/marketData';
 import { signalEngine } from '../services/signalEngine';
@@ -380,14 +388,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [isDragging, position]);
 
-  // HUD Tabs: 'sinal' | 'analise' | 'voz' | 'chat'
-  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'voz' | 'chat'>('sinal');
+  // HUD Tabs: 'sinal' | 'analise' | 'noticias' | 'voz' | 'chat'
+  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'noticias' | 'voz' | 'chat'>('sinal');
   const [copiedSignal, setCopiedSignal] = useState(false);
+  const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
-  // Market status (TradingView Weekend Forex closure check)
+  // Market status & Economic News
   const isForexOpen = isForexMarketOpen();
   const isForexClosed = asset.category === 'FOREX' && !isForexOpen;
   const realNewsList = useMemo(() => getRealMarketNews(asset.symbol), [asset.symbol]);
+  const economicEvents = useMemo(() => getEconomicCalendar(asset.symbol), [asset.symbol]);
+  const currentSession = useMemo(() => getCurrentMarketSession(), []);
+  const relevantEvents = useMemo(() => getRelevantEconomicEvents(asset.symbol), [asset.symbol]);
+  const filteredEconomicEvents = useMemo(() => {
+    if (newsImpactFilter === 'HIGH') {
+      return economicEvents.filter((e) => e.impact === 'HIGH');
+    }
+    if (newsImpactFilter === 'MEDIUM') {
+      return economicEvents.filter((e) => e.impact === 'MEDIUM');
+    }
+    return economicEvents;
+  }, [economicEvents, newsImpactFilter]);
 
   // Real-time Technical Overview calculated from current candles, timeframe & asset
   const activeCandles = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
@@ -1071,6 +1092,22 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             >
               <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
               <span>Técnica</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('noticias')}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg font-mono text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${activeTab === 'noticias'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                }`}
+            >
+              <Newspaper className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Notícias</span>
+              {relevantEvents.upcomingHighImpact ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/50" />
+              )}
             </button>
 
             <button
@@ -2157,26 +2194,154 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
-                {/* 4. BANCO DE DADOS DE NOTÍCIAS REAIS & CALENDÁRIO ECONÔMICO (TRADINGVIEW & INSTITUCIONAL) */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white font-mono">
-                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>BANCO DE NOTÍCIAS REAIS</span>
+                {/* 4. ATALHO RÁPIDO PARA A ABA DEDICADA DE NOTÍCIAS */}
+                <div
+                  onClick={() => setActiveTab('noticias')}
+                  className="p-3 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-black border border-cyan-500/30 hover:border-cyan-400 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-md group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                      <Newspaper className="w-4 h-4" />
                     </div>
-                    <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
+                        <span>Aba Exclusiva de Notícias & Calendário</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                          {realNewsList.length} notícias
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-neutral-400">
+                        Clique para abrir a central completa de notícias TradingView e eventos econômicos
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            )}
+
+            {/* TAB EXCLUSIVA: NOTÍCIAS REAIS & CALENDÁRIO ECONÔMICO INSTITUCIONAL */}
+            {activeTab === 'noticias' && (
+              <div className="space-y-3.5">
+                {/* 1. Header & Alerta Geral de Notícias */}
+                <div className="p-3.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl space-y-2.5 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                        <Newspaper className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white tracking-wider uppercase">
+                          NOTÍCIAS & CALENDÁRIO ECONÔMICO
+                        </h4>
+                        <span className="text-[10px] text-neutral-400">
+                          Monitorando par {asset.symbol} • Fonte TradingView & Institucional
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                      AO VIVO
+                    </span>
+                  </div>
+
+                  {/* Banner de Risco de Notícias */}
+                  {relevantEvents.upcomingHighImpact ? (
+                    <div className="p-3 bg-gradient-to-r from-rose-950/70 via-neutral-900 to-black border border-rose-500/50 rounded-xl space-y-1 shadow-[0_0_15px_rgba(244,63,94,0.25)]">
+                      <div className="flex items-center gap-1.5 text-rose-300 font-bold text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 animate-bounce" />
+                        <span>ALERTA DE ALTO IMPACTO (3 ESTRELAS) PRÓXIMO!</span>
+                      </div>
+                      <p className="text-[10.5px] text-neutral-300 leading-relaxed">
+                        Há evento econômico de máxima volatilidade iminente. O CandleX-IA recomenda não abrir operações em opções binárias 2 minutos antes e 2 minutos após o horário da notícia.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-emerald-950/30 border border-emerald-500/40 rounded-xl flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-emerald-300 font-bold text-[11px]">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>MERCADO LIMPO: Sem notícias de 3 estrelas iminentes</span>
+                      </div>
+                      <span className="text-[9px] text-emerald-400 font-mono bg-emerald-900/40 px-2 py-0.5 rounded border border-emerald-500/30">
+                        Alta Confiança
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Sessão Global de Mercado (Sessões & Horários Mundiais) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>SESSÕES GLOBAIS DE MERCADO</span>
+                    </div>
+                    <span className="text-[9px] text-neutral-400">
+                      {currentSession.sessionOverlap ? '⚡ Overlap Ativo (Alta Liquidez)' : 'Liquidez Padrão'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      currentSession.london ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">LONDRES</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.london ? 'bg-cyan-400 animate-pulse' : 'bg-neutral-600'}`} />
+                      </div>
+                      <span className="text-[9px] text-neutral-400 pt-1">04h - 13h BRT</span>
+                    </div>
+
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      currentSession.newYork ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">NOVA YORK</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.newYork ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
+                      </div>
+                      <span className="text-[9px] text-neutral-400 pt-1">09h - 18h BRT</span>
+                    </div>
+
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      currentSession.tokyo ? 'bg-purple-950/40 border-purple-500/40 text-purple-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">TÓQUIO</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.tokyo ? 'bg-purple-400 animate-pulse' : 'bg-neutral-600'}`} />
+                      </div>
+                      <span className="text-[9px] text-neutral-400 pt-1">20h - 05h BRT</span>
+                    </div>
+
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      currentSession.sydney ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">SYDNEY</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.sydney ? 'bg-amber-400 animate-pulse' : 'bg-neutral-600'}`} />
+                      </div>
+                      <span className="text-[9px] text-neutral-400 pt-1">18h - 03h BRT</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Feed de Notícias Reais de Mercado (TradingView) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Newspaper className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>MANCHETES & NOTÍCIAS AO VIVO</span>
+                    </div>
+                    <span className="text-[9px] font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
                       TRADINGVIEW FEED
                     </span>
                   </div>
 
-                  {/* Lista de Notícias Reais Filtradas */}
                   <div className="space-y-2">
                     {realNewsList.map((item) => (
                       <div
                         key={item.id}
-                        className="p-2.5 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1.5 transition-all hover:border-cyan-500/40"
+                        className="p-3 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1.5 transition-all hover:border-cyan-500/40"
                       >
-                        <div className="flex items-center justify-between text-[9px] font-mono">
+                        <div className="flex items-center justify-between text-[9px]">
                           <span className="text-cyan-400 font-bold">{item.source}</span>
                           <span className="text-neutral-500">{item.timeAgo}</span>
                         </div>
@@ -2185,18 +2350,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           {item.title}
                         </div>
 
-                        <p className="text-[10px] text-neutral-300 leading-relaxed font-mono">
+                        <p className="text-[10px] text-neutral-300 leading-relaxed">
                           {item.summary}
                         </p>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px] font-mono">
+                        <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px]">
                           <span
                             className={`px-1.5 py-0.5 rounded font-bold ${item.impact === 'HIGH'
                                 ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
                                 : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
                               }`}
                           >
-                            {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO' : '🟡 MÉDIO IMPACTO'}
+                            {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO (3★)' : '🟡 MÉDIO IMPACTO (2★)'}
                           </span>
 
                           <span
@@ -2207,12 +2372,112 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                                   : 'text-neutral-400 bg-neutral-900'
                               }`}
                           >
-                            {item.sentiment === 'BULLISH' ? '↗ ALTA' : item.sentiment === 'BEARISH' ? '↘ BAIXA' : '⚪ NEUTRO'}
+                            {item.sentiment === 'BULLISH' ? '↗ ALTA (CALL)' : item.sentiment === 'BEARISH' ? '↘ BAIXA (PUT)' : '⚪ NEUTRO'}
                           </span>
                         </div>
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* 4. Calendário Econômico Filtrável */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>CALENDÁRIO ECONÔMICO PROGRAMADO</span>
+                    </div>
+
+                    {/* Filtros de Impacto */}
+                    <div className="flex items-center gap-1 bg-black/60 p-0.5 rounded-lg border border-neutral-800 text-[9px]">
+                      <button
+                        type="button"
+                        onClick={() => setNewsImpactFilter('ALL')}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          newsImpactFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
+                        }`}
+                      >
+                        Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewsImpactFilter('HIGH')}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          newsImpactFilter === 'HIGH' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
+                        }`}
+                      >
+                        🔴 3★
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewsImpactFilter('MEDIUM')}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                          newsImpactFilter === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-neutral-400'
+                        }`}
+                      >
+                        🟡 2★
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de Eventos Econômicos */}
+                  <div className="space-y-2">
+                    {filteredEconomicEvents.length === 0 ? (
+                      <div className="py-4 text-center text-neutral-500 text-[11px]">
+                        Nenhum evento econômico com este filtro para {asset.symbol}.
+                      </div>
+                    ) : (
+                      filteredEconomicEvents.map((evt) => (
+                        <div
+                          key={evt.id}
+                          className="p-2.5 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1 hover:border-cyan-500/40 transition-all"
+                        >
+                          <div className="flex items-center justify-between text-[10px]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800">
+                                {evt.time}
+                              </span>
+                              <span className="font-bold text-cyan-400">{evt.currency}</span>
+                              <span className="text-white font-medium truncate max-w-[200px]">{evt.event}</span>
+                            </div>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                evt.impact === 'HIGH'
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                                  : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                              }`}
+                            >
+                              {evt.impact === 'HIGH' ? '🔴 3 Estrelas' : '🟡 2 Estrelas'}
+                            </span>
+                          </div>
+
+                          {(evt.forecast || evt.previous) && (
+                            <div className="flex items-center justify-between text-[9px] text-neutral-400 pt-0.5 border-t border-neutral-900">
+                              <span>Projeção: <strong className="text-white">{evt.forecast || '-'}</strong></span>
+                              <span>Anterior: <strong className="text-white">{evt.previous || '-'}</strong></span>
+                            </div>
+                          )}
+
+                          {evt.description && (
+                            <p className="text-[9.5px] text-neutral-400 italic">
+                              {evt.description}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* 5. Regra de Ouro do Trader Institucional */}
+                <div className="p-3 bg-gradient-to-r from-amber-950/20 via-neutral-900 to-black border border-amber-500/30 rounded-2xl space-y-1 font-mono text-[10.5px]">
+                  <div className="flex items-center gap-1.5 text-amber-300 font-bold">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Regra de Ouro de Notícias em Opções Binárias</span>
+                  </div>
+                  <p className="text-neutral-400 leading-relaxed">
+                    Em horários de notícias de 3 estrelas (como Payroll, CPI e Taxa de Juros), a volatilidade extrema no mercado real pode gerar rompimentos falsos. Já em mercados OTC, os gráficos seguem algoritmo interno e não são impactados pelas notícias ao vivo.
+                  </p>
                 </div>
               </div>
             )}

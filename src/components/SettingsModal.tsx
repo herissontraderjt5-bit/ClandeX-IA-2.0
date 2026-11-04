@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types/trading';
-import { X, Sliders, Volume2, Shield, RefreshCw, CheckCircle2, Sparkles, Clock, Check } from 'lucide-react';
+import { X, Sliders, Volume2, Shield, RefreshCw, CheckCircle2, Sparkles, Clock, Check, Users, ShieldCheck } from 'lucide-react';
 import { marketDataManager } from '../services/marketData';
 
 interface SettingsModalProps {
@@ -8,6 +8,8 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: AppSettings;
   onSaveSettings: (newSettings: AppSettings) => void;
+  isAdmin?: boolean;
+  onOpenAdminPanel?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -15,6 +17,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onSaveSettings,
+  isAdmin = false,
+  onOpenAdminPanel,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
@@ -64,6 +68,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Content Body */}
         <div className="p-5 space-y-4 overflow-y-auto text-xs text-neutral-300">
+          {/* Card Exclusivo do Administrador Master Herisson */}
+          {isAdmin && (
+            <div className="p-4 bg-gradient-to-br from-amber-950/40 via-neutral-900 to-black border border-amber-500/40 rounded-xl space-y-3 shadow-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>PAINEL MASTER ADM • CONTROLE DE USUÁRIOS</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  Herisson Master
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-300 leading-relaxed">
+                Visualize todos os e-mails conectados usando a IA neste momento (Hiove e manuais), configure os dias de acesso de cada cliente e libere ou bloqueie membros instantaneamente.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenAdminPanel) onOpenAdminPanel();
+                }}
+                className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+              >
+                <Users className="w-4 h-4" />
+                <span>Gerenciar Usuários Online & Dias de Acesso</span>
+              </button>
+            </div>
+          )}
+
           {/* Card Informativo de Parâmetros Institucionais Padronizados */}
           <div className="p-3.5 bg-gradient-to-br from-cyan-950/40 via-neutral-900/70 to-neutral-950 border border-cyan-500/30 rounded-xl space-y-2">
             <div className="flex items-center justify-between">

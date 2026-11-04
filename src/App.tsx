@@ -14,7 +14,7 @@ import {
 } from './types/trading';
 import { INITIAL_ASSETS, getLiveAssets, marketDataManager } from './services/marketData';
 import { analyzeMarket, calculateConfluences } from './services/analysisEngine';
-import { signalEngine } from './services/signalEngine';
+import { signalEngine, getExpirationForTimeframe } from './services/signalEngine';
 import { audioAlerts } from './services/audioAlerts';
 import { webhookDispatcher } from './services/webhookDispatcher';
 import { FloatingHud } from './components/FloatingHud';
@@ -31,6 +31,7 @@ import {
   saveSettingsToSupabase,
   isSupabaseConfigured,
 } from './services/supabaseClient';
+import { recordUserHeartbeat, isMemberExpired } from './services/memberService';
 
 const DEFAULT_SETTINGS: AppSettings = {
   weights: {
@@ -160,6 +161,44 @@ export default function App() {
     audioAlerts.setSoundEnabled(settings.soundEnabled);
   }, [settings.soundEnabled]);
 
+  // Heartbeat do usuário para o painel Master ADM (presença online em tempo real) & Checagem de expiração
+  useEffect(() => {
+    if (!userSession?.email) return;
+
+    if (!isAdmin && isMemberExpired(userSession)) {
+      const expiredSession: UserSession = {
+        ...userSession,
+        hasAccess: false,
+        status: 'EXPIRED',
+      };
+      setUserSession(expiredSession);
+      try {
+        localStorage.setItem('clandex_user_session', JSON.stringify(expiredSession));
+      } catch {}
+      return;
+    }
+
+    recordUserHeartbeat(userSession).catch(() => {});
+
+    const interval = setInterval(() => {
+      if (!isAdmin && isMemberExpired(userSession)) {
+        const expSession: UserSession = {
+          ...userSession,
+          hasAccess: false,
+          status: 'EXPIRED',
+        };
+        setUserSession(expSession);
+        try {
+          localStorage.setItem('clandex_user_session', JSON.stringify(expSession));
+        } catch {}
+      } else {
+        recordUserHeartbeat(userSession).catch(() => {});
+      }
+    }, 90000);
+
+    return () => clearInterval(interval);
+  }, [userSession, isAdmin]);
+
   // Hook Webhook Dispatcher to Signal Events
   useEffect(() => {
     signalEngine.setOnSignalEvent((sig, event) => {
@@ -262,6 +301,9 @@ export default function App() {
   // Handle Timeframe change
   const handleSelectTimeframe = useCallback(async (tf: TimeFrame) => {
     setTimeframe(tf);
+    const exp = getExpirationForTimeframe(tf);
+    setExpiration(exp);
+    setSettings((prev) => ({ ...prev, defaultExpiration: exp }));
     await marketDataManager.setTimeframe(tf);
     setCandles(marketDataManager.getCandles());
     setAiInsightText(null);
@@ -500,6 +542,8 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
+        isAdmin={isAdmin}
+        onOpenAdminPanel={() => setIsAdminModalOpen(true)}
       />
 
       {/* Chrome Extension Modal */}

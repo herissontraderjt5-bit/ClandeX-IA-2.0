@@ -14,7 +14,7 @@ export interface Asset {
 }
 
 export type TimeFrame = 'M1' | 'M2' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1';
-export type ExpirationTime = '1m' | '2m' | '5m';
+export type ExpirationTime = '1m' | '2m' | '5m' | '15m' | '30m' | '1h';
 
 export interface Candle {
   time: number; // Unix timestamp in seconds
@@ -219,8 +219,11 @@ export interface UserSession {
   hasDeposit?: boolean;
   isAdmin: boolean;
   validatedAt: number;
-  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  lastActiveAt?: number;
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
   source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
+  accessDays?: number; // Dias de acesso concedidos (ex: 7, 15, 30, 90, 365, 9999)
+  expiresAt?: number; // Timestamp em que o acesso expira
 }
 
 export interface MemberRecord {
@@ -229,10 +232,14 @@ export interface MemberRecord {
   hasAccess: boolean;
   hasDeposit?: boolean;
   isAdmin: boolean;
-  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED';
+  status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
   source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS';
   firstValidatedAt: number;
   lastCheckedAt: number;
+  lastActiveAt?: number;
+  isOnline?: boolean;
+  accessDays?: number; // Dias de acesso contratados/concedidos
+  expiresAt?: number; // Timestamp de expiração do acesso
   notes?: string;
 }
 
