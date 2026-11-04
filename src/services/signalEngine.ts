@@ -295,14 +295,22 @@ export class SignalEngine {
     const expirationSeconds = (settings.defaultExpiration === '2m' || timeframe === 'M2') ? 120 : ((settings.defaultExpiration === '1m' || timeframe === 'M1') ? 60 : 300);
     const candleBoundary = now - (((now % tfSec) + tfSec) % tfSec);
 
-    // Momento exato da ABERTURA DA VELA (segundo 00:00 ou primeiros 2 segundos da nova vela)
-    const isAtCandleOpening = remainingSec >= tfSec - 2;
-    const isNewCandle = this.lastConfirmedCandleTime !== currentCandle.time;
+    // Momento exato da CONFIRMAÇÃO FALTANDO 10 SEGUNDOS RESTANTES na vela atual
+    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 1;
+    const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
-    // 3. CONFIRMAÇÃO EXATA NA ABERTURA DA VELA (SEGUNDO 00:00)
-    if (isAtCandleOpening && isNewCandle && !activeRunningTrade) {
+    // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela)
+    const targetEntryTimestamp = candleBoundary + tfSec;
+    const targetExpirationTimestamp = targetEntryTimestamp + expirationSeconds;
+    const entryDate = new Date(targetEntryTimestamp * 1000);
+    const entryTimeFormatted = entryDate.toLocaleTimeString('pt-BR', { hour12: false });
+    const expDate = new Date(targetExpirationTimestamp * 1000);
+    const expirationTimeFormatted = expDate.toLocaleTimeString('pt-BR', { hour12: false });
+
+    // 3. CONFIRMAÇÃO OFICIAL FALTANDO 10 SEGUNDOS PARA ABRIR A NOVA VELA
+    if (isConfirmationWindow && isNewCandleConfirmation && !activeRunningTrade) {
       if (this.activePreAlert) {
-        // Validação da confluência no momento exato em que a vela abre
+        // Validação da confluência no momento exato em que faltam 10 segundos
         const directionMatches = confluences.direction === this.activePreAlert.direction;
         const scoreSufficient = confluences.totalScore >= confirmMinScore;
 
@@ -310,12 +318,12 @@ export class SignalEngine {
           marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
 
         if (!directionMatches || !scoreSufficient || isConsolidationTrap) {
-          // CANCELAMENTO NA ABERTURA (PROTEÇÃO DE BANCA)
+          // CANCELAMENTO FALTANDO 10 SEGUNDOS (PROTEÇÃO DE BANCA)
           let cancelReason = '';
           if (!directionMatches) {
-            cancelReason = 'Vela anterior fechou sem confirmação do direcionamento técnico. Entrada abortada.';
+            cancelReason = 'Vela anterior reverteu nos 10s finais sem confirmação direcional. Entrada abortada.';
           } else if (!scoreSufficient) {
-            cancelReason = `Pontuação insuficiente na abertura da vela (${confluences.totalScore}/${confirmMinScore} pts). Evitando LOSS.`;
+            cancelReason = `Pontuação insuficiente faltando 10s (${confluences.totalScore}/${confirmMinScore} pts). Evitando LOSS.`;
           } else if (isConsolidationTrap) {
             cancelReason = 'Mercado lateralizado sem rejeição de extremidade. Entrada abortada.';
           }
@@ -338,25 +346,25 @@ export class SignalEngine {
           this.notify();
           return;
         } else {
-          // CONFIRMAÇÃO OFICIAL NA ABERTURA DA VELA!
-          const entryPrice = currentCandle.open;
-          const officialEntryTime = Math.max(currentCandle.time, candleBoundary);
-          const officialExpTime = officialEntryTime + expirationSeconds;
+          // CONFIRMAÇÃO OFICIAL FALTANDO 10 SEGUNDOS!
+          const refPrice = currentCandle.close;
           const confirmed: SignalRecord = {
             ...this.activePreAlert,
             id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             stage: 'CONFIRMED',
             timestamp: Date.now(),
             formattedTime,
-            entryPrice,
-            candleOpenPrice: entryPrice,
-            isEntered: true, // Já inicia operando no segundo 00 da nova vela!
+            entryTimeFormatted,
+            expirationTimeFormatted,
+            entryPrice: refPrice,
+            candleOpenPrice: refPrice,
+            isEntered: false, // Inicia oficialmente na abertura da próxima vela (segundo 00:00)
             confluenceScore: confluences.totalScore,
             reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : this.activePreAlert.reasons,
             result: 'PENDING',
-            candleCloseTime: officialEntryTime,
-            entryTimestamp: officialEntryTime,
-            expirationTimestamp: officialExpTime,
+            candleCloseTime: targetEntryTimestamp,
+            entryTimestamp: targetEntryTimestamp,
+            expirationTimestamp: targetExpirationTimestamp,
             isEstimatedResult: false,
           };
 
@@ -387,28 +395,28 @@ export class SignalEngine {
         confluences.totalScore >= confirmMinScore &&
         !(marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance))
       ) {
-        // Confirmação direta instantânea de alta convicção que abriu na nova vela
-        const entryPrice = currentCandle.open;
-        const officialEntryTime = Math.max(currentCandle.time, candleBoundary);
-        const officialExpTime = officialEntryTime + expirationSeconds;
+        // Confirmação direta instantânea de alta convicção faltando 10 segundos
+        const refPrice = currentCandle.close;
         const confirmed: SignalRecord = {
           id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           timestamp: Date.now(),
           formattedTime,
+          entryTimeFormatted,
+          expirationTimeFormatted,
           asset: assetSymbol,
           timeframe,
           expiration: settings.defaultExpiration,
           direction: confluences.direction,
           stage: 'CONFIRMED',
-          entryPrice,
-          candleOpenPrice: entryPrice,
-          isEntered: true,
+          entryPrice: refPrice,
+          candleOpenPrice: refPrice,
+          isEntered: false,
           confluenceScore: confluences.totalScore,
           reasons: [...confluences.reasons],
           result: 'PENDING',
-          candleCloseTime: officialEntryTime,
-          entryTimestamp: officialEntryTime,
-          expirationTimestamp: officialExpTime,
+          candleCloseTime: targetEntryTimestamp,
+          entryTimestamp: targetEntryTimestamp,
+          expirationTimestamp: targetExpirationTimestamp,
           isEstimatedResult: false,
         };
 
@@ -435,8 +443,8 @@ export class SignalEngine {
       }
     }
 
-    // 4. CANCELAMENTO DO PRÉ-ALERTA SE HOUVER REVERSÃO FORTE DURANTE O FECHAMENTO DA VELA ANTERIOR
-    if (this.activePreAlert && remainingSec < tfSec - 3 && remainingSec <= 15) {
+    // 4. CANCELAMENTO DO PRÉ-ALERTA SE HOUVER REVERSÃO FORTE ANTES DOS 10s FINAIS
+    if (this.activePreAlert && remainingSec < tfSec - 3 && remainingSec > 10) {
       const body = Math.abs(currentCandle.close - currentCandle.open);
       const range = Math.max(currentCandle.high - currentCandle.low, 0.00001);
       const minBodyReversal = range * 0.40;
@@ -467,7 +475,7 @@ export class SignalEngine {
       }
     }
 
-    // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação na abertura da próxima)
+    // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação faltando 10s)
     if (confluences.direction === 'NEUTRO' || confluences.totalScore < preAlertMinScore) {
       return;
     }
@@ -476,18 +484,26 @@ export class SignalEngine {
 
     if (
       remainingSec < tfSec - 4 &&
-      remainingSec >= 3 &&
+      remainingSec > 10 &&
       confluences.totalScore >= preAlertMinScore &&
       !isConsolidationBlocked &&
       !this.activePreAlert &&
       !activeRunningTrade &&
       this.lastEvaluatedCandleTime !== currentCandle.time
     ) {
-      const targetCandleTime = Math.max(currentCandle.time + tfSec, candleBoundary + tfSec);
+      const targetCandleTime = candleBoundary + tfSec;
+      const targetExpTime = targetCandleTime + expirationSeconds;
+      const preEntryDate = new Date(targetCandleTime * 1000);
+      const preEntryTimeFormatted = preEntryDate.toLocaleTimeString('pt-BR', { hour12: false });
+      const preExpDate = new Date(targetExpTime * 1000);
+      const preExpTimeFormatted = preExpDate.toLocaleTimeString('pt-BR', { hour12: false });
+
       const preAlert: SignalRecord = {
         id: `sig_pre_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: Date.now(),
         formattedTime,
+        entryTimeFormatted: preEntryTimeFormatted,
+        expirationTimeFormatted: preExpTimeFormatted,
         asset: assetSymbol,
         timeframe,
         expiration: settings.defaultExpiration,
@@ -495,13 +511,15 @@ export class SignalEngine {
         stage: 'PRE_ALERT',
         confluenceScore: confluences.totalScore,
         entryPrice: currentCandle.close,
+        candleOpenPrice: currentCandle.close,
+        isEntered: false,
         result: 'PENDING',
         reasons: confluences.reasons.length > 0
           ? [...confluences.reasons]
           : [`Fluxo direcional favorável para ${confluences.direction}`, 'Confluência de Médias e Volume', 'Probabilidade institucional identificada'],
         candleCloseTime: targetCandleTime,
         entryTimestamp: targetCandleTime,
-        expirationTimestamp: targetCandleTime + expirationSeconds,
+        expirationTimestamp: targetExpTime,
         isEstimatedResult: false,
       };
 
@@ -536,11 +554,15 @@ export class SignalEngine {
     this.pendingTrades = this.pendingTrades.filter((trade) => {
       const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
       const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
+      const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : tradeAge;
 
       // 1. TRAVA ABSOLUTA DE DURAÇÃO MÍNIMA:
-      // Se a operação foi iniciada há menos de (expirationSec - 3) segundos E o timestamp de expiração
-      // ainda não foi atingido, ela NUNCA pode ser apurada! Mantém a operação em andamento.
-      if (tradeAge < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
+      // Se a vela ainda não abriu (nowSec < trade.entryTimestamp) ou se o timestamp de expiração
+      // ainda não foi atingido a partir da abertura oficial, ela NUNCA pode ser apurada! Mantém a operação em andamento.
+      if (trade.entryTimestamp && nowSec < trade.entryTimestamp) {
+        return true;
+      }
+      if (tradeElapsedFromEntry < expirationSec - 2 && nowSec < trade.expirationTimestamp) {
         return true;
       }
 
@@ -555,15 +577,15 @@ export class SignalEngine {
 
       // A vela do sinal encerra quando:
       // - O tempo de expiração foi atingido (nowSec >= trade.expirationTimestamp)
-      // - OU a duração integral da vela foi cumprida (tradeAge >= expirationSec - 2)
+      // - OU a duração integral da vela foi cumprida (tradeElapsedFromEntry >= expirationSec - 2)
       // E confirmação de encerramento da vela (próxima vela já aberta, candle fechada ou timer zerado)
       const isTimeExpired = nowSec >= trade.expirationTimestamp;
       const hasNextCandle = candleList.some((c) => c.time >= trade.expirationTimestamp);
-      const isTimerZero = remainingSec !== undefined && remainingSec === 0 && tradeAge >= expirationSec - 2;
-      const isCandleClosed = targetCandle?.isClosed === true && tradeAge >= expirationSec - 2;
-      const isTimeoutSafety = tradeAge >= expirationSec + 5; // Segurança para não travar se o feed congelar
+      const isTimerZero = remainingSec !== undefined && remainingSec === 0 && tradeElapsedFromEntry >= expirationSec - 2;
+      const isCandleClosed = targetCandle?.isClosed === true && tradeElapsedFromEntry >= expirationSec - 2;
+      const isTimeoutSafety = tradeElapsedFromEntry >= expirationSec + 5; // Segurança para não travar se o feed congelar
 
-      const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeAge >= expirationSec)) || isTimeoutSafety;
+      const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeElapsedFromEntry >= expirationSec)) || isTimeoutSafety;
 
       if (isExpired) {
         // Taxa de abertura oficial da vela do sinal
@@ -644,11 +666,14 @@ export class SignalEngine {
     if (!trade) return;
     const nowSec = Math.floor(Date.now() / 1000);
     const expirationSec = (trade.timeframe === 'M2' || trade.expiration === '2m') ? 120 : ((trade.timeframe === 'M1' || trade.expiration === '1m') ? 60 : 300);
-    const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
+    const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : Math.floor((Date.now() - trade.timestamp) / 1000);
 
-    // Proteção absoluta: nunca apurar prematuramente antes da duração mínima da vela
-    if (tradeAge < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
-      console.warn(`[SignalEngine] forceResolveTrade bloqueado: operação ${trade.id} ainda está em andamento (${tradeAge}s decorridos).`);
+    // Proteção absoluta: nunca apurar prematuramente antes da abertura e duração mínima da vela
+    if (trade.entryTimestamp && nowSec < trade.entryTimestamp) {
+      return;
+    }
+    if (tradeElapsedFromEntry < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
+      console.warn(`[SignalEngine] forceResolveTrade bloqueado: operação ${trade.id} ainda está em andamento (${tradeElapsedFromEntry}s decorridos).`);
       return;
     }
 
@@ -767,20 +792,27 @@ export class SignalEngine {
     this.dispatchSignalEvent(preAlert, 'PRE_ALERT');
     this.notify();
 
-    // 2. Após 5 segundos: Confirmar entrada e iniciar contagem regressiva da expiração
+    // 2. Após 5 segundos: Confirmar faltando 10s para a abertura da vela
     setTimeout(() => {
       const confirmedNow = Math.floor(Date.now() / 1000);
+      const entryTimestamp = confirmedNow + 10; // 10 segundos de preparação até a abertura
+      const targetExpTimestamp = entryTimestamp + simulationExpSec;
+      const entryTimeFormatted = new Date(entryTimestamp * 1000).toLocaleTimeString('pt-BR', { hour12: false });
+      const expirationTimeFormatted = new Date(targetExpTimestamp * 1000).toLocaleTimeString('pt-BR', { hour12: false });
+
       const confirmed: SignalRecord = {
         ...preAlert,
         stage: 'CONFIRMED',
         timestamp: Date.now(),
         formattedTime: new Date().toLocaleTimeString('pt-BR', { hour12: false }),
+        entryTimeFormatted,
+        expirationTimeFormatted,
         entryPrice: currentPrice,
         candleOpenPrice: currentPrice,
-        isEntered: true,
-        entryTimestamp: confirmedNow,
-        candleCloseTime: confirmedNow,
-        expirationTimestamp: confirmedNow + simulationExpSec,
+        isEntered: false,
+        entryTimestamp,
+        candleCloseTime: entryTimestamp,
+        expirationTimestamp: targetExpTimestamp,
       };
 
       this.activePreAlert = null;

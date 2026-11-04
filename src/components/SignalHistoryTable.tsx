@@ -66,7 +66,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
     if (signals.length === 0) return;
     const headers = [
       'ID',
-      'Data/Hora',
+      'Horário da Compra/Venda',
       'Ativo',
       'Timeframe',
       'Direção',
@@ -80,7 +80,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
 
     const rows = filteredSignals.map((s) => [
       s.id,
-      s.formattedTime,
+      s.entryTimeFormatted || s.formattedTime,
       s.asset,
       s.timeframe,
       s.direction,
@@ -198,7 +198,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
         <table className="w-full text-left text-xs">
           <thead className="bg-neutral-950/90 text-neutral-400 uppercase text-[10px] tracking-wider border-b border-neutral-800 font-mono">
             <tr>
-              <th className="py-2.5 px-3">Horário</th>
+              <th className="py-2.5 px-3">Horário da Compra/Venda</th>
               <th className="py-2.5 px-3">Ativo</th>
               <th className="py-2.5 px-3">TF</th>
               <th className="py-2.5 px-3">Direção</th>
@@ -214,7 +214,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({
               const isCall = sig.direction === 'CALL';
               return (
                 <tr key={sig.id} className="hover:bg-neutral-800/30 transition-colors">
-                  <td className="py-2 px-3 text-neutral-400 whitespace-nowrap">{sig.formattedTime}</td>
+                  <td className="py-2 px-3 text-cyan-300 font-bold whitespace-nowrap">{sig.entryTimeFormatted || sig.formattedTime}</td>
                   <td className="py-2 px-3 font-bold text-white whitespace-nowrap">{sig.asset}</td>
                   <td className="py-2 px-3 text-cyan-400 whitespace-nowrap">{sig.timeframe}</td>
                   <td className="py-2 px-3 whitespace-nowrap">

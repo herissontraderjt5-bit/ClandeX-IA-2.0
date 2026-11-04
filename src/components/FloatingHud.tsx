@@ -649,8 +649,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
       remainingExpSec <= 0
     ) {
       const expSec = (activeTrade.timeframe === 'M2' || activeTrade.expiration === '2m') ? 120 : ((activeTrade.timeframe === 'M1' || activeTrade.expiration === '1m') ? 60 : 300);
-      const tradeAge = Math.floor((Date.now() - activeTrade.timestamp) / 1000);
-      if (tradeAge >= expSec - 3) {
+      const tradeElapsed = activeTrade.entryTimestamp ? (nowSec - activeTrade.entryTimestamp) : Math.floor((Date.now() - activeTrade.timestamp) / 1000);
+      if (tradeElapsed >= expSec - 3) {
         signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice, marketDataManager.getCandles());
       }
     }
@@ -1333,6 +1333,11 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
                         </div>
 
+                        <div className="flex items-center justify-between text-[10px] font-mono text-neutral-300 bg-black/40 py-1 px-3 rounded-lg border border-white/10">
+                          <span>Horário da Compra/Venda: <strong className="text-cyan-300">{lastResolvedTrade.entryTimeFormatted || lastResolvedTrade.formattedTime}</strong></span>
+                          <span>Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
+                        </div>
+
                         <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                           <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado apurado com precisão</span>
@@ -1373,6 +1378,22 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <div className="text-right font-mono">
                           <div className="text-[9px] opacity-75">EXPIRAÇÃO</div>
                           <div className="text-xs font-bold text-white">{activeTrade.expiration.toUpperCase()}</div>
+                        </div>
+                      </div>
+
+                      {/* Horário Oficial da Compra/Venda e Preço Oficial de Abertura */}
+                      <div className="p-2 bg-black/60 rounded-xl border border-cyan-500/30 flex items-center justify-between text-[11px] font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-neutral-400">Horário:</span>
+                          <span className="text-cyan-300 font-bold">{activeTrade.entryTimeFormatted || activeTrade.formattedTime}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-neutral-400">Abertura:</span>
+                          <span className="text-white font-bold">{activeTrade.entryPrice.toFixed(asset.pipDecimals)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-neutral-400">Término:</span>
+                          <span className="text-neutral-300">{activeTrade.expirationTimeFormatted || 'Fechamento'}</span>
                         </div>
                       </div>
 
@@ -1482,18 +1503,29 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
+                      {/* Horário Oficial da Compra ou Venda */}
+                      <div className="p-2.5 bg-gradient-to-r from-cyan-950/60 to-emerald-950/60 rounded-xl border border-cyan-500/60 flex items-center justify-between text-xs font-mono shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                        <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
+                          <Clock className="w-4 h-4 text-cyan-400 animate-pulse" />
+                          <span>HORÁRIO DA COMPRA/VENDA:</span>
+                        </div>
+                        <span className="text-white font-black text-sm bg-black/60 px-2.5 py-0.5 rounded-lg border border-cyan-400/40">
+                          {latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime}
+                        </span>
+                      </div>
+
                       {/* Contador até abertura da vela do sinal */}
                       <div className="p-2.5 bg-black/80 rounded-xl border border-cyan-500/50 text-center space-y-1 shadow-[inset_0_0_15px_rgba(6,182,212,0.2)]">
                         <div className="text-[10px] font-mono font-bold text-cyan-300 flex items-center justify-center gap-1.5 uppercase tracking-wider">
                           <Clock className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                          <span>ENTRADA NA ABERTURA DA VELA EM:</span>
+                          <span>CONFIRMADO FALTANDO 10s • ENTRADA EM:</span>
                         </div>
                         <div className="text-2xl font-black font-mono text-white tracking-widest flex items-center justify-center gap-1">
                           <span className="text-cyan-400">00:</span>
                           <span className="text-emerald-400">{String(secondsToCandleOpen).padStart(2, '0')}</span>
                         </div>
-                        <div className="text-[9px] font-mono text-neutral-400">
-                          A contagem da ordem em andamento iniciará no primeiro segundo da nova vela
+                        <div className="text-[9px] font-mono text-neutral-300">
+                          Prepare sua boleta na corretora. Clique às <strong>{latestConfirmedSignal.entryTimeFormatted || latestConfirmedSignal.formattedTime}</strong> na abertura da vela!
                         </div>
                       </div>
 
@@ -1516,7 +1548,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </div>
                           <div>
                             <div className="text-[9px] uppercase font-bold tracking-wider text-amber-400 animate-pulse">
-                              PRÉ-ALERTA DA IA • CONFIRMAÇÃO NA ABERTURA
+                              PRÉ-ALERTA DA IA • CONFIRMAÇÃO FALTANDO 10s
                             </div>
                             <div className="text-lg font-black font-mono tracking-wide text-white">
                               {activePreAlert.direction === 'CALL' ? 'CALL (COMPRA)' : 'PUT (VENDA)'}
@@ -1530,17 +1562,24 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
-                      {/* Contagem regressiva até a abertura da vela */}
+                      {/* Horário Previsto da Compra/Venda */}
+                      <div className="p-2 bg-black/60 rounded-xl border border-amber-500/30 flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-neutral-400">Horário Previsto:</span>
+                        <span className="text-amber-300 font-bold">{activePreAlert.entryTimeFormatted || 'Próxima Vela'}</span>
+                        <span className="text-neutral-400">Confirmação: <strong className="text-amber-400">Faltando 10s</strong></span>
+                      </div>
+
+                      {/* Contagem regressiva até a confirmação nos 10s finais */}
                       <div className="p-2.5 bg-black/80 border border-amber-500/50 rounded-xl text-center space-y-1 shadow-[inset_0_0_15px_rgba(245,158,11,0.15)]">
                         <div className="text-[10px] font-mono text-amber-300 uppercase font-bold flex items-center justify-center gap-1.5">
                           <Clock className="w-3.5 h-3.5 animate-pulse text-amber-400" />
-                          <span>CONFIRMAÇÃO NA ABERTURA DA VELA EM:</span>
+                          <span>CONFIRMAÇÃO NOS 10s FINAIS EM:</span>
                         </div>
                         <div className="text-2xl font-black font-mono text-white tracking-widest flex items-center justify-center gap-1">
                           <span className="text-amber-400">{formattedCountdown}</span>
                         </div>
                         <div className="text-[9px] text-neutral-300 font-mono">
-                          Prepare a boleta na Hiove. Confirmação instantânea logo na abertura (segundo 00:00).
+                          Prepare sua boleta. Se o padrão confirmar faltando 10s, o alarme tocará para entrada às <strong>{activePreAlert.entryTimeFormatted || '00:00'}</strong>.
                         </div>
                       </div>
 

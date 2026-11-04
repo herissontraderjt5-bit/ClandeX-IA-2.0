@@ -138,7 +138,9 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                     {sig.result === 'EMPATE' && <span className="text-neutral-400">EMPATE</span>}
                     {sig.result === 'PENDING' && <span className="text-amber-400 animate-pulse">Em execução</span>}
                   </div>
-                  <div className="text-[10px] text-neutral-500">{sig.formattedTime}</div>
+                  <div className="text-[10px] text-cyan-300 font-mono font-medium">
+                    Horário: {sig.entryTimeFormatted || sig.formattedTime}
+                  </div>
                 </div>
               </div>
             );

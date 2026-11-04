@@ -145,6 +145,8 @@ export interface SignalRecord {
   candleCloseTime: number;
   expirationTimestamp: number;
   entryTimestamp?: number; // Momento exato em segundos em que a ordem inicia (abertura da vela do sinal)
+  entryTimeFormatted?: string; // Horário oficial da compra ou venda (ex: "15:31:00")
+  expirationTimeFormatted?: string; // Horário de término da compra ou venda (ex: "15:32:00")
   isEstimatedResult: boolean;
   resolvedAt?: number;
   cancelledAt?: number;
