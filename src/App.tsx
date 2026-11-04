@@ -208,10 +208,10 @@ export default function App() {
     });
   }, [settings.webhook]);
 
-  // Derived market analysis and confluences (com dados reais TradingView)
+  // Derived market analysis and confluences (com dados reais TradingView no timeframe selecionado)
   const marketAnalysis: MarketAnalysis = React.useMemo(() => {
-    return analyzeMarket(candles, marketDataManager.getLiveTradingViewData());
-  }, [candles, asset.currentPrice]);
+    return analyzeMarket(candles, marketDataManager.getLiveTradingViewData(timeframe));
+  }, [candles, asset.currentPrice, timeframe]);
 
   const confluences: ConfluenceBreakdown = React.useMemo(() => {
     return calculateConfluences(marketAnalysis, settings);
@@ -260,9 +260,9 @@ export default function App() {
           currentCandles
         );
 
-        // If analyzing is active, evaluate confluences in the signal engine with TradingView feed
+        // If analyzing is active, evaluate confluences in the signal engine with TradingView feed no timeframe ativo
         if (isAnalyzing) {
-          const liveAnalysis = analyzeMarket(currentCandles, marketDataManager.getLiveTradingViewData());
+          const liveAnalysis = analyzeMarket(currentCandles, marketDataManager.getLiveTradingViewData(timeframe));
           const liveConfluences = calculateConfluences(liveAnalysis, settings);
           signalEngine.evaluate(
             candle,

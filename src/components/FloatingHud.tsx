@@ -420,11 +420,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     return economicEvents;
   }, [economicEvents, newsImpactFilter]);
 
-  // Real-time Technical Overview calculated from current candles, timeframe & asset
+  // Real-time Technical Overview calculated from current candles, timeframe & asset + live TradingView scanner
   const activeCandles = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+  const liveTvData = marketDataManager.getLiveTradingViewData(timeframe);
   const technicalData = useMemo(() => {
-    return computeTechnicalOverview(activeCandles, timeframe, asset);
-  }, [activeCandles, timeframe, asset, currentCandle?.close]);
+    return computeTechnicalOverview(activeCandles, timeframe, asset, liveTvData);
+  }, [activeCandles, timeframe, asset, liveTvData, currentCandle?.close]);
 
   // Chat IA State
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'model'; text: string; timestamp: number }>>([
@@ -725,7 +726,19 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
   let alertStatusText = 'MONITORANDO MERCADO';
   let glowBorderClass = 'border-cyan-500/25';
 
-  if (hasResolvedTrade && lastResolvedTrade) {
+  if (isTradeRunning && activeTrade) {
+    alertStatusText = `⏳ OPERAÇÃO ABERTA • AGUARDANDO RESULTADO (${activeTrade.direction})`;
+    alertBadgeClass = isWinning
+      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse'
+      : 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
+    glowBorderClass = isWinning ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
+  } else if (hasConfirmed && latestConfirmedSignal) {
+    alertStatusText = `🚀 CONFIRMADO [ENTRADA EM 00:${String(secondsToCandleOpen).padStart(2, '0')}s]`;
+    alertBadgeClass = latestConfirmedSignal.direction === 'CALL'
+      ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 animate-pulse shadow-sm'
+      : 'bg-rose-500/25 text-rose-300 border-rose-400 animate-pulse shadow-sm';
+    glowBorderClass = latestConfirmedSignal.direction === 'CALL' ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
+  } else if (hasResolvedTrade && lastResolvedTrade) {
     if (lastResolvedTrade.result === 'WIN') {
       alertStatusText = '🏆 VITÓRIA (WIN)!';
       alertBadgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse';
@@ -742,18 +755,6 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
     alertStatusText = '🛡️ CANCELADO [PROTEÇÃO DE BANCA]';
     alertBadgeClass = 'bg-rose-500/25 text-rose-300 border-rose-500/70 shadow-sm';
     glowBorderClass = 'glow-put border-rose-500/50';
-  } else if (isTradeRunning && activeTrade) {
-    alertStatusText = `⏳ OPERAÇÃO ABERTA • AGUARDANDO RESULTADO (${activeTrade.direction})`;
-    alertBadgeClass = isWinning
-      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 animate-pulse'
-      : 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse';
-    glowBorderClass = isWinning ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
-  } else if (hasConfirmed && latestConfirmedSignal) {
-    alertStatusText = `🚀 CONFIRMADO [ENTRADA EM 00:${String(secondsToCandleOpen).padStart(2, '0')}s]`;
-    alertBadgeClass = latestConfirmedSignal.direction === 'CALL'
-      ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 animate-pulse shadow-sm'
-      : 'bg-rose-500/25 text-rose-300 border-rose-400 animate-pulse shadow-sm';
-    glowBorderClass = latestConfirmedSignal.direction === 'CALL' ? 'glow-call border-emerald-500/60' : 'glow-put border-rose-500/60';
   } else if (hasPreAlert && activePreAlert) {
 
     alertStatusText = `⚡ PRÉ-ALERTA: ${activePreAlert.direction} (ABERTURA EM ${formattedCountdown})`;
@@ -1357,58 +1358,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </button>
                   </div>
 
-                  {/* ESTÁGIO 1: RESULTADO APURADO (DURAÇÃO DE 7s COM APURAÇÃO EXATA) */}
-                  {hasResolvedTrade && lastResolvedTrade ? (
-                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
-                      <div
-                        className={`p-3 rounded-xl border text-center space-y-1.5 ${lastResolvedTrade.result === 'WIN'
-                            ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
-                            : lastResolvedTrade.result === 'LOSS'
-                              ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
-                              : 'bg-neutral-900 border-neutral-700 text-neutral-300'
-                          }`}
-                      >
-                        <div className="text-base font-black font-mono tracking-wider flex items-center justify-center gap-2">
-                          {lastResolvedTrade.result === 'WIN' ? (
-                            <>
-                              <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-bounce" />
-                              <span>VITÓRIA CONFIRMADA (WIN)!</span>
-                            </>
-                          ) : lastResolvedTrade.result === 'LOSS' ? (
-                            <>
-                              <XCircle className="w-5 h-5 text-rose-400" />
-                              <span>OPERAÇÃO FINALIZADA: LOSS</span>
-                            </>
-                          ) : (
-                            <span>OPERAÇÃO EMPATADA</span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-neutral-200 bg-black/40 py-1.5 px-3 rounded-lg border border-white/10">
-                          <span>Abertura da Vela: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
-                          <span>➔</span>
-                          <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
-                        </div>
-
-                        <div className="p-2.5 bg-gradient-to-r from-cyan-950/70 via-black to-neutral-950 rounded-xl border border-cyan-500/50 flex items-center justify-between font-mono shadow-[0_0_12px_rgba(6,182,212,0.2)]">
-                          <div className="flex items-center gap-1.5 text-neutral-300">
-                            <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                            <span className="text-[11px] text-neutral-400 font-bold">Entrada (Brasília):</span>
-                            <span className="text-cyan-300 font-black text-xs bg-black/80 px-2 py-0.5 rounded border border-cyan-400/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
-                              {lastResolvedTrade.entryTimeFormatted || lastResolvedTrade.formattedTime}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-neutral-300">Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
-                        </div>
-
-                        <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                          <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado apurado com precisão</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : isTradeRunning && activeTrade ? (
-                    /* ESTÁGIO 2: OPERAÇÃO EM ANDAMENTO (CRONÔMETRO DE EXPIRAÇÃO ATÉ O ZERO!) */
+                  {/* ESTÁGIO 1: OPERAÇÃO EM ANDAMENTO (CRONÔMETRO DE EXPIRAÇÃO ATÉ O ZERO!) */}
+                  {isTradeRunning && activeTrade ? (
                     <div className="space-y-2.5 relative z-10">
                       <div
                         className={`p-2.5 rounded-xl border flex items-center justify-between ${isCallTrade
@@ -1500,38 +1451,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         )}
                       </div>
                     </div>
-                  ) : hasCancelledSignal && lastCancelledSignal ? (
-                    /* ESTÁGIO 3: SINAL CANCELADO (PROTEÇÃO DE BANCA - DURAÇÃO DE 5s) */
-                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in duration-200">
-                      <div className="p-2.5 bg-rose-500/15 border border-rose-500/60 rounded-xl text-rose-300 flex items-center justify-between shadow-[0_0_15px_rgba(244,63,94,0.25)]">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-rose-500 text-white">
-                            <ShieldAlert className="w-5 h-5 stroke-[2.5]" />
-                          </div>
-                          <div>
-                            <div className="text-[9px] uppercase font-bold tracking-wider text-rose-400">
-                              PROTEÇÃO DE BANCA (CONFIRMAÇÃO ABORTADA)
-                            </div>
-                            <div className="text-sm font-black font-mono tracking-wide text-white">
-                              SINAL CANCELADO • NÃO ENTRAR
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[9px] font-mono text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-500/40">
-                          5s auto-limpeza
-                        </span>
-                      </div>
-
-                      <div className="p-2 bg-black/60 border border-rose-500/30 rounded-xl text-[10px] font-mono text-neutral-300">
-                        <div className="text-rose-400 font-bold mb-0.5 flex items-center gap-1">
-                          <XCircle className="w-3 h-3" />
-                          <span>Motivo da Invalidação:</span>
-                        </div>
-                        <div>{lastCancelledSignal.cancelReason || 'Confluência insuficiente na abertura. Ordem abortada.'}</div>
-                      </div>
-                    </div>
                   ) : hasConfirmed && latestConfirmedSignal ? (
-                    /* ESTÁGIO 4: ENTRADA CONFIRMADA NA ABERTURA DA VELA */
+                    /* ESTÁGIO 2: ENTRADA CONFIRMADA NA ABERTURA DA VELA */
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border flex items-center justify-between ${latestConfirmedSignal.direction === 'CALL'
@@ -1603,6 +1524,86 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <div className="p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-[11px] font-mono">
                         <span className="text-neutral-300">Preço Ref: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
                         <span className="text-emerald-400 font-bold">Confluência: {latestConfirmedSignal.confluenceScore}%</span>
+                      </div>
+                    </div>
+                  ) : hasResolvedTrade && lastResolvedTrade ? (
+                    /* ESTÁGIO 3: RESULTADO APURADO (DURAÇÃO DE 7s COM APURAÇÃO EXATA) */
+                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
+                      <div
+                        className={`p-3 rounded-xl border text-center space-y-1.5 ${lastResolvedTrade.result === 'WIN'
+                            ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                            : lastResolvedTrade.result === 'LOSS'
+                              ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
+                              : 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                          }`}
+                      >
+                        <div className="text-base font-black font-mono tracking-wider flex items-center justify-center gap-2">
+                          {lastResolvedTrade.result === 'WIN' ? (
+                            <>
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-bounce" />
+                              <span>VITÓRIA CONFIRMADA (WIN)!</span>
+                            </>
+                          ) : lastResolvedTrade.result === 'LOSS' ? (
+                            <>
+                              <XCircle className="w-5 h-5 text-rose-400" />
+                              <span>OPERAÇÃO FINALIZADA: LOSS</span>
+                            </>
+                          ) : (
+                            <span>OPERAÇÃO EMPATADA</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-neutral-200 bg-black/40 py-1.5 px-3 rounded-lg border border-white/10">
+                          <span>Abertura da Vela: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                          <span>➔</span>
+                          <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
+                        </div>
+
+                        <div className="p-2.5 bg-gradient-to-r from-cyan-950/70 via-black to-neutral-950 rounded-xl border border-cyan-500/50 flex items-center justify-between font-mono shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+                          <div className="flex items-center gap-1.5 text-neutral-300">
+                            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[11px] text-neutral-400 font-bold">Entrada (Brasília):</span>
+                            <span className="text-cyan-300 font-black text-xs bg-black/80 px-2 py-0.5 rounded border border-cyan-400/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
+                              {lastResolvedTrade.entryTimeFormatted || lastResolvedTrade.formattedTime}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-neutral-300">Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
+                        </div>
+
+                        <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                          <span>{lastResolvedTrade.result === 'WIN' ? '+1 WIN no Placar' : '+1 LOSS no Placar'} • Resultado apurado com precisão</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : hasCancelledSignal && lastCancelledSignal ? (
+                    /* ESTÁGIO 4: SINAL CANCELADO (PROTEÇÃO DE BANCA - DURAÇÃO DE 5s) */
+                    <div className="space-y-2 py-1 relative z-10 animate-in fade-in duration-200">
+                      <div className="p-2.5 bg-rose-500/15 border border-rose-500/60 rounded-xl text-rose-300 flex items-center justify-between shadow-[0_0_15px_rgba(244,63,94,0.25)]">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-rose-500 text-white">
+                            <ShieldAlert className="w-5 h-5 stroke-[2.5]" />
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase font-bold tracking-wider text-rose-400">
+                              PROTEÇÃO DE BANCA (CONFIRMAÇÃO ABORTADA)
+                            </div>
+                            <div className="text-sm font-black font-mono tracking-wide text-white">
+                              SINAL CANCELADO • NÃO ENTRAR
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-mono text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-500/40">
+                          5s auto-limpeza
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-black/60 border border-rose-500/30 rounded-xl text-[10px] font-mono text-neutral-300">
+                        <div className="text-rose-400 font-bold mb-0.5 flex items-center gap-1">
+                          <XCircle className="w-3 h-3" />
+                          <span>Motivo da Invalidação:</span>
+                        </div>
+                        <div>{lastCancelledSignal.cancelReason || 'Confluência insuficiente na abertura. Ordem abortada.'}</div>
                       </div>
                     </div>
                   ) : hasPreAlert && activePreAlert ? (

@@ -1,9 +1,10 @@
-import { Asset } from '../types/trading';
+import { Asset, TimeFrame } from '../types/trading';
 
 export interface LiveTradingViewData {
   symbol: string;
   tvSymbol: string;
   category: 'FOREX' | 'CRYPTO';
+  timeframe?: TimeFrame;
   price: number;
   open: number;
   high: number;
@@ -18,10 +19,36 @@ export interface LiveTradingViewData {
   macdSignal: number;
   stochK: number;
   stochD: number;
+  adx?: number;
+  atr?: number;
+  bbUpper?: number;
+  bbLower?: number;
+  ema10?: number;
+  ema20?: number;
+  sma50?: number;
+  sma200?: number;
   lastUpdated: number;
 }
 
 export type TradingViewUpdateCallback = (data: LiveTradingViewData) => void;
+
+/**
+ * Converte o Timeframe ClandeX para o sufixo oficial aceito no TradingView Scanner
+ * Ex: M1 -> |1, M5 -> |5, M15 -> |15, M30 -> |30, H1 -> |60, H4 -> |240, D1 -> ''
+ */
+export function getTimeframeTvSuffix(tf?: TimeFrame): string {
+  if (!tf) return '|1';
+  switch (tf) {
+    case 'M1': return '|1';
+    case 'M5': return '|5';
+    case 'M15': return '|15';
+    case 'M30': return '|30';
+    case 'H1': return '|60';
+    case 'H4': return '|240';
+    case 'D1': return '';
+    default: return '|1';
+  }
+}
 
 class TradingViewScannerService {
   private cache = new Map<string, LiveTradingViewData>();
@@ -45,9 +72,15 @@ class TradingViewScannerService {
   }
 
   /**
-   * Obtém a cotação e indicadores mais recentes em cache para o ativo
+   * Obtém a cotação e indicadores mais recentes em cache para o ativo e timeframe
    */
-  public getLatest(symbol: string): LiveTradingViewData | null {
+  public getLatest(symbol: string, timeframe?: TimeFrame): LiveTradingViewData | null {
+    if (timeframe) {
+      const tfKey = `${symbol}::${timeframe}`;
+      if (this.cache.has(tfKey)) {
+        return this.cache.get(tfKey)!;
+      }
+    }
     return this.cache.get(symbol) || null;
   }
 
@@ -69,32 +102,49 @@ class TradingViewScannerService {
   }
 
   /**
-   * Busca dados em tempo real diretamente do scanner oficial do TradingView
+   * Monta a lista oficial de colunas do scanner TradingView para o timeframe desejado
    */
-  public async fetchAssetData(asset: Asset): Promise<LiveTradingViewData | null> {
+  private buildColumns(timeframe?: TimeFrame): string[] {
+    const s = getTimeframeTvSuffix(timeframe);
+    return [
+      'close',
+      'open',
+      'high',
+      'low',
+      'change',
+      `Recommend.All${s}`,
+      `Recommend.MA${s}`,
+      `Recommend.Other${s}`,
+      `RSI${s}`,
+      `MACD.macd${s}`,
+      `MACD.signal${s}`,
+      `Stoch.K${s}`,
+      `Stoch.D${s}`,
+      `ADX${s}`,
+      `ATR${s}`,
+      `BB.upper${s}`,
+      `BB.lower${s}`,
+      `EMA10${s}`,
+      `EMA20${s}`,
+      `SMA50${s}`,
+      `SMA200${s}`,
+    ];
+  }
+
+  /**
+   * Busca dados em tempo real diretamente do scanner oficial do TradingView para o ativo e timeframe especificados
+   */
+  public async fetchAssetData(asset: Asset, timeframe: TimeFrame = 'M1'): Promise<LiveTradingViewData | null> {
     const isCrypto = asset.category === 'CRYPTO';
     const scannerEndpoint = isCrypto
       ? 'https://scanner.tradingview.com/crypto/scan'
       : 'https://scanner.tradingview.com/forex/scan';
     const proxyEndpoint = `/api/tradingview/scan?category=${isCrypto ? 'crypto' : 'forex'}`;
 
+    const columns = this.buildColumns(timeframe);
     const bodyPayload = JSON.stringify({
       symbols: { tickers: [asset.tvSymbol] },
-      columns: [
-        'close',
-        'open',
-        'high',
-        'low',
-        'change',
-        'Recommend.All',
-        'Recommend.MA',
-        'Recommend.Other',
-        'RSI',
-        'MACD.macd',
-        'MACD.signal',
-        'Stoch.K',
-        'Stoch.D',
-      ],
+      columns,
     });
 
     let rawData: any = null;
@@ -128,12 +178,12 @@ class TradingViewScannerService {
     }
 
     if (!rawData || !Array.isArray(rawData.data) || rawData.data.length === 0) {
-      return this.cache.get(asset.symbol) || null;
+      return this.getLatest(asset.symbol, timeframe);
     }
 
     const row = rawData.data[0];
     if (!row || !Array.isArray(row.d) || row.d.length < 5) {
-      return this.cache.get(asset.symbol) || null;
+      return this.getLatest(asset.symbol, timeframe);
     }
 
     const d = row.d;
@@ -150,11 +200,20 @@ class TradingViewScannerService {
     const macdSignal = Number(d[10] ?? 0);
     const stochK = Math.round(Number(d[11] ?? 50));
     const stochD = Math.round(Number(d[12] ?? 50));
+    const adx = d[13] !== null && d[13] !== undefined ? Number(Number(d[13]).toFixed(1)) : undefined;
+    const atr = d[14] !== null && d[14] !== undefined ? Number(d[14]) : undefined;
+    const bbUpper = d[15] !== null && d[15] !== undefined ? Number(d[15]) : undefined;
+    const bbLower = d[16] !== null && d[16] !== undefined ? Number(d[16]) : undefined;
+    const ema10 = d[17] !== null && d[17] !== undefined ? Number(d[17]) : undefined;
+    const ema20 = d[18] !== null && d[18] !== undefined ? Number(d[18]) : undefined;
+    const sma50 = d[19] !== null && d[19] !== undefined ? Number(d[19]) : undefined;
+    const sma200 = d[20] !== null && d[20] !== undefined ? Number(d[20]) : undefined;
 
     const item: LiveTradingViewData = {
       symbol: asset.symbol,
       tvSymbol: asset.tvSymbol,
       category: asset.category,
+      timeframe,
       price,
       open,
       high,
@@ -169,10 +228,19 @@ class TradingViewScannerService {
       macdSignal,
       stochK,
       stochD,
+      adx,
+      atr,
+      bbUpper,
+      bbLower,
+      ema10,
+      ema20,
+      sma50,
+      sma200,
       lastUpdated: Date.now(),
     };
 
     this.cache.set(asset.symbol, item);
+    this.cache.set(`${asset.symbol}::${timeframe}`, item);
     this.notify(item);
     return item;
   }
@@ -180,9 +248,10 @@ class TradingViewScannerService {
   /**
    * Escaneia todos os ativos configurados em uma única requisição em lote para alta performance
    */
-  public async scanAllAssets(assets: Asset[]): Promise<Map<string, LiveTradingViewData>> {
+  public async scanAllAssets(assets: Asset[], timeframe: TimeFrame = 'M1'): Promise<Map<string, LiveTradingViewData>> {
     const forexAssets = assets.filter((a) => a.category === 'FOREX');
     const cryptoAssets = assets.filter((a) => a.category === 'CRYPTO');
+    const columns = this.buildColumns(timeframe);
 
     const fetchCategory = async (cat: 'forex' | 'crypto', list: Asset[]) => {
       if (list.length === 0) return;
@@ -194,21 +263,7 @@ class TradingViewScannerService {
 
       const payload = JSON.stringify({
         symbols: { tickers },
-        columns: [
-          'close',
-          'open',
-          'high',
-          'low',
-          'change',
-          'Recommend.All',
-          'Recommend.MA',
-          'Recommend.Other',
-          'RSI',
-          'MACD.macd',
-          'MACD.signal',
-          'Stoch.K',
-          'Stoch.D',
-        ],
+        columns,
       });
 
       let rawData: any = null;
@@ -250,11 +305,20 @@ class TradingViewScannerService {
             const macdSignal = Number(d[10] ?? 0);
             const stochK = Math.round(Number(d[11] ?? 50));
             const stochD = Math.round(Number(d[12] ?? 50));
+            const adx = d[13] !== null && d[13] !== undefined ? Number(Number(d[13]).toFixed(1)) : undefined;
+            const atr = d[14] !== null && d[14] !== undefined ? Number(d[14]) : undefined;
+            const bbUpper = d[15] !== null && d[15] !== undefined ? Number(d[15]) : undefined;
+            const bbLower = d[16] !== null && d[16] !== undefined ? Number(d[16]) : undefined;
+            const ema10 = d[17] !== null && d[17] !== undefined ? Number(d[17]) : undefined;
+            const ema20 = d[18] !== null && d[18] !== undefined ? Number(d[18]) : undefined;
+            const sma50 = d[19] !== null && d[19] !== undefined ? Number(d[19]) : undefined;
+            const sma200 = d[20] !== null && d[20] !== undefined ? Number(d[20]) : undefined;
 
             const item: LiveTradingViewData = {
               symbol: assetMatch.symbol,
               tvSymbol: assetMatch.tvSymbol,
               category: assetMatch.category,
+              timeframe,
               price,
               open,
               high,
@@ -269,10 +333,19 @@ class TradingViewScannerService {
               macdSignal,
               stochK,
               stochD,
+              adx,
+              atr,
+              bbUpper,
+              bbLower,
+              ema10,
+              ema20,
+              sma50,
+              sma200,
               lastUpdated: Date.now(),
             };
 
             this.cache.set(assetMatch.symbol, item);
+            this.cache.set(`${assetMatch.symbol}::${timeframe}`, item);
             this.notify(item);
           }
         }
@@ -288,9 +361,13 @@ class TradingViewScannerService {
   }
 
   /**
-   * Inicia o monitoramento contínuo em background (a cada 3.5 segundos)
+   * Inicia o monitoramento contínuo em background (a cada 2.5 segundos para ultra-precisão)
    */
-  public startBackgroundPolling(getCurrentAsset: () => Asset, getAllAssets: () => Asset[]) {
+  public startBackgroundPolling(
+    getCurrentAsset: () => Asset,
+    getAllAssets: () => Asset[],
+    getCurrentTimeframe: () => TimeFrame = () => 'M1'
+  ) {
     if (this.pollInterval) return;
 
     let cycleCount = 0;
@@ -299,15 +376,16 @@ class TradingViewScannerService {
       this.isScanning = true;
       try {
         const current = getCurrentAsset();
+        const tf = getCurrentTimeframe();
         if (current) {
-          await this.fetchAssetData(current);
+          await this.fetchAssetData(current, tf);
         }
 
-        // A cada 3 ciclos (~10s), atualiza todos os outros ativos em lote
+        // A cada 4 ciclos (~10s), atualiza todos os outros ativos em lote no timeframe atual
         cycleCount++;
-        if (cycleCount % 3 === 0) {
+        if (cycleCount % 4 === 0) {
           const all = getAllAssets();
-          await this.scanAllAssets(all);
+          await this.scanAllAssets(all, tf);
         }
       } catch (err) {
         console.error('[TradingViewScanner] Erro no ciclo:', err);
@@ -318,7 +396,7 @@ class TradingViewScannerService {
 
     // Executa imediatamente o primeiro ciclo
     runCycle();
-    this.pollInterval = window.setInterval(runCycle, 3500);
+    this.pollInterval = window.setInterval(runCycle, 2500);
   }
 
   public stopBackgroundPolling() {

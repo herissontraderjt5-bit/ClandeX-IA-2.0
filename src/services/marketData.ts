@@ -502,6 +502,9 @@ export class MarketDataManager {
         await this.loadCandlesForCurrentSelection();
       }
 
+      // Atualiza os indicadores do TradingView para o novo timeframe imediatamente
+      tradingViewScanner.fetchAssetData(this.currentAsset, tf);
+
       // 4. Reconecta stream WebSocket para o novo timeframe (1m, 5m, etc.)
       this.reconnectStreams();
       this.notifySource();
@@ -557,7 +560,8 @@ export class MarketDataManager {
     this.isConnected = true;
     tradingViewScanner.startBackgroundPolling(
       () => this.currentAsset,
-      () => getLiveAssets()
+      () => getLiveAssets(),
+      () => this.currentTimeframe
     );
     this.reconnectStreams();
     this.startTickLoop();
@@ -578,8 +582,8 @@ export class MarketDataManager {
     this.notifySource();
   }
 
-  public getLiveTradingViewData(): LiveTradingViewData | null {
-    return tradingViewScanner.getLatest(this.currentAsset.symbol);
+  public getLiveTradingViewData(timeframe?: TimeFrame): LiveTradingViewData | null {
+    return tradingViewScanner.getLatest(this.currentAsset.symbol, timeframe || this.currentTimeframe);
   }
 
   private reconnectStreams() {
@@ -643,12 +647,22 @@ export class MarketDataManager {
         return;
       }
 
-      // Micro-oscilação natural em dias úteis ou fallback para cripto
+      // Sincronização estrita com cotações reais oficiais (SEM ruído browniano aleatório)
+      // Garante que a abertura, fechamento e resultado de WIN/LOSS batam 100% com a corretora
       if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
-        const volatility = this.currentAsset.pipDecimals === 5 ? 0.00004 : (this.currentAsset.pipDecimals === 3 ? 0.015 : 4.5);
-        const delta = (Math.random() - 0.5) * volatility;
-        this.currentAsset.currentPrice = Number((this.currentAsset.currentPrice + delta).toFixed(this.currentAsset.pipDecimals));
-        this.updateCurrentCandle(this.currentAsset.currentPrice);
+        const latestTv = tradingViewScanner.getLatest(this.currentAsset.symbol, this.currentTimeframe);
+        if (latestTv && latestTv.price > 0) {
+          if (this.currentAsset.currentPrice !== latestTv.price) {
+            this.currentAsset.currentPrice = latestTv.price;
+            this.currentAsset.change24h = latestTv.change24h;
+            this.updateCurrentCandle(latestTv.price);
+          }
+        }
+      }
+
+      // Nos momentos críticos de fechamento/abertura de vela (segundos 00 e 01), força leitura imediata
+      if (remainingSec === tfSeconds || remainingSec === 1) {
+        tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
       }
 
       const activeCandle = this.candles[this.candles.length - 1];

@@ -403,6 +403,7 @@ export class SignalEngine {
           this.latestConfirmedTime = Date.now();
           this.activePreAlert = null;
           this.lastCancelledSignal = null;
+          this.lastResolvedTrade = null; // Limpa resultado da operação anterior para nunca sobrepor o novo sinal confirmado
 
           if (settings.confirmedSound) {
             if (confirmed.direction === 'CALL') {
@@ -454,6 +455,7 @@ export class SignalEngine {
         this.latestConfirmedSignal = confirmed;
         this.latestConfirmedTime = Date.now();
         this.lastCancelledSignal = null;
+        this.lastResolvedTrade = null; // Limpa resultado da operação anterior para nunca sobrepor o novo sinal confirmado
 
         if (settings.confirmedSound) {
           if (confirmed.direction === 'CALL') {
@@ -553,6 +555,7 @@ export class SignalEngine {
 
       this.activePreAlert = preAlert;
       this.lastCancelledSignal = null;
+      this.lastResolvedTrade = null;
       this.lastEvaluatedCandleTime = currentCandle.time;
 
       if (settings.preAlertSound) {

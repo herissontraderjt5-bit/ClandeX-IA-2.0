@@ -91,11 +91,21 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   const smaLong = longSum / longPeriod;
 
   let trend: 'ALTA' | 'BAIXA' | 'LATERAL' = 'LATERAL';
-  const priceVsSma = latest.close - smaLong;
-  if (smaShort > smaLong && latest.close > smaShort && priceVsSma > atr * 0.3) {
-    trend = 'ALTA';
-  } else if (smaShort < smaLong && latest.close < smaShort && priceVsSma < -atr * 0.3) {
-    trend = 'BAIXA';
+  if (tvData && tvData.recommendation) {
+    if (tvData.recommendation.includes('COMPRA')) {
+      trend = 'ALTA';
+    } else if (tvData.recommendation.includes('VENDA')) {
+      trend = 'BAIXA';
+    } else {
+      trend = 'LATERAL';
+    }
+  } else {
+    const priceVsSma = latest.close - smaLong;
+    if (smaShort > smaLong && latest.close > smaShort && priceVsSma > atr * 0.3) {
+      trend = 'ALTA';
+    } else if (smaShort < smaLong && latest.close < smaShort && priceVsSma < -atr * 0.3) {
+      trend = 'BAIXA';
+    }
   }
 
   // 3. Price Action: Body vs Wick, Pinbars, Engulfing
@@ -881,23 +891,39 @@ export function calculateConfluences(
   const hasPutTrigger = normalizedPAPut >= 8 || normalizedSMCPut >= 8 || normalizedSRPut >= 10;
   const hasPutPillars = hasPutFoundation && hasPutTrigger;
 
+  const tvRec = analysis.tradingView?.recommendation;
+
   if (analysis.inConsolidation && (!analysis.nearSupport && !analysis.nearResistance)) {
     direction = 'NEUTRO';
     totalScore = 0;
   } else if (scoreDiff >= minAdvantage && totalCall >= minThreshold && hasCallPillars) {
-    direction = 'CALL';
-    totalScore = Math.min(98, totalCall);
-    msScore = normalizedMSCall;
-    paScore = normalizedPACall;
-    srScore = normalizedSRCall;
-    smcFinalScore = normalizedSMCCall;
+    // Filtro Institucional: se TradingView oficial indica VENDA ou FORTE VENDA, não abra CALL contra a maré
+    if (tvRec === 'FORTE VENDA' || tvRec === 'VENDA') {
+      direction = 'NEUTRO';
+      totalScore = Math.min(totalCall, 50);
+      reasons.unshift(`Proteção Anti-Loss: CALL abortado pois o TradingView indica ${tvRec}`);
+    } else {
+      direction = 'CALL';
+      totalScore = Math.min(98, totalCall);
+      msScore = normalizedMSCall;
+      paScore = normalizedPACall;
+      srScore = normalizedSRCall;
+      smcFinalScore = normalizedSMCCall;
+    }
   } else if (scoreDiff <= -minAdvantage && totalPut >= minThreshold && hasPutPillars) {
-    direction = 'PUT';
-    totalScore = Math.min(98, totalPut);
-    msScore = normalizedMSPut;
-    paScore = normalizedPAPut;
-    srScore = normalizedSRPut;
-    smcFinalScore = normalizedSMCPut;
+    // Filtro Institucional: se TradingView oficial indica COMPRA ou FORTE COMPRA, não abra PUT contra a maré
+    if (tvRec === 'FORTE COMPRA' || tvRec === 'COMPRA') {
+      direction = 'NEUTRO';
+      totalScore = Math.min(totalPut, 50);
+      reasons.unshift(`Proteção Anti-Loss: PUT abortado pois o TradingView indica ${tvRec}`);
+    } else {
+      direction = 'PUT';
+      totalScore = Math.min(98, totalPut);
+      msScore = normalizedMSPut;
+      paScore = normalizedPAPut;
+      srScore = normalizedSRPut;
+      smcFinalScore = normalizedSMCPut;
+    }
   } else {
     direction = 'NEUTRO';
     totalScore = Math.max(totalCall, totalPut);
