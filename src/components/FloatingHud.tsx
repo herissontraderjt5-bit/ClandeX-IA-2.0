@@ -758,14 +758,15 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
   // Live PnL check during active trade
   const isCallTrade = activeTrade?.direction === 'CALL';
+  const tradeRefOpen = activeTrade?.candleOpenPrice || activeTrade?.entryPrice || 0;
   const isWinning = isTradeRunning
     ? isCallTrade
-      ? asset.currentPrice > activeTrade.entryPrice
-      : asset.currentPrice < activeTrade.entryPrice
+      ? asset.currentPrice > tradeRefOpen
+      : asset.currentPrice < tradeRefOpen
     : false;
-  const isTied = isTradeRunning ? asset.currentPrice === activeTrade.entryPrice : false;
+  const isTied = isTradeRunning ? asset.currentPrice === tradeRefOpen : false;
   const diffPips = isTradeRunning && activeTrade
-    ? Math.abs(asset.currentPrice - activeTrade.entryPrice) * (asset.pipDecimals === 5 ? 10000 : 100)
+    ? Math.abs(asset.currentPrice - tradeRefOpen) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
   // Has recently resolved trade (exibe por 7 segundos completos para visualização clara do WIN/LOSS)
@@ -1422,7 +1423,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800 text-neutral-300">
-                          <span>Abertura: <strong className="text-white">{activeTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Abertura: <strong className="text-white">{(activeTrade.candleOpenPrice || activeTrade.entryPrice).toFixed(asset.pipDecimals)}</strong></span>
                           <span>Término: <strong className="text-emerald-300">{activeTrade.expirationTimeFormatted || 'Fechamento'} BRT</strong></span>
                         </div>
                       </div>
@@ -1599,9 +1600,9 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
 
                         <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-neutral-200 bg-black/40 py-1.5 px-3 rounded-lg border border-white/10">
-                          <span>Abertura da Vela: <strong>{lastResolvedTrade.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Abertura da Vela: <strong>{(lastResolvedTrade.candleOpenPrice || lastResolvedTrade.entryPrice).toFixed(asset.pipDecimals)}</strong></span>
                           <span>➔</span>
-                          <span>Fechamento da Vela: <strong>{(lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Fechamento da Vela: <strong>{(lastResolvedTrade.candleClosePrice || lastResolvedTrade.exitPrice || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
                         </div>
 
                         <div className="p-2.5 bg-gradient-to-r from-cyan-950/70 via-black to-neutral-950 rounded-xl border border-cyan-500/50 flex items-center justify-between font-mono shadow-[0_0_12px_rgba(6,182,212,0.2)]">

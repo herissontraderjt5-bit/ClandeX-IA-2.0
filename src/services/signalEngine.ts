@@ -212,13 +212,20 @@ export class SignalEngine {
           ? allCandles
           : marketDataManager.getCandlesForAsset(trade.asset, trade.timeframe);
 
-        const targetTime = trade.entryTimestamp || trade.candleCloseTime;
-        const targetCandle = candleList.find((c) => Math.abs(c.time - targetTime) < 5) ||
-          (currentCandle && Math.abs(currentCandle.time - targetTime) < 5 ? currentCandle : null);
+        const expSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
+        const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expSec);
+        const entryTime = trade.entryTimestamp || (expTime - expSec);
 
-        // Quando a vela do sinal abre: registra oficialmente o preço de abertura da vela
+        // Localiza a vela da operação (c.time correspondente à abertura da vela do sinal)
+        const targetCandle = candleList
+          .slice()
+          .reverse()
+          .find((c) => Math.abs(c.time - entryTime) < 5 || (c.time < expTime && c.time >= entryTime - 30)) ||
+          (currentCandle && Math.abs(currentCandle.time - entryTime) < 5 ? currentCandle : null);
+
+        // Quando a vela do sinal abre: trava a taxa oficial de abertura da vela de forma IMUTÁVEL
         if (!trade.isEntered) {
-          if (targetCandle) {
+          if (targetCandle && targetCandle.open > 0) {
             trade.isEntered = true;
             trade.entryPrice = targetCandle.open;
             trade.candleOpenPrice = targetCandle.open;
@@ -237,6 +244,9 @@ export class SignalEngine {
               this.signalHistory[histIndex] = { ...trade };
             }
           }
+        } else if (!trade.expirationTimestamp || nowSec <= trade.expirationTimestamp) {
+          // Atualiza continuamente a última cotação registrada antes do fechamento
+          trade.candleClosePrice = currentPrice;
         }
       });
 
@@ -348,7 +358,7 @@ export class SignalEngine {
     // Vincula a expiração do sinal estritamente ao timeframe selecionado no gráfico!
     const activeExpiration: ExpirationTime = getExpirationForTimeframe(timeframe);
     const expirationSeconds = tfSec;
-    const candleBoundary = now - (((now % tfSec) + tfSec) % tfSec);
+    const candleBoundary = currentCandle?.time || (now - (((now % tfSec) + tfSec) % tfSec));
 
     // Momento exato da CONFIRMAÇÃO FALTANDO 10 SEGUNDOS RESTANTES na vela atual
     const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 1;
@@ -706,28 +716,57 @@ export class SignalEngine {
         ? allCandles
         : marketDataManager.getCandlesForAsset(trade.asset, trade.timeframe);
 
-      const targetTime = trade.entryTimestamp || trade.candleCloseTime;
-      // Localiza a vela correspondente ao horário do sinal no gráfico
-      const targetCandle = candleList.find((c) => Math.abs(c.time - targetTime) < 5) ||
-        (currentCandle && Math.abs(currentCandle.time - targetTime) < 5 ? currentCandle : null);
+      const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expirationSec);
+      const entryTime = trade.entryTimestamp || (expTime - expirationSec);
+
+      // Localiza com precisão milimétrica:
+      // 1. tradeCandle: a vela da operação (c.time estritamente < expTime e >= entryTime - 30)
+      // 2. nextCandle: a vela seguinte após a expiração (c.time >= expTime)
+      const tradeCandle = candleList
+        .slice()
+        .reverse()
+        .find((c) => c.time < expTime && c.time >= entryTime - 30) ||
+        (currentCandle && currentCandle.time < expTime && currentCandle.time >= entryTime - 30 ? currentCandle : null);
+
+      const nextCandle = candleList.find((c) => c.time >= expTime) ||
+        (currentCandle && currentCandle.time >= expTime ? currentCandle : null);
 
       // A vela do sinal encerra quando:
-      // - O tempo de expiração foi atingido (nowSec >= trade.expirationTimestamp)
+      // - O tempo de expiração foi atingido (nowSec >= expTime)
       // - OU a duração integral da vela foi cumprida (tradeElapsedFromEntry >= expirationSec - 2)
       // E confirmação de encerramento da vela (próxima vela já aberta, candle fechada ou timer zerado)
-      const isTimeExpired = nowSec >= trade.expirationTimestamp;
-      const hasNextCandle = candleList.some((c) => c.time >= trade.expirationTimestamp);
+      const isTimeExpired = nowSec >= expTime;
+      const hasNextCandle = !!nextCandle;
       const isTimerZero = remainingSec !== undefined && remainingSec === 0 && tradeElapsedFromEntry >= expirationSec - 2;
-      const isCandleClosed = targetCandle?.isClosed === true && tradeElapsedFromEntry >= expirationSec - 2;
+      const isCandleClosed = tradeCandle?.isClosed === true && tradeElapsedFromEntry >= expirationSec - 2;
       const isTimeoutSafety = tradeElapsedFromEntry >= expirationSec + 5; // Segurança para não travar se o feed congelar
 
       const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeElapsedFromEntry >= expirationSec)) || isTimeoutSafety;
 
       if (isExpired) {
-        // Taxa de abertura oficial da vela do sinal
-        const officialOpen = targetCandle ? targetCandle.open : (trade.candleOpenPrice || trade.entryPrice);
-        // Taxa de fechamento oficial da vela do sinal
-        const officialClose = targetCandle ? targetCandle.close : currentPrice;
+        // ABERTURA OFICIAL DA VELA DO SINAL:
+        // Prioridade 1: Preço travado no momento em que a vela do sinal abriu (candleOpenPrice) - NUNCA SOBRESCREVER!
+        // Prioridade 2: Taxa de abertura da vela da operação no gráfico (tradeCandle.open)
+        // Prioridade 3: entryPrice
+        const officialOpen = trade.candleOpenPrice || (tradeCandle && tradeCandle.open > 0 ? tradeCandle.open : trade.entryPrice);
+
+        // FECHAMENTO OFICIAL DA VELA DO SINAL:
+        // Prioridade 1: Fechamento da vela da operação finalizada (tradeCandle.close)
+        // Prioridade 2: Abertura da próxima vela (o open da nova vela é exatamente o close da vela anterior)
+        // Prioridade 3: Última cotação registrada antes da expiração (candleClosePrice)
+        // Prioridade 4: Preço atual de mercado (currentPrice)
+        let officialClose: number;
+        if (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0) {
+          officialClose = tradeCandle.close;
+        } else if (nextCandle && nextCandle.open > 0) {
+          officialClose = nextCandle.open;
+        } else if (tradeCandle && tradeCandle.close > 0) {
+          officialClose = tradeCandle.close;
+        } else if (trade.candleClosePrice && trade.candleClosePrice > 0) {
+          officialClose = trade.candleClosePrice;
+        } else {
+          officialClose = currentPrice;
+        }
 
         const diff = officialClose - officialOpen;
         const EPSILON = 1e-8;
