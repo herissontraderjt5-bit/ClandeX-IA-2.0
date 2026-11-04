@@ -60,7 +60,14 @@ import {
   ExpirationTime,
   AppSettings,
   UserSession,
+  StrategyBacktestResult,
 } from '../types/trading';
+import {
+  AVAILABLE_STRATEGIES,
+  getStoredActiveStrategies,
+  storeActiveStrategies,
+  runRealtimeBacktest,
+} from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
@@ -402,6 +409,50 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Estratégias Separadas e Backtest em Tempo Real
+  const [activeStrategyIds, setActiveStrategyIds] = useState<string[]>(() => {
+    return settings.activeStrategies && settings.activeStrategies.length > 0
+      ? settings.activeStrategies
+      : getStoredActiveStrategies();
+  });
+
+  const [backtestList, setBacktestList] = useState<StrategyBacktestResult[]>(() => {
+    return runRealtimeBacktest(candles, activeStrategyIds);
+  });
+
+  // Atualização em tempo real do backtest conforme as velas chegam
+  useEffect(() => {
+    const results = runRealtimeBacktest(candles, activeStrategyIds);
+    setBacktestList(results);
+  }, [candles, activeStrategyIds]);
+
+  const handleToggleStrategy = (stratId: string) => {
+    const updated = activeStrategyIds.includes(stratId)
+      ? activeStrategyIds.filter((id) => id !== stratId)
+      : [...activeStrategyIds, stratId];
+    if (updated.length === 0) return; // Mantém pelo menos 1 ativa
+    setActiveStrategyIds(updated);
+    storeActiveStrategies(updated);
+    settings.activeStrategies = updated;
+  };
+
+  const handleActivateAllStrategies = () => {
+    const allIds = AVAILABLE_STRATEGIES.map((s) => s.id);
+    setActiveStrategyIds(allIds);
+    storeActiveStrategies(allIds);
+    settings.activeStrategies = allIds;
+  };
+
+  const handleActivateTopStrategies = () => {
+    const topIds = backtestList
+      .filter((b) => b.winRate >= 65)
+      .map((b) => b.id);
+    const finalIds = topIds.length > 0 ? topIds : AVAILABLE_STRATEGIES.slice(0, 3).map((s) => s.id);
+    setActiveStrategyIds(finalIds);
+    storeActiveStrategies(finalIds);
+    settings.activeStrategies = finalIds;
+  };
 
   // Market status & Economic News
   const isForexOpen = isForexMarketOpen();
@@ -1029,8 +1080,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={() => setActiveTab('sinal')}
               className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'sinal'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -1043,8 +1094,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={() => setActiveTab('analise')}
               className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'analise'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -1054,8 +1105,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={() => setActiveTab('noticias')}
               className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'noticias'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <Newspaper className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -1070,8 +1121,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={() => setActiveTab('voz')}
               className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <Mic className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
@@ -1086,8 +1137,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             <button
               onClick={() => setActiveTab('chat')}
               className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'chat'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <MessageSquare className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -1101,12 +1152,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               <div className="flex items-center gap-2">
                 <span
                   className={`w-2 h-2 rounded-full ${liveVoice.status === 'speaking'
-                      ? 'bg-cyan-400 animate-ping'
-                      : liveVoice.status === 'listening'
-                        ? liveVoice.isMuted
-                          ? 'bg-amber-400'
-                          : 'bg-emerald-400 animate-pulse'
-                        : 'bg-amber-400 animate-pulse'
+                    ? 'bg-cyan-400 animate-ping'
+                    : liveVoice.status === 'listening'
+                      ? liveVoice.isMuted
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-400 animate-pulse'
+                      : 'bg-amber-400 animate-pulse'
                     }`}
                 />
                 <span className="font-bold text-white tracking-wide">
@@ -1139,8 +1190,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   <button
                     onClick={liveVoice.toggleMute}
                     className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors cursor-pointer ${liveVoice.isMuted
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                        : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
                       }`}
                   >
                     {liveVoice.isMuted ? 'Desmutar' : 'Mutar'}
@@ -1246,20 +1297,20 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                 {/* 2. MAIN SIGNAL CARD (RESUMIDO COM EFEITOS VISUAIS TECNOLÓGICOS) */}
                 <div
                   className={`p-3.5 rounded-2xl border transition-all duration-300 shadow-xl relative overflow-hidden backdrop-blur-md ${isTradeRunning
-                      ? isWinning
-                        ? 'bg-gradient-to-b from-emerald-950/60 via-[#07121b] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.25)]'
-                        : 'bg-gradient-to-b from-rose-950/60 via-[#180a12] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
-                      : hasResolvedTrade
-                        ? lastResolvedTrade?.result === 'WIN'
-                          ? 'bg-gradient-to-b from-emerald-950/50 via-[#061214] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
-                          : 'bg-gradient-to-b from-rose-950/50 via-[#140810] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)]'
-                        : hasConfirmed
-                          ? latestConfirmedSignal?.direction === 'CALL'
-                            ? 'bg-gradient-to-b from-emerald-950/50 via-[#07131a] to-black border-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
-                            : 'bg-gradient-to-b from-rose-950/50 via-[#180812] to-black border-rose-500/80 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
-                          : hasPreAlert
-                            ? 'bg-gradient-to-b from-amber-950/50 via-[#140e07] to-black border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
-                            : 'bg-[#090e18]/90 border-cyan-500/25 shadow-inner'
+                    ? isWinning
+                      ? 'bg-gradient-to-b from-emerald-950/60 via-[#07121b] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.25)]'
+                      : 'bg-gradient-to-b from-rose-950/60 via-[#180a12] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
+                    : hasResolvedTrade
+                      ? lastResolvedTrade?.result === 'WIN'
+                        ? 'bg-gradient-to-b from-emerald-950/50 via-[#061214] to-black border-emerald-400/70 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                        : 'bg-gradient-to-b from-rose-950/50 via-[#140810] to-black border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)]'
+                      : hasConfirmed
+                        ? latestConfirmedSignal?.direction === 'CALL'
+                          ? 'bg-gradient-to-b from-emerald-950/50 via-[#07131a] to-black border-emerald-400/80 shadow-[0_0_30px_rgba(16,185,129,0.35)]'
+                          : 'bg-gradient-to-b from-rose-950/50 via-[#180812] to-black border-rose-500/80 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
+                        : hasPreAlert
+                          ? 'bg-gradient-to-b from-amber-950/50 via-[#140e07] to-black border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                          : 'bg-[#090e18]/90 border-cyan-500/25 shadow-inner'
                     }`}
                 >
                   {/* Holographic background cyber line effect */}
@@ -1272,12 +1323,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${isTradeRunning
-                            ? 'bg-cyan-400 animate-ping'
-                            : hasConfirmed
-                              ? 'bg-emerald-400 animate-ping'
-                              : hasPreAlert
-                                ? 'bg-amber-400 animate-pulse'
-                                : 'bg-cyan-400 animate-pulse'
+                          ? 'bg-cyan-400 animate-ping'
+                          : hasConfirmed
+                            ? 'bg-emerald-400 animate-ping'
+                            : hasPreAlert
+                              ? 'bg-amber-400 animate-pulse'
+                              : 'bg-cyan-400 animate-pulse'
                           }`}
                       />
                       {alertStatusText}
@@ -1308,8 +1359,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="space-y-2.5 relative z-10">
                       <div
                         className={`p-2.5 rounded-xl border flex items-center justify-between ${isCallTrade
-                            ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300'
-                            : 'bg-rose-500/15 border-rose-500/60 text-rose-300'
+                          ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300'
+                          : 'bg-rose-500/15 border-rose-500/60 text-rose-300'
                           }`}
                       >
                         <div className="flex items-center gap-2.5">
@@ -1357,6 +1408,21 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         </div>
                       </div>
 
+                      {/* Estratégia Utilizada na Operação */}
+                      {(activeTrade.strategyBadge || activeTrade.strategyName) && (
+                        <div className="p-2 bg-black/60 rounded-xl border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
+                          <span className="text-neutral-400">Estratégia:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-cyan-300 font-bold">{activeTrade.strategyBadge || activeTrade.strategyName}</span>
+                            {activeTrade.strategyWinRate !== undefined && activeTrade.strategyWinRate > 0 && (
+                              <span className="text-[9px] text-emerald-400 bg-emerald-950/70 px-1.5 py-0.2 rounded border border-emerald-500/40 font-bold">
+                                {activeTrade.strategyWinRate}% Backtest
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Cronômetro de Expiração Tecnológico */}
                       <div className="p-2.5 bg-black/70 rounded-xl border border-cyan-500/50 text-center space-y-0.5 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]">
                         <div className="flex items-center justify-center gap-1.5 text-[9px] font-mono text-cyan-400 uppercase tracking-wider font-bold">
@@ -1371,12 +1437,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       {/* Status Dinâmico Resumido */}
                       <div
                         className={`p-1.5 rounded-lg text-center font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 border ${remainingExpSec === 0
-                            ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-300 animate-pulse'
-                            : isWinning
-                              ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-                              : isTied
-                                ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
-                                : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                          ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-300 animate-pulse'
+                          : isWinning
+                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
+                            : isTied
+                              ? 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                              : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
                           }`}
                       >
                         {remainingExpSec === 0 ? (
@@ -1401,8 +1467,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="space-y-2.5 relative z-10 animate-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border flex items-center justify-between ${latestConfirmedSignal.direction === 'CALL'
-                            ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-                            : 'bg-rose-500/25 border-rose-400 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
+                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                          : 'bg-rose-500/25 border-rose-400 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
                           }`}
                       >
                         <div className="flex items-center gap-2.5">
@@ -1470,16 +1536,31 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <span className="text-neutral-300">Preço Ref: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
                         <span className="text-emerald-400 font-bold">Confluência: {latestConfirmedSignal.confluenceScore}%</span>
                       </div>
+
+                      {/* Identificação da Estratégia no Sinal Confirmado */}
+                      {(latestConfirmedSignal.strategyBadge || latestConfirmedSignal.strategyName) && (
+                        <div className="p-2 bg-black/70 rounded-xl border border-cyan-400/40 flex items-center justify-between text-[10px] font-mono shadow-sm">
+                          <span className="text-neutral-400 font-medium">Estratégia:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-cyan-300 font-black">{latestConfirmedSignal.strategyBadge || latestConfirmedSignal.strategyName}</span>
+                            {latestConfirmedSignal.strategyWinRate !== undefined && latestConfirmedSignal.strategyWinRate > 0 && (
+                              <span className="text-[9px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/50 font-black">
+                                {latestConfirmedSignal.strategyWinRate}% Backtest
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : hasResolvedTrade && lastResolvedTrade ? (
                     /* ESTÁGIO 3: RESULTADO APURADO (DURAÇÃO DE 7s COM APURAÇÃO EXATA) */
                     <div className="space-y-2 py-1 relative z-10 animate-in fade-in zoom-in-95 duration-200">
                       <div
                         className={`p-3 rounded-xl border text-center space-y-1.5 ${lastResolvedTrade.result === 'WIN'
-                            ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
-                            : lastResolvedTrade.result === 'LOSS'
-                              ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
-                              : 'bg-neutral-900 border-neutral-700 text-neutral-300'
+                          ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                          : lastResolvedTrade.result === 'LOSS'
+                            ? 'bg-rose-950/40 border-rose-500/70 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]'
+                            : 'bg-neutral-900 border-neutral-700 text-neutral-300'
                           }`}
                       >
                         <div className="text-base font-black font-mono tracking-wider flex items-center justify-center gap-2">
@@ -1514,6 +1595,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </div>
                           <span className="text-[11px] text-neutral-300">Duração: <strong className="text-white">{lastResolvedTrade.expiration.toUpperCase()}</strong></span>
                         </div>
+
+                        {/* Estratégia do Trade Resolvido */}
+                        {(lastResolvedTrade.strategyBadge || lastResolvedTrade.strategyName) && (
+                          <div className="p-2 bg-black/60 rounded-xl border border-neutral-800 flex items-center justify-between text-[10px] font-mono">
+                            <span className="text-neutral-400">Estratégia:</span>
+                            <span className="text-cyan-300 font-bold">{lastResolvedTrade.strategyBadge || lastResolvedTrade.strategyName}</span>
+                          </div>
+                        )}
 
                         <div className="text-[10px] font-mono text-cyan-300 font-bold flex items-center justify-center gap-1.5 pt-0.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
@@ -1596,6 +1685,21 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </span>
                         </div>
                       </div>
+
+                      {/* Identificação da Estratégia no Pré-Alerta */}
+                      {(activePreAlert.strategyBadge || activePreAlert.strategyName) && (
+                        <div className="p-2 bg-black/70 rounded-xl border border-amber-500/40 flex items-center justify-between text-[10px] font-mono shadow-sm">
+                          <span className="text-neutral-400 font-medium">Estratégia:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-amber-300 font-black">{activePreAlert.strategyBadge || activePreAlert.strategyName}</span>
+                            {activePreAlert.strategyWinRate !== undefined && activePreAlert.strategyWinRate > 0 && (
+                              <span className="text-[9px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/50 font-black">
+                                {activePreAlert.strategyWinRate}% Backtest
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Contagem regressiva até a confirmação nos 10s finais */}
                       <div className="p-2.5 bg-black/80 border border-amber-500/50 rounded-xl text-center space-y-1 shadow-[inset_0_0_15px_rgba(245,158,11,0.15)]">
@@ -1826,8 +1930,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             key={tf}
                             onClick={() => onSelectTimeframe(tf)}
                             className={`py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer text-center ${isSelected
-                                ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
-                                : 'bg-neutral-950/80 text-neutral-400 border border-neutral-800 hover:text-white hover:border-neutral-700'
+                              ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                              : 'bg-neutral-950/80 text-neutral-400 border border-neutral-800 hover:text-white hover:border-neutral-700'
                               }`}
                           >
                             {tf}
@@ -1855,8 +1959,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
                       className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'CONSERVADORA'
-                          ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
-                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                         }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-cyan-300">
@@ -1872,8 +1976,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('MODERADA')}
                       className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'MODERADA'
-                          ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
-                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                         }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-emerald-300">
@@ -1889,8 +1993,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <button
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
                       className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'MODERADA') === 'AGRESSIVA'
-                          ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
-                          : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                         }`}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-mono font-black text-amber-300">
@@ -1904,13 +2008,149 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
+                {/* 3. ESTRATÉGIAS SEPARADAS & BACKTEST EM TEMPO REAL */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-3 shadow-xl">
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      <div>
+                        <div className="text-[11px] font-mono font-black text-white flex items-center gap-1.5">
+                          <span>ESTRATÉGIAS & BACKTEST EM TEMPO REAL</span>
+                          <span className="text-[9px] font-bold text-cyan-400 bg-cyan-950/70 border border-cyan-500/40 px-1.5 py-0.2 rounded-full">
+                            {activeStrategyIds.length} Ativas
+                          </span>
+                        </div>
+                        <div className="text-[9.5px] font-mono text-neutral-400">
+                          Selecione as estratégias para a IA operar. Backtest recalculado vela a vela no gráfico de {asset.symbol}.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Filter Buttons */}
+                  <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                    <button
+                      onClick={handleActivateTopStrategies}
+                      className="flex-1 py-1 px-2 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span>🎯 Top Assertivas (&gt;65%)</span>
+                    </button>
+                    <button
+                      onClick={handleActivateAllStrategies}
+                      className="py-1 px-2.5 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                    >
+                      <span>⚡ Ativar Todas</span>
+                    </button>
+                  </div>
+
+                  {/* List of Strategy Cards */}
+                  <div className="space-y-2">
+                    {backtestList.map((strat) => {
+                      const isActive = activeStrategyIds.includes(strat.id);
+                      const isHighAssertive = strat.winRate >= 65;
+                      const isDecent = strat.winRate >= 50 && strat.winRate < 65;
+                      const isLow = strat.winRate > 0 && strat.winRate < 50;
+
+                      return (
+                        <div
+                          key={strat.id}
+                          onClick={() => handleToggleStrategy(strat.id)}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${
+                            isActive
+                              ? isHighAssertive
+                                ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:border-emerald-400'
+                                : 'bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border-cyan-500/40 shadow-sm hover:border-cyan-400'
+                              : 'bg-black/40 border-neutral-800/80 opacity-50 hover:opacity-80 hover:border-neutral-700'
+                          }`}
+                        >
+                          {/* Top Row: Name, Badge & Toggle Switch */}
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs font-black font-mono text-white truncate">
+                                {strat.badge}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {/* Backtest WinRate Pill */}
+                              <span
+                                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
+                                  isHighAssertive
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                                    : isDecent
+                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                    : isLow
+                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                    : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                                }`}
+                              >
+                                {strat.winRate}% Assertivo
+                              </span>
+
+                              {/* Toggle Button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleStrategy(strat.id);
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-black uppercase transition-all cursor-pointer ${
+                                  isActive
+                                    ? 'bg-cyan-400 text-black shadow-md shadow-cyan-400/30'
+                                    : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
+                                }`}
+                              >
+                                {isActive ? '✓ ATIVA' : 'PAUSADA'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Strategy Description */}
+                          <p className="text-[9.5px] font-mono text-neutral-300 leading-snug">
+                            {strat.description}
+                          </p>
+
+                          {/* Live Backtest Metrics */}
+                          <div className="pt-1 border-t border-neutral-800/80 flex items-center justify-between text-[9px] font-mono text-neutral-400">
+                            <div className="flex items-center gap-2">
+                              <span>
+                                Placar: <strong className="text-emerald-400">{strat.wins}W</strong> - <strong className="text-rose-400">{strat.losses}L</strong>
+                                {strat.ties > 0 && <span> - <strong className="text-neutral-300">{strat.ties}E</strong></span>}
+                              </span>
+                              <span>•</span>
+                              <span>
+                                Velas: <strong className="text-neutral-200">{strat.totalTrades}</strong>
+                              </span>
+                            </div>
+                            {strat.consecutiveWins > 0 && (
+                              <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                                <Flame className="w-2.5 h-2.5 text-amber-400 inline" />
+                                {strat.consecutiveWins} seguidos
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-black/60 border border-neutral-800 text-[9.5px] font-mono text-neutral-400 leading-relaxed flex items-center gap-1.5">
+                    <span className="text-cyan-400 font-bold">💡 Dica Pro:</span>
+                    <span>
+                      Você pode desmarcar as estratégias que estão com assertividade baixa no ativo e manter apenas as com &gt;65% ativas.
+                    </span>
+                  </div>
+                </div>
+
                 {/* 2. TENDÊNCIA MAIOR DE ACORDO COM O TIMEFRAME SELECIONADO */}
                 <div
                   className={`p-3 rounded-2xl border transition-all shadow-md ${technicalData.majorTrend.status === 'ALTA'
-                      ? 'bg-emerald-950/20 border-emerald-500/40'
-                      : technicalData.majorTrend.status === 'BAIXA'
-                        ? 'bg-rose-950/20 border-rose-500/40'
-                        : 'bg-amber-950/20 border-amber-500/40'
+                    ? 'bg-emerald-950/20 border-emerald-500/40'
+                    : technicalData.majorTrend.status === 'BAIXA'
+                      ? 'bg-rose-950/20 border-rose-500/40'
+                      : 'bg-amber-950/20 border-amber-500/40'
                     }`}
                 >
                   <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
@@ -1920,10 +2160,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     </span>
                     <span
                       className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${technicalData.majorTrend.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
-                          : technicalData.majorTrend.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
+                        : technicalData.majorTrend.status === 'BAIXA'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
                         }`}
                     >
                       {technicalData.majorTrend.status === 'ALTA' && <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
@@ -1955,10 +2195,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.rsi.condition === 'SOBRECOMPRADO'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : technicalData.rsi.condition === 'SOBREVENDIDO'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : technicalData.rsi.condition === 'SOBREVENDIDO'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.rsi.statusLabel}
@@ -1979,10 +2219,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.macd.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.macd.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.macd.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.macd.status}
@@ -2003,10 +2243,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maShort.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.maShort.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.maShort.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                           }`}
                       >
                         {technicalData.maShort.status}
@@ -2027,10 +2267,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maLong.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.maLong.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.maLong.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                           }`}
                       >
                         {technicalData.maLong.status}
@@ -2051,10 +2291,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.bollingerBands.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.bollingerBands.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.bollingerBands.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.bollingerBands.status}
@@ -2075,10 +2315,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.volume.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.volume.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.volume.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.volume.status}
@@ -2099,10 +2339,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.delta.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.delta.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.delta.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.delta.status}
@@ -2124,10 +2364,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.adx.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.adx.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.adx.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.adx.status}
@@ -2148,10 +2388,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.stochastic.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.stochastic.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.stochastic.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.stochastic.status}
@@ -2173,10 +2413,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <div className="text-right">
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.atr.status === 'ALTA'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : technicalData.atr.status === 'BAIXA'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.atr.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                           }`}
                       >
                         {technicalData.atr.status}
@@ -2272,9 +2512,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
-                      currentSession.london ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                    }`}>
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.london ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                      }`}>
                       <div className="flex items-center justify-between">
                         <span className="font-bold">LONDRES</span>
                         <span className={`w-1.5 h-1.5 rounded-full ${currentSession.london ? 'bg-cyan-400 animate-pulse' : 'bg-neutral-600'}`} />
@@ -2282,9 +2521,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <span className="text-[9px] text-neutral-400 pt-1">04h - 13h BRT</span>
                     </div>
 
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
-                      currentSession.newYork ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                    }`}>
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.newYork ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                      }`}>
                       <div className="flex items-center justify-between">
                         <span className="font-bold">NOVA YORK</span>
                         <span className={`w-1.5 h-1.5 rounded-full ${currentSession.newYork ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
@@ -2292,9 +2530,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <span className="text-[9px] text-neutral-400 pt-1">09h - 18h BRT</span>
                     </div>
 
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
-                      currentSession.tokyo ? 'bg-purple-950/40 border-purple-500/40 text-purple-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                    }`}>
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.tokyo ? 'bg-purple-950/40 border-purple-500/40 text-purple-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                      }`}>
                       <div className="flex items-center justify-between">
                         <span className="font-bold">TÓQUIO</span>
                         <span className={`w-1.5 h-1.5 rounded-full ${currentSession.tokyo ? 'bg-purple-400 animate-pulse' : 'bg-neutral-600'}`} />
@@ -2302,9 +2539,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <span className="text-[9px] text-neutral-400 pt-1">20h - 05h BRT</span>
                     </div>
 
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${
-                      currentSession.sydney ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                    }`}>
+                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.sydney ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
+                      }`}>
                       <div className="flex items-center justify-between">
                         <span className="font-bold">SYDNEY</span>
                         <span className={`w-1.5 h-1.5 rounded-full ${currentSession.sydney ? 'bg-amber-400 animate-pulse' : 'bg-neutral-600'}`} />
@@ -2348,8 +2584,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px]">
                           <span
                             className={`px-1.5 py-0.5 rounded font-bold ${item.impact === 'HIGH'
-                                ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
-                                : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
+                              ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
+                              : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
                               }`}
                           >
                             {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO (3★)' : '🟡 MÉDIO IMPACTO (2★)'}
@@ -2357,10 +2593,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                           <span
                             className={`px-1.5 py-0.5 rounded font-bold ${item.sentiment === 'BULLISH'
-                                ? 'text-emerald-400 bg-emerald-950/40'
-                                : item.sentiment === 'BEARISH'
-                                  ? 'text-rose-400 bg-rose-950/40'
-                                  : 'text-neutral-400 bg-neutral-900'
+                              ? 'text-emerald-400 bg-emerald-950/40'
+                              : item.sentiment === 'BEARISH'
+                                ? 'text-rose-400 bg-rose-950/40'
+                                : 'text-neutral-400 bg-neutral-900'
                               }`}
                           >
                             {item.sentiment === 'BULLISH' ? '↗ ALTA (CALL)' : item.sentiment === 'BEARISH' ? '↘ BAIXA (PUT)' : '⚪ NEUTRO'}
@@ -2384,27 +2620,24 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       <button
                         type="button"
                         onClick={() => setNewsImpactFilter('ALL')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                          newsImpactFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
-                        }`}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
+                          }`}
                       >
                         Todas
                       </button>
                       <button
                         type="button"
                         onClick={() => setNewsImpactFilter('HIGH')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                          newsImpactFilter === 'HIGH' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
-                        }`}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'HIGH' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
+                          }`}
                       >
                         🔴 3★
                       </button>
                       <button
                         type="button"
                         onClick={() => setNewsImpactFilter('MEDIUM')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                          newsImpactFilter === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-neutral-400'
-                        }`}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-neutral-400'
+                          }`}
                       >
                         🟡 2★
                       </button>
@@ -2432,11 +2665,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                               <span className="text-white font-medium truncate max-w-[200px]">{evt.event}</span>
                             </div>
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                evt.impact === 'HIGH'
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${evt.impact === 'HIGH'
                                   ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
                                   : 'bg-amber-950 text-amber-300 border border-amber-500/40'
-                              }`}
+                                }`}
                             >
                               {evt.impact === 'HIGH' ? '🔴 3 Estrelas' : '🟡 2 Estrelas'}
                             </span>
@@ -2487,14 +2719,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <span className="font-bold text-white text-xs">CandleX-IA Voz ao Vivo</span>
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
-                              ? 'bg-cyan-400 animate-ping'
-                              : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                                ? 'bg-purple-400 animate-pulse'
-                                : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                                  ? 'bg-emerald-400 animate-pulse'
-                                  : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                                    ? 'bg-amber-400 animate-ping'
-                                    : 'bg-neutral-500'
+                            ? 'bg-cyan-400 animate-ping'
+                            : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                              ? 'bg-purple-400 animate-pulse'
+                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                                ? 'bg-emerald-400 animate-pulse'
+                                : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                  ? 'bg-amber-400 animate-ping'
+                                  : 'bg-neutral-500'
                             }`}
                         />
                       </div>
@@ -2534,34 +2766,34 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-mono backdrop-blur-sm ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
-                          ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300'
-                          : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                            ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
-                            : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
-                              ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                                ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
-                                : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                                  ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                                  : liveVoice?.status === 'error'
-                                    ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
-                                    : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
+                        ? 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300'
+                        : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-300'
+                          : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                            ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                            : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                              ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+                              : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                                : liveVoice?.status === 'error'
+                                  ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
+                                  : 'bg-neutral-900/80 border-neutral-700/80 text-neutral-400'
                         }`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${(liveVoice?.assistantState === 'FALANDO' || liveVoice?.status === 'speaking')
-                            ? 'bg-cyan-400 animate-ping'
-                            : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
-                              ? 'bg-purple-400 animate-pulse'
-                              : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
-                                ? 'bg-amber-400'
-                                : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
-                                  ? 'bg-emerald-400 animate-pulse'
-                                  : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
-                                    ? 'bg-amber-400 animate-ping'
-                                    : liveVoice?.status === 'error'
-                                      ? 'bg-rose-400'
-                                      : 'bg-neutral-500'
+                          ? 'bg-cyan-400 animate-ping'
+                          : (liveVoice?.assistantState === 'PROCESSANDO' || liveVoice?.isProcessing)
+                            ? 'bg-purple-400 animate-pulse'
+                            : (liveVoice?.isMuted || liveVoice?.assistantState === 'MUTADO')
+                              ? 'bg-amber-400'
+                              : (liveVoice?.assistantState === 'OUVINDO' || liveVoice?.status === 'listening')
+                                ? 'bg-emerald-400 animate-pulse'
+                                : (liveVoice?.assistantState === 'CONECTANDO' || liveVoice?.status === 'connecting')
+                                  ? 'bg-amber-400 animate-ping'
+                                  : liveVoice?.status === 'error'
+                                    ? 'bg-rose-400'
+                                    : 'bg-neutral-500'
                           }`}
                       />
                       <span>
@@ -2636,8 +2868,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <button
                           onClick={liveVoice.toggleMute}
                           className={`flex-1 py-3 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${liveVoice.isMuted
-                              ? 'bg-amber-500/25 hover:bg-amber-500/35 text-amber-200 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
-                              : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
+                            ? 'bg-amber-500/25 hover:bg-amber-500/35 text-amber-200 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                            : 'bg-[#141b2c] hover:bg-[#1b243b] text-neutral-200 border border-[#222d48]'
                             }`}
                         >
                           {liveVoice.isMuted ? (
@@ -2702,8 +2934,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                     <button
                       onClick={() => liveVoice?.setVoiceAnnouncements && liveVoice.setVoiceAnnouncements(!liveVoice.voiceAnnouncements)}
                       className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-all ${liveVoice?.voiceAnnouncements
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
                         }`}
                       title="Ativar/Desativar avisos por voz para sinais confirmados e cancelamentos"
                     >
@@ -2864,8 +3096,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
                       <div
                         className={`max-w-[92%] p-2.5 rounded-2xl text-[11px] leading-relaxed select-text ${msg.role === 'user'
-                            ? 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-500/40 text-cyan-100 rounded-tr-xs'
-                            : 'bg-[#101522] border border-[#1c273e] text-neutral-200 rounded-tl-xs whitespace-pre-wrap'
+                          ? 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-500/40 text-cyan-100 rounded-tr-xs'
+                          : 'bg-[#101522] border border-[#1c273e] text-neutral-200 rounded-tl-xs whitespace-pre-wrap'
                           }`}
                       >
                         {msg.text}

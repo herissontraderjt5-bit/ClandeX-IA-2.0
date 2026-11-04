@@ -151,6 +151,37 @@ export interface SignalRecord {
   resolvedAt?: number;
   cancelledAt?: number;
   cancelReason?: string;
+  strategyId?: string;
+  strategyName?: string;
+  strategyBadge?: string;
+  strategyWinRate?: number;
+}
+
+export interface StrategyDefinition {
+  id: string;
+  name: string;
+  category: 'PRICE_ACTION' | 'MOMENTUM' | 'SMC' | 'RETRACTION' | 'REVERSAL';
+  description: string;
+  badge: string;
+  tag: string;
+  minProfile?: 'AGRESSIVA' | 'MODERADA' | 'CONSERVADORA';
+}
+
+export interface StrategyBacktestResult {
+  id: string;
+  name: string;
+  badge: string;
+  category: string;
+  description: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  totalTrades: number;
+  winRate: number; // Ex: 85.7%
+  consecutiveWins: number;
+  lastSignalDirection?: 'CALL' | 'PUT';
+  lastSignalTime?: number;
+  isActive: boolean;
 }
 
 export interface DataSourceInfo {
@@ -208,6 +239,7 @@ export interface AppSettings {
   panelSize: { width: number; height: number };
   activeMode: 'REAL' | 'DEMO';
   analysisProfile?: AnalysisProfile; // CONSERVADORA (Sniper), MODERADA (Mediana), AGRESSIVA (Alavancagem)
+  activeStrategies?: string[]; // IDs das estratégias ativas selecionadas pelo usuário
   timerOffsetSeconds?: number; // Ajuste fino de tempo em segundos com a Hiove (-15s a +15s)
   webhook: WebhookConfig;
 }
