@@ -82,6 +82,7 @@ import { marketDataManager, isForexMarketOpen } from '../services/marketData';
 import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
 import { formatBrasiliaTime } from '../utils/timeFormat';
+import { checkMemberAccessStatus } from '../services/memberService';
 
 interface FloatingHudProps {
   asset: Asset;
@@ -287,9 +288,22 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [depositCheckError, setDepositCheckError] = useState<string | null>(null);
 
   // Trava de ativação da ferramenta por cadeado: se a pessoa não tiver feito depósito mínimo de $10
+  // EXCEÇÃO: Se o administrador liberou manualmente o cliente no Painel ADM (ex: teste 24h ou dias concedidos),
+  // o cliente NÃO precisa de depósito nem de cadastro pelo link de afiliado!
   const isDepositLocked = useMemo(() => {
     if (isAdmin) return false;
     if (!userSession) return false;
+
+    // Se o acesso foi liberado manualmente pelo administrador no painel ADM:
+    const isManuallyGrantedByAdmin =
+      userSession.source === 'ADMIN_MANUAL' ||
+      userSession.source === 'ADMIN_BYPASS' ||
+      (userSession.hasAccess && userSession.status === 'ACTIVE' && (userSession.accessDays || 0) > 0);
+
+    if (isManuallyGrantedByAdmin) {
+      return false; // Totalmente isento de exigência de depósito/link!
+    }
+
     return !userSession.hasDeposit || userSession.status === 'PENDING_DEPOSIT';
   }, [isAdmin, userSession]);
 
@@ -313,21 +327,33 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         await onRefreshSession();
       }
       if (userSession?.email) {
+        // 1. Verifica se o Administrador liberou manualmente no Supabase
+        const statusCheck = await checkMemberAccessStatus(userSession.email);
+        if (statusCheck.allowed && statusCheck.member && statusCheck.member.status === 'ACTIVE') {
+          setDepositCheckSuccess('Acesso liberado com sucesso pelo Administrador! Desbloqueando...');
+          if (onRefreshSession) await onRefreshSession();
+          setTimeout(() => {
+            window.location.reload();
+          }, 800);
+          return;
+        }
+
+        // 2. Consulta API Hiove
         const resp = await fetch('/api/auth/validate-access', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: userSession.email }),
         });
         const data = await resp.json();
-        if (data.status === 'ACTIVE' || data.hasDeposit === true) {
-          setDepositCheckSuccess('Depósito de $10 confirmado com sucesso! Todas as funções foram desbloqueadas.');
+        if (data.status === 'ACTIVE' || data.hasDeposit === true || data.access === true) {
+          setDepositCheckSuccess('Depósito confirmado com sucesso! Todas as funções foram desbloqueadas.');
           setTimeout(() => {
             window.location.reload();
-          }, 1000);
+          }, 800);
           return;
         }
       }
-      setDepositCheckError('Depósito ainda não identificado. Se acabou de realizar, aguarde 1 a 2 minutos para compensação e tente novamente.');
+      setDepositCheckError('Depósito ainda não identificado ou liberação pendente. Se acabou de realizar, aguarde 1 a 2 minutos para compensação e tente novamente.');
     } catch {
       setDepositCheckError('Não foi possível verificar no momento. Tente novamente em instantes.');
     } finally {

@@ -190,6 +190,11 @@ export async function checkMemberAccessStatus(emailInput: string): Promise<{
     };
   }
 
+  // Se o membro foi liberado manualmente pelo Admin no painel, garante hasDeposit: true (isento de depósito ou link Hiove)
+  if (member.source === 'ADMIN_MANUAL' || member.source === 'ADMIN_BYPASS' || (member.hasAccess && member.status === 'ACTIVE')) {
+    member.hasDeposit = true;
+  }
+
   return { allowed: true, member, reason: 'ACTIVE' };
 }
 
@@ -453,10 +458,10 @@ export async function updateMemberAccessDays(
     email,
     name: existing?.name || email.split('@')[0],
     hasAccess: true,
-    hasDeposit: existing?.hasDeposit ?? true,
+    hasDeposit: true, // Liberação manual pelo Admin dispensa exigência de depósito e link
     isAdmin: email === ADMIN_MASTER_EMAIL || existing?.isAdmin === true,
     status: 'ACTIVE',
-    source: existing?.source || 'ADMIN_MANUAL',
+    source: 'ADMIN_MANUAL',
     firstValidatedAt: existing?.firstValidatedAt || now,
     lastCheckedAt: now,
     lastActiveAt: existing?.lastActiveAt || now,

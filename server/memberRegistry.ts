@@ -231,7 +231,7 @@ export function updateMemberDays(emailInput: string, days: number): MemberRecord
     email: clean,
     name: existing?.name || clean.split('@')[0],
     hasAccess: true,
-    hasDeposit: existing?.hasDeposit ?? true,
+    hasDeposit: true, // Liberação manual pelo Admin dispensa exigência de depósito e link
     isAdmin: clean === ADMIN_EMAIL || existing?.isAdmin === true,
     status: 'ACTIVE',
     firstValidatedAt: existing?.firstValidatedAt || now,
@@ -239,7 +239,7 @@ export function updateMemberDays(emailInput: string, days: number): MemberRecord
     lastActiveAt: existing?.lastActiveAt || now,
     accessDays,
     expiresAt,
-    source: existing?.source || 'ADMIN_MANUAL',
+    source: 'ADMIN_MANUAL',
     notes: accessDays === 1
       ? `Acesso liberado por 24 horas (1 dia) em ${new Date().toLocaleString('pt-BR')}`
       : `Acesso renovado para ${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias`} em ${new Date().toLocaleDateString('pt-BR')}`,
@@ -403,16 +403,27 @@ export async function validateUserAccess(emailInput: string): Promise<{
     };
   }
 
+  // Sincroniza previamente com o Supabase para carregar liberações manuais feitas pelo Admin no painel
+  await syncWithSupabaseAsync().catch(() => {});
+
   // 2. Se já estiver liberado na base com acesso ativo e dentro do prazo
   const cachedMember = membersMap[email];
   const now = Date.now();
   const isExpired = cachedMember?.expiresAt ? now > cachedMember.expiresAt : false;
 
-  if (cachedMember && cachedMember.hasAccess && cachedMember.status === 'ACTIVE' && !isExpired) {
+  // SE O USUÁRIO FOI LIBERADO MANUALMENTE PELO ADMINISTRADOR (ex: teste 24h, licença no Painel ADM):
+  // ELE NÃO PRECISA DE CONTA OU DEPÓSITO NA HIOVE COM LINK DE AFILIADO!
+  if (
+    cachedMember &&
+    (cachedMember.source === 'ADMIN_MANUAL' || cachedMember.source === 'ADMIN_BYPASS' || cachedMember.hasAccess) &&
+    cachedMember.status === 'ACTIVE' &&
+    !isExpired
+  ) {
     cachedMember.lastActiveAt = now;
     cachedMember.lastCheckedAt = now;
+    cachedMember.hasAccess = true;
+    cachedMember.hasDeposit = true;
     saveRegistryFile();
-    syncWithSupabaseAsync();
 
     return {
       success: true,
@@ -423,7 +434,22 @@ export async function validateUserAccess(emailInput: string): Promise<{
       email,
       cached: true,
       status: 'ACTIVE',
-      message: 'Acesso ativo e validado na plataforma.',
+      message: 'Acesso ativo e liberado pelo Administrador Master (Sem necessidade de depósito Hiove).',
+    };
+  }
+
+  if (cachedMember && isExpired) {
+    return {
+      success: false,
+      access: false,
+      hasDeposit: false,
+      isAdmin: false,
+      name: cachedMember.name || email.split('@')[0],
+      email,
+      cached: true,
+      status: 'EXPIRED',
+      message: `Seu período de teste ou acesso (${cachedMember.accessDays === 1 ? '24 horas (1 dia)' : `${cachedMember.accessDays || 30} dias`}) encerrou. Entre em contato com o suporte para renovar.`,
+      errorCode: 'EXPIRED',
     };
   }
 

@@ -31,7 +31,7 @@ import {
   saveSettingsToSupabase,
   isSupabaseConfigured,
 } from './services/supabaseClient';
-import { recordUserHeartbeat, isMemberExpired } from './services/memberService';
+import { recordUserHeartbeat, isMemberExpired, checkMemberAccessStatus } from './services/memberService';
 
 const DEFAULT_SETTINGS: AppSettings = {
   weights: {
@@ -161,7 +161,7 @@ export default function App() {
     audioAlerts.setSoundEnabled(settings.soundEnabled);
   }, [settings.soundEnabled]);
 
-  // Heartbeat do usuário para o painel Master ADM (presença online em tempo real) & Checagem de expiração
+  // Heartbeat do usuário para o painel Master ADM (presença online em tempo real) & Checagem de expiração e liberação manual
   useEffect(() => {
     if (!userSession?.email) return;
 
@@ -178,6 +178,39 @@ export default function App() {
       return;
     }
 
+    // Sincroniza periodicamente com o Supabase para detectar se o Administrador liberou manualmente o acesso (ex: teste 24h)
+    const syncStatusWithAdmin = async () => {
+      try {
+        const statusCheck = await checkMemberAccessStatus(userSession.email);
+        if (statusCheck.allowed && statusCheck.member && statusCheck.member.status === 'ACTIVE') {
+          const mem = statusCheck.member;
+          const isManuallyGranted = mem.source === 'ADMIN_MANUAL' || mem.source === 'ADMIN_BYPASS';
+          if (
+            userSession.status !== 'ACTIVE' ||
+            !userSession.hasAccess ||
+            !userSession.hasDeposit ||
+            (isManuallyGranted && userSession.source !== mem.source)
+          ) {
+            const updatedSession: UserSession = {
+              ...userSession,
+              hasAccess: true,
+              hasDeposit: true,
+              status: 'ACTIVE',
+              isAdmin: mem.isAdmin ?? false,
+              source: mem.source || 'ADMIN_MANUAL',
+              accessDays: mem.accessDays || userSession.accessDays || 1,
+              expiresAt: mem.expiresAt || userSession.expiresAt,
+            };
+            setUserSession(updatedSession);
+            try {
+              localStorage.setItem('clandex_user_session', JSON.stringify(updatedSession));
+            } catch {}
+          }
+        }
+      } catch {}
+    };
+
+    syncStatusWithAdmin();
     recordUserHeartbeat(userSession).catch(() => {});
 
     const interval = setInterval(() => {
@@ -192,9 +225,10 @@ export default function App() {
           localStorage.setItem('clandex_user_session', JSON.stringify(expSession));
         } catch {}
       } else {
+        syncStatusWithAdmin();
         recordUserHeartbeat(userSession).catch(() => {});
       }
-    }, 90000);
+    }, 45000);
 
     return () => clearInterval(interval);
   }, [userSession, isAdmin]);
@@ -323,10 +357,23 @@ export default function App() {
     [settings]
   );
 
-  // Se o usuário não tiver feito depósito, a análise fica bloqueada com cadeado
+  // Se o usuário não tiver feito depósito, a análise fica bloqueada com cadeado.
+  // REGRA MASTER: Se o administrador liberou manualmente o cliente no Painel ADM (ex: teste 24h ou dias liberados),
+  // o cliente NÃO precisa de depósito nem de cadastro pelo link de afiliado!
   const isDepositLocked = React.useMemo(() => {
     if (isAdmin) return false;
     if (!userSession) return false;
+
+    // Se o acesso foi liberado manualmente pelo administrador no painel ADM:
+    const isManuallyGrantedByAdmin =
+      userSession.source === 'ADMIN_MANUAL' ||
+      userSession.source === 'ADMIN_BYPASS' ||
+      (userSession.hasAccess && userSession.status === 'ACTIVE' && (userSession.accessDays || 0) > 0);
+
+    if (isManuallyGrantedByAdmin) {
+      return false; // Totalmente isento de exigência de depósito/link!
+    }
+
     return !userSession.hasDeposit || userSession.status === 'PENDING_DEPOSIT';
   }, [isAdmin, userSession]);
 
@@ -342,9 +389,34 @@ export default function App() {
     });
   }, [isDepositLocked]);
 
-  // Atualiza a sessão para checar se o depósito foi confirmado na Hiove
+  // Atualiza a sessão para checar se o depósito foi confirmado na Hiove ou se o Admin liberou no painel
   const handleRefreshSession = useCallback(async () => {
     if (!userSession?.email) return;
+
+    // 1. Primeiro verifica se o Administrador liberou manualmente no Supabase (ex: teste 24h ou dias concedidos)
+    try {
+      const statusCheck = await checkMemberAccessStatus(userSession.email);
+      if (statusCheck.allowed && statusCheck.member && statusCheck.member.status === 'ACTIVE') {
+        const mem = statusCheck.member;
+        const updated: UserSession = {
+          ...userSession,
+          hasAccess: true,
+          hasDeposit: true,
+          status: 'ACTIVE',
+          isAdmin: mem.isAdmin ?? false,
+          accessDays: mem.accessDays || 1,
+          expiresAt: mem.expiresAt,
+          source: mem.source || 'ADMIN_MANUAL',
+        };
+        setUserSession(updated);
+        try {
+          localStorage.setItem('clandex_user_session', JSON.stringify(updated));
+        } catch {}
+        return;
+      }
+    } catch {}
+
+    // 2. Se não estiver liberado manualmente, consulta a API Hiove
     try {
       const response = await fetch('/api/auth/validate-access', {
         method: 'POST',
@@ -352,12 +424,14 @@ export default function App() {
         body: JSON.stringify({ email: userSession.email }),
       });
       const data = await response.json();
-      if (data.access === true) {
+      if (data.access === true || data.status === 'ACTIVE') {
         const updated: UserSession = {
           ...userSession,
           hasAccess: true,
           hasDeposit: true,
           status: 'ACTIVE',
+          isAdmin: data.isAdmin ?? false,
+          source: data.cached ? 'CACHE' : 'HIOVE_API',
         };
         setUserSession(updated);
         try {

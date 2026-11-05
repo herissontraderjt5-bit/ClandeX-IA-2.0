@@ -95,7 +95,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
           email: cleanEmail,
           name: mem.name || cleanEmail.split('@')[0],
           hasAccess: true,
-          hasDeposit: mem.hasDeposit ?? true,
+          hasDeposit: true, // Liberação manual pelo Admin não exige depósito
           isAdmin: mem.isAdmin ?? false,
           validatedAt: mem.firstValidatedAt || Date.now(),
           lastActiveAt: Date.now(),
