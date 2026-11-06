@@ -326,31 +326,31 @@ export class SignalEngine {
 
     // 0. Configuração dinâmica dos limiares de acordo com o PERFIL DE ANÁLISE selecionado na Aba Técnica
     const profile = settings.analysisProfile || 'MODERADA';
-    let preAlertMinScore = 58;
-    let confirmMinScore = 64;
+    let preAlertMinScore = 52;
+    let confirmMinScore = 58;
 
-    // Cooldown mínimo (em ms) entre sinais confirmados por perfil:
-    // AGRESSIVA: 1 minuto | MODERADA: 2 minutos | CONSERVADORA: 3 minutos
-    let signalCooldownMs = 120_000; // padrão Moderada = 2 min
+    // Cooldown ágil entre sinais confirmados por perfil para evitar espera excessiva:
+    // AGRESSIVA: 15s (pronta na próxima vela) | MODERADA: 35s | CONSERVADORA: 60s
+    let signalCooldownMs = 35_000;
 
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
-      // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva (a cada 5-8 velas)
-      preAlertMinScore = 66;
-      confirmMinScore = 72;
-      signalCooldownMs = 180_000; // 3 minutos
+      // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva (a cada 4-7 velas)
+      preAlertMinScore = 60;
+      confirmMinScore = 66;
+      signalCooldownMs = 60_000; // 1 minuto
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagem / Alta Frequência):
       // Entradas dinâmicas rápidas (a cada 1 a 3 velas) aproveitando fluxos e momentum
-      preAlertMinScore = 48;
-      confirmMinScore = 55;
-      signalCooldownMs = 60_000; // 1 minuto
+      preAlertMinScore = 46;
+      confirmMinScore = 52;
+      signalCooldownMs = 15_000; // 15 segundos
     } else {
       // Moderada (Mediana):
-      // Equilíbrio calibrado entre frequência ágil (a cada 3-5 velas) e assertividade 80%+
-      preAlertMinScore = 58;
-      confirmMinScore = 64;
-      signalCooldownMs = 120_000; // 2 minutos
+      // Equilíbrio calibrado entre frequência ágil (a cada 2-4 velas) e assertividade 80%+
+      preAlertMinScore = 52;
+      confirmMinScore = 58;
+      signalCooldownMs = 35_000; // 35 segundos
     }
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
@@ -400,9 +400,9 @@ export class SignalEngine {
     const expirationSeconds = tfSec;
     const candleBoundary = currentCandle?.time || (now - (((now % tfSec) + tfSec) % tfSec));
 
-    // Momento exato da CONFIRMAÇÃO FALTANDO ENTRE 10 E 5 SEGUNDOS RESTANTES na vela atual
-    // O usuário definiu: "o pré-alerta só vai confirmar a entrada ou cancelar a operação faltando entre 10 a 5 segundos"
-    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 5;
+    // Momento exato da CONFIRMAÇÃO FALTANDO ENTRE 10 E 2 SEGUNDOS RESTANTES na vela atual
+    // Garante tempo hábil para processamento e alerta sonoro sem risco de perda do tick de entrada
+    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 2;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
     // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela no Horário de Brasília)
@@ -732,13 +732,13 @@ export class SignalEngine {
       }
     }
 
-    // Se o pré-alerta ultrapassou a janela de confirmação (10s a 5s) sem confirmação, cancela para evitar entrada tardia
-    if (this.activePreAlert && remainingSec < 5) {
+    // Se o pré-alerta ultrapassou a janela de confirmação (10s a 2s) sem confirmação, cancela para evitar entrada tardia
+    if (this.activePreAlert && remainingSec < 2) {
       const cancelled: SignalRecord = {
         ...this.activePreAlert,
         stage: 'CANCELLED',
         cancelledAt: Date.now(),
-        cancelReason: 'Janela de confirmação (10s a 5s) ultrapassada. Entrada abortada.',
+        cancelReason: 'Janela de confirmação final ultrapassada. Entrada abortada.',
       };
       this.lastCancelledSignal = cancelled;
       this.lastCancelledTime = Date.now();

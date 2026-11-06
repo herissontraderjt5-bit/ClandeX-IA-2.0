@@ -314,15 +314,20 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     if (rawSupports[i]) keyLevels.push(rawSupports[i]);
   }
 
-  // Proximity to S/R: detecta se o preço ou pavio está testando ou encostando em Resistência ou Suporte
-  const proximityThreshold = atr * 1.25;
-  const nearSupport =
-    rawSupports.slice(0, 3).some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold) ||
-    swingLows.some((l) => Math.abs(currentPrice - l.price) <= proximityThreshold || (latest.low <= l.price + proximityThreshold && latest.low >= l.price - proximityThreshold * 0.5));
+  // Proximity to S/R: detecta se o preço ou pavio da vela atual está diretamente na zona de toque de uma taxa principal
+  const proximityThreshold = Math.max(atr * 0.35, 0.00012);
 
+  // Considera apenas as 2 resistências ativas mais próximas e o topo máximo expressivo
+  const keyResistances = rawResistances.slice(0, 2);
   const nearResistance =
-    rawResistances.slice(0, 3).some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold) ||
-    swingHighs.some((h) => Math.abs(currentPrice - h.price) <= proximityThreshold || (latest.high >= h.price - proximityThreshold && latest.high <= h.price + proximityThreshold * 0.5));
+    keyResistances.some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold || Math.abs(r.price - latest.high) <= proximityThreshold) ||
+    (highestHigh > -Infinity && Math.abs(highestHigh - currentPrice) <= proximityThreshold);
+
+  // Considera apenas os 2 suportes ativos mais próximos e o fundo mínimo expressivo
+  const keySupports = rawSupports.slice(0, 2);
+  const nearSupport =
+    keySupports.some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold || Math.abs(latest.low - s.price) <= proximityThreshold) ||
+    (lowestLow < Infinity && Math.abs(currentPrice - lowestLow) <= proximityThreshold);
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;
