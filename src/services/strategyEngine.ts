@@ -281,40 +281,42 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'retração_sr': {
       // CALL SNIPER:
-      // Preço tocou zona de suporte comprovada, deixou pavio inferior e fechou acima do suporte.
+      // Preço tocou zona de suporte comprovada, compradores defenderam e a vela fechou VERDE com pavio inferior
       const isCallRejection =
         nearSup &&
-        (lowerWick >= range * 0.28 || lowerWick >= body * 0.8) &&
-        current.close >= swingLow &&
-        consecutiveRed <= 4;
+        isGreen &&
+        (lowerWick >= range * 0.25 || lowerWick >= body * 0.7) &&
+        upperWick <= body * 0.40 &&
+        current.close >= swingLow;
 
       // PUT SNIPER:
-      // Preço tocou zona de resistência comprovada, deixou pavio superior e fechou abaixo da resistência.
+      // Preço tocou zona de resistência comprovada, vendedores defenderam e a vela fechou VERMELHA com pavio superior
       const isPutRejection =
         nearRes &&
-        (upperWick >= range * 0.28 || upperWick >= body * 0.8) &&
-        current.close <= swingHigh &&
-        consecutiveGreen <= 4;
+        isRed &&
+        (upperWick >= range * 0.25 || upperWick >= body * 0.7) &&
+        lowerWick <= body * 0.40 &&
+        current.close <= swingHigh;
 
       if (isCallRejection && !isPutRejection) {
         return {
           direction: 'CALL',
-          score: 88,
+          score: 89,
           reasons: [
             `Taxa Sniper: Rejeição em Suporte (${swingLow.toFixed(5)})`,
+            `Defesa compradora comprovada com fechamento VERDE`,
             `Pavio de retração inferior (${((lowerWick / range) * 100).toFixed(0)}% da vela)`,
-            'Defesa compradora comprovada na taxa institucional',
           ],
         };
       }
       if (isPutRejection && !isCallRejection) {
         return {
           direction: 'PUT',
-          score: 88,
+          score: 89,
           reasons: [
             `Taxa Sniper: Rejeição em Resistência (${swingHigh.toFixed(5)})`,
+            `Defesa vendedora comprovada com fechamento VERMELHO`,
             `Pavio de retração superior (${((upperWick / range) * 100).toFixed(0)}% da vela)`,
-            'Defesa vendedora comprovada na taxa institucional',
           ],
         };
       }
@@ -377,18 +379,22 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'smc_liquidez': {
       // CALL (BEAR TRAP INSTITUCIONAL):
-      // A mínima da vela violou o Swing Low ou suporte anterior, mas fechou com absorção
+      // A mínima violou o suporte, mas compradores defenderam e a vela fechou VERDE
       const sweepLow =
+        isGreen &&
         current.low < swingLow &&
         current.close >= swingLow &&
-        (lowerWick >= range * 0.30 || lowerWick >= body * 0.7);
+        (lowerWick >= range * 0.28 || lowerWick >= body * 0.6) &&
+        upperWick <= body * 0.40;
 
       // PUT (BULL TRAP INSTITUCIONAL):
-      // A máxima da vela violou o Swing High ou resistência anterior, mas fechou com absorção
+      // A máxima violou a resistência, mas vendedores defenderam e a vela fechou VERMELHA
       const sweepHigh =
+        isRed &&
         current.high > swingHigh &&
         current.close <= swingHigh &&
-        (upperWick >= range * 0.30 || upperWick >= body * 0.7);
+        (upperWick >= range * 0.28 || upperWick >= body * 0.6) &&
+        lowerWick <= body * 0.40;
 
       if (sweepLow && !sweepHigh) {
         return {
@@ -396,7 +402,7 @@ export function evaluateSingleStrategy(
           score: 90,
           reasons: [
             'SMC: Captura de Liquidez no fundo (Bear Trap)',
-            `Violou o fundo (${swingLow.toFixed(5)}) e fechou com absorção compradora`,
+            `Violou o fundo (${swingLow.toFixed(5)}) e fechou VERDE com absorção compradora`,
             'Bancos injetaram liquidez para reversão rápida',
           ],
         };
@@ -407,7 +413,7 @@ export function evaluateSingleStrategy(
           score: 90,
           reasons: [
             'SMC: Captura de Liquidez no topo (Bull Trap)',
-            `Violou o topo (${swingHigh.toFixed(5)}) e fechou com absorção vendedora`,
+            `Violou o topo (${swingHigh.toFixed(5)}) e fechou VERMELHO com absorção vendedora`,
             'Bancos injetaram liquidez para reversão rápida',
           ],
         };
@@ -419,23 +425,27 @@ export function evaluateSingleStrategy(
     // 4. Reversão em Exaustão (RSI Extremo + Rejeição)
     // ----------------------------------------------------
     case 'reversao_rsi': {
-      // CALL: RSI em sobrevenda (<= 32) com rejeição ou início de reversão
+      // CALL: RSI em sobrevenda (<= 30) com confirmação compradora (vela fechou verde com pavio inferior)
       const isCallReversal =
-        rsi <= 32 &&
-        (consecutiveRed >= 2 || lowerWick >= range * 0.28 || isGreen);
+        rsi <= 30 &&
+        isGreen &&
+        lowerWick >= range * 0.25 &&
+        upperWick <= body * 0.40;
 
-      // PUT: RSI em sobrecompra (>= 68) com rejeição ou início de reversão
+      // PUT: RSI em sobrecompra (>= 70) com confirmação vendedora (vela fechou vermelha com pavio superior)
       const isPutReversal =
-        rsi >= 68 &&
-        (consecutiveGreen >= 2 || upperWick >= range * 0.28 || isRed);
+        rsi >= 70 &&
+        isRed &&
+        upperWick >= range * 0.25 &&
+        lowerWick <= body * 0.40;
 
       if (isCallReversal) {
         return {
           direction: 'CALL',
-          score: 86,
+          score: 87,
           reasons: [
-            `Reversão RSI: Sobrevenda atingida (${rsi.toFixed(1)} pts)`,
-            'Exaustão vendedora com defesa compradora',
+            `Reversão RSI: Sobrevenda extrema (${rsi.toFixed(1)} pts)`,
+            'Defesa compradora comprovada com fechamento VERDE',
             'Pavio de absorção indicando repique de alta',
           ],
         };
@@ -443,10 +453,10 @@ export function evaluateSingleStrategy(
       if (isPutReversal) {
         return {
           direction: 'PUT',
-          score: 86,
+          score: 87,
           reasons: [
-            `Reversão RSI: Sobrecompra atingida (${rsi.toFixed(1)} pts)`,
-            'Exaustão compradora com defesa vendedora',
+            `Reversão RSI: Sobrecompra extrema (${rsi.toFixed(1)} pts)`,
+            'Defesa vendedora comprovada com fechamento VERMELHO',
             'Pavio de absorção indicando correção de baixa',
           ],
         };

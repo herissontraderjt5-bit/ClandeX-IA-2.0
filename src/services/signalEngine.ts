@@ -414,16 +414,24 @@ export class SignalEngine {
         let cancelReason = '';
 
         if (this.activePreAlert.direction === 'CALL') {
-          // Para CALL: só cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // Para CALL: cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // OU se estiver no Modo Sniper (CONSERVADORA) e a vela estiver vermelha (fechando abaixo da abertura)
           if (upperWick > body && upperWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (profile === 'CONSERVADORA' && currentCandle.close < currentCandle.open) {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
           }
         } else if (this.activePreAlert.direction === 'PUT') {
-          // Para PUT: só cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // Para PUT: cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // OU se estiver no Modo Sniper (CONSERVADORA) e a vela estiver verde (fechando acima da abertura)
           if (lowerWick > body && lowerWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (profile === 'CONSERVADORA' && currentCandle.close > currentCandle.open) {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Modo Sniper: Vela verde contrária à venda (PUT). Entrada abortada para proteção cirúrgica.';
           }
         }
 
