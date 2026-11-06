@@ -18,6 +18,7 @@ export interface MemberRecord {
   firstValidatedAt: number;
   lastCheckedAt: number;
   lastActiveAt?: number;
+  isOnline?: boolean;
   accessDays?: number;
   expiresAt?: number;
   notes?: string;
@@ -113,6 +114,15 @@ export async function syncWithSupabaseAsync() {
             if (cloudMember.hasAccess && !membersMap[em].hasAccess) {
               membersMap[em] = cloudMember;
             }
+            // Preserva timestamps mais recentes para não apagar o status online
+            membersMap[em].lastActiveAt = Math.max(
+              membersMap[em].lastActiveAt || 0,
+              cloudMember.lastActiveAt || 0
+            );
+            membersMap[em].lastCheckedAt = Math.max(
+              membersMap[em].lastCheckedAt || 0,
+              cloudMember.lastCheckedAt || 0
+            );
           }
         }
       }
@@ -172,12 +182,61 @@ export async function syncWithSupabaseAsync() {
 }
 
 export function getAllMembers(): MemberRecord[] {
-  return Object.values(membersMap);
+  const now = Date.now();
+  return Object.values(membersMap).map((m) => ({
+    ...m,
+    isOnline: Boolean(m.lastActiveAt && (now - m.lastActiveAt < 3 * 60 * 1000)),
+  }));
 }
 
 export function getMember(email: string): MemberRecord | null {
   const clean = email.toLowerCase().trim();
-  return membersMap[clean] || null;
+  const m = membersMap[clean];
+  if (!m) return null;
+  const now = Date.now();
+  return {
+    ...m,
+    isOnline: Boolean(m.lastActiveAt && (now - m.lastActiveAt < 3 * 60 * 1000)),
+  };
+}
+
+/**
+ * Registra o heartbeat em tempo real do usuário navegando na IA/ferramenta
+ */
+export function recordHeartbeat(emailInput: string, nameInput?: string): MemberRecord | null {
+  const clean = emailInput.toLowerCase().trim();
+  if (!clean || !clean.includes('@')) return null;
+  const now = Date.now();
+  const isAdmin = clean === ADMIN_EMAIL;
+  let record = membersMap[clean];
+
+  if (!record) {
+    record = {
+      email: clean,
+      name: nameInput || clean.split('@')[0],
+      hasAccess: isAdmin,
+      isAdmin,
+      status: isAdmin ? 'ACTIVE' : 'PENDING_DEPOSIT',
+      firstValidatedAt: now,
+      lastCheckedAt: now,
+      lastActiveAt: now,
+      isOnline: true,
+      source: isAdmin ? 'ADMIN_BYPASS' : 'LOGIN_ATTEMPT',
+      notes: isAdmin ? 'Administrador Master' : 'Acesso inicial registrado via heartbeat',
+    };
+    membersMap[clean] = record;
+  } else {
+    record.lastActiveAt = now;
+    record.lastCheckedAt = now;
+    record.isOnline = true;
+    if (nameInput && nameInput.trim() && (record.name === clean.split('@')[0] || !record.name)) {
+      record.name = nameInput.trim();
+    }
+  }
+
+  saveRegistryFile();
+  syncWithSupabaseAsync();
+  return record;
 }
 
 /**

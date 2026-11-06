@@ -294,13 +294,10 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     if (rawSupports[i]) keyLevels.push(rawSupports[i]);
   }
 
-  // Proximity to S/R (within 0.45 * ATR)
-  const proximityThreshold = atr * 0.45;
-  const closestResistance = rawResistances[0];
-  const closestSupport = rawSupports[0];
-
-  const nearSupport = closestSupport ? Math.abs(currentPrice - closestSupport.price) <= proximityThreshold : false;
-  const nearResistance = closestResistance ? Math.abs(closestResistance.price - currentPrice) <= proximityThreshold : false;
+  // Proximity to S/R (within 0.70 * ATR) - Proteção rigorosa contra compra em topo e venda em fundo
+  const proximityThreshold = atr * 0.70;
+  const nearSupport = rawSupports.slice(0, 3).some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold);
+  const nearResistance = rawResistances.slice(0, 3).some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold);
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;

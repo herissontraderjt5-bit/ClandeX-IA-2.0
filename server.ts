@@ -12,6 +12,7 @@ import {
   grantMemberManual,
   updateMemberDays,
   recordLoginAttempt,
+  recordHeartbeat,
   revokeMember,
   deleteMember,
   queryHioveApi,
@@ -85,6 +86,16 @@ app.post('/api/auth/validate-access', async (req: Request, res: Response) => {
       error: err.message,
     });
   }
+});
+
+// Heartbeat contínuo do usuário ativo na ferramenta (alimenta a presença online no Painel ADM)
+app.post('/api/user/heartbeat', (req: Request, res: Response) => {
+  const { email, name } = req.body || {};
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ success: false, error: 'E-mail obrigatório' });
+  }
+  const member = recordHeartbeat(email, name);
+  res.json({ success: true, member });
 });
 
 // Painel do Administrador: Lista de Membros e Estatísticas

@@ -101,6 +101,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       fetchMembers();
       setActionMessage(null);
       setTestResult(null);
+
+      // Atualiza automaticamente em tempo real enquanto o Painel ADM estiver aberto
+      const interval = setInterval(fetchMembers, 4000);
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
 

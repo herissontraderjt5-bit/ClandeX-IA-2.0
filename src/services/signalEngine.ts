@@ -63,6 +63,7 @@ export interface ActiveSignalState {
 }
 
 export class SignalEngine {
+  private currentUserEmail: string | null = null;
   private activePreAlert: SignalRecord | null = null;
   private lastCancelledSignal: SignalRecord | null = null;
   private lastCancelledTime = 0;
@@ -89,8 +90,25 @@ export class SignalEngine {
 
   constructor() {
     this.loadHistory();
-    this.syncFromSupabase();
-    this.initRealtimeSubscription();
+  }
+
+  /**
+   * Vincula o placar estritamente ao usuário atual para que cada cliente tenha seu próprio placar privado
+   */
+  public setCurrentUser(email: string | null) {
+    const clean = email ? email.toLowerCase().trim() : null;
+    if (this.currentUserEmail === clean) return;
+    this.currentUserEmail = clean;
+    this.loadHistory();
+    this.notify();
+  }
+
+  private getStorageKey(): string {
+    if (this.currentUserEmail) {
+      const safe = this.currentUserEmail.replace(/[^a-z0-9_]/g, '_');
+      return `clandex_signal_history_${safe}`;
+    }
+    return 'clandex_signal_history_guest';
   }
 
   public setCallback(
@@ -183,8 +201,11 @@ export class SignalEngine {
     this.lastCancelledSignal = null;
     this.activePreAlert = null;
     this.latestConfirmedSignal = null;
-    this.saveHistory();
-    clearSignalsFromSupabase();
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(this.getStorageKey());
+      }
+    } catch {}
     this.notify();
   }
 
@@ -216,25 +237,28 @@ export class SignalEngine {
         const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expSec);
         const entryTime = trade.entryTimestamp || (expTime - expSec);
 
-        // Localiza a vela da operação (c.time correspondente à abertura da vela do sinal)
-        const targetCandle = candleList
-          .slice()
-          .reverse()
-          .find((c) => Math.abs(c.time - entryTime) < 5 || (c.time < expTime && c.time >= entryTime - 30)) ||
-          (currentCandle && Math.abs(currentCandle.time - entryTime) < 5 ? currentCandle : null);
+        // Localiza a vela da operação correspondente à abertura da vela do sinal (entryTime)
+        const targetCandle = candleList.find((c) => Math.abs(c.time - entryTime) < 15) ||
+          candleList.find((c) => c.time <= entryTime && c.time + expSec > entryTime) ||
+          (currentCandle && Math.abs(currentCandle.time - entryTime) < 15 ? currentCandle : null);
 
         // Quando a vela do sinal abre: trava a taxa oficial de abertura da vela de forma IMUTÁVEL
         if (!trade.isEntered) {
-          if (targetCandle && targetCandle.open > 0) {
+          if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
+            trade.isEntered = true;
+            if (targetCandle && targetCandle.open > 0) {
+              trade.entryPrice = targetCandle.open;
+              trade.candleOpenPrice = targetCandle.open;
+            } else if (!trade.candleOpenPrice) {
+              const openPrice = currentCandle.open || currentPrice;
+              trade.entryPrice = openPrice;
+              trade.candleOpenPrice = openPrice;
+            }
+            updatedEntry = true;
+          } else if (targetCandle && targetCandle.open > 0) {
             trade.isEntered = true;
             trade.entryPrice = targetCandle.open;
             trade.candleOpenPrice = targetCandle.open;
-            updatedEntry = true;
-          } else if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
-            trade.isEntered = true;
-            const openPrice = currentCandle.open || currentPrice;
-            trade.entryPrice = openPrice;
-            trade.candleOpenPrice = openPrice;
             updatedEntry = true;
           }
 
@@ -720,16 +744,15 @@ export class SignalEngine {
       const entryTime = trade.entryTimestamp || (expTime - expirationSec);
 
       // Localiza com precisão milimétrica:
-      // 1. tradeCandle: a vela da operação (c.time estritamente < expTime e >= entryTime - 30)
-      // 2. nextCandle: a vela seguinte após a expiração (c.time >= expTime)
-      const tradeCandle = candleList
-        .slice()
-        .reverse()
-        .find((c) => c.time < expTime && c.time >= entryTime - 30) ||
-        (currentCandle && currentCandle.time < expTime && currentCandle.time >= entryTime - 30 ? currentCandle : null);
+      // 1. tradeCandle: a vela exata da operação (iniciada em entryTime)
+      // 2. nextCandle: a vela seguinte (iniciada em expTime)
+      const tradeCandle = candleList.find((c) => Math.abs(c.time - entryTime) < 15) ||
+        candleList.find((c) => c.time <= entryTime && c.time + expirationSec > entryTime) ||
+        (currentCandle && Math.abs(currentCandle.time - entryTime) < 15 ? currentCandle : null);
 
-      const nextCandle = candleList.find((c) => c.time >= expTime) ||
-        (currentCandle && currentCandle.time >= expTime ? currentCandle : null);
+      const nextCandle = candleList.find((c) => Math.abs(c.time - expTime) < 15) ||
+        candleList.find((c) => c.time >= expTime && c.time < expTime + expirationSec) ||
+        (currentCandle && Math.abs(currentCandle.time - expTime) < 15 ? currentCandle : null);
 
       // A vela do sinal encerra quando:
       // - O tempo de expiração foi atingido (nowSec >= expTime)
@@ -748,13 +771,16 @@ export class SignalEngine {
         // Prioridade 1: Preço travado no momento em que a vela do sinal abriu (candleOpenPrice) - NUNCA SOBRESCREVER!
         // Prioridade 2: Taxa de abertura da vela da operação no gráfico (tradeCandle.open)
         // Prioridade 3: entryPrice
-        const officialOpen = trade.candleOpenPrice || (tradeCandle && tradeCandle.open > 0 ? tradeCandle.open : trade.entryPrice);
+        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+          ? trade.candleOpenPrice
+          : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : trade.entryPrice);
 
         // FECHAMENTO OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: Fechamento da vela da operação finalizada (tradeCandle.close)
+        // Prioridade 1: Fechamento da vela da operação finalizada (tradeCandle.close se isClosed)
         // Prioridade 2: Abertura da próxima vela (o open da nova vela é exatamente o close da vela anterior)
-        // Prioridade 3: Última cotação registrada antes da expiração (candleClosePrice)
-        // Prioridade 4: Preço atual de mercado (currentPrice)
+        // Prioridade 3: Fechamento da vela da operação se já disponível (tradeCandle.close)
+        // Prioridade 4: Última cotação registrada antes da expiração (candleClosePrice)
+        // Prioridade 5: Preço atual de mercado (currentPrice)
         let officialClose: number;
         if (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0) {
           officialClose = tradeCandle.close;
@@ -852,7 +878,6 @@ export class SignalEngine {
       return;
     }
 
-    trade.expirationTimestamp = Math.min(trade.expirationTimestamp, nowSec);
     this.resolvePendingTrades(currentPrice, nowSec, 0, allCandles);
   }
 
@@ -1070,7 +1095,7 @@ export class SignalEngine {
   private saveHistory(signalToUpsert?: SignalRecord) {
     try {
       if (typeof window !== 'undefined') {
-        localStorage.setItem('clandex_signal_history', JSON.stringify(this.signalHistory.slice(0, 150)));
+        localStorage.setItem(this.getStorageKey(), JSON.stringify(this.signalHistory.slice(0, 150)));
       }
     } catch {}
 
@@ -1079,68 +1104,10 @@ export class SignalEngine {
     }
   }
 
-  private async syncFromSupabase() {
-    try {
-      const remote = await fetchSignalsFromSupabase(150);
-      if (remote && remote.length > 0) {
-        this.signalHistory = remote;
-        const nowSec = Math.floor(Date.now() / 1000);
-        this.pendingTrades = this.signalHistory.filter(
-          (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec
-        );
-        this.saveHistory();
-        this.notify();
-      }
-    } catch (e) {
-      console.warn('[SignalEngine] Sync error:', e);
-    }
-  }
-
-  private initRealtimeSubscription() {
-    const sb = getSupabase();
-    if (!sb) return;
-    try {
-      sb.channel('clandex-signals-live')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'signals' },
-          (payload: any) => {
-            if (payload.eventType === 'INSERT') {
-              const newSig = mapRowToSignal(payload.new);
-              if (!this.signalHistory.some((s) => s.id === newSig.id)) {
-                this.signalHistory.unshift(newSig);
-                if (newSig.result === 'PENDING') {
-                  this.pendingTrades.push(newSig);
-                }
-                this.saveHistory();
-                this.notify();
-              }
-            } else if (payload.eventType === 'UPDATE') {
-              const updatedSig = mapRowToSignal(payload.new);
-              const idx = this.signalHistory.findIndex((s) => s.id === updatedSig.id);
-              if (idx !== -1) {
-                this.signalHistory[idx] = updatedSig;
-                this.saveHistory();
-                this.notify();
-              }
-            } else if (payload.eventType === 'DELETE') {
-              const deletedId = (payload.old as any)?.id;
-              if (deletedId) {
-                this.signalHistory = this.signalHistory.filter((s) => s.id !== deletedId);
-                this.saveHistory();
-                this.notify();
-              }
-            }
-          }
-        )
-        .subscribe();
-    } catch {}
-  }
-
   private loadHistory() {
     try {
       if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('clandex_signal_history');
+        const stored = localStorage.getItem(this.getStorageKey());
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1156,6 +1123,7 @@ export class SignalEngine {
       }
     } catch {}
     this.signalHistory = [];
+    this.pendingTrades = [];
   }
 }
 

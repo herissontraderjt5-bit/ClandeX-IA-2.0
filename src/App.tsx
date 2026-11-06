@@ -110,7 +110,7 @@ export default function App() {
           webhook: { ...DEFAULT_SETTINGS.webhook, ...(parsed.webhook || {}) },
         };
       }
-    } catch {}
+    } catch { }
     return DEFAULT_SETTINGS;
   });
 
@@ -126,7 +126,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem('clandex_user_session');
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { }
     return null;
   });
 
@@ -174,7 +174,7 @@ export default function App() {
       setUserSession(expiredSession);
       try {
         localStorage.setItem('clandex_user_session', JSON.stringify(expiredSession));
-      } catch {}
+      } catch { }
       return;
     }
 
@@ -204,15 +204,16 @@ export default function App() {
             setUserSession(updatedSession);
             try {
               localStorage.setItem('clandex_user_session', JSON.stringify(updatedSession));
-            } catch {}
+            } catch { }
           }
         }
-      } catch {}
+      } catch { }
     };
 
     syncStatusWithAdmin();
-    recordUserHeartbeat(userSession).catch(() => {});
+    recordUserHeartbeat(userSession).catch(() => { });
 
+    // Heartbeat contínuo a cada 15 segundos para atualizar a presença no Painel ADM
     const interval = setInterval(() => {
       if (!isAdmin && isMemberExpired(userSession)) {
         const expSession: UserSession = {
@@ -223,15 +224,31 @@ export default function App() {
         setUserSession(expSession);
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(expSession));
-        } catch {}
+        } catch { }
       } else {
         syncStatusWithAdmin();
-        recordUserHeartbeat(userSession).catch(() => {});
+        recordUserHeartbeat(userSession).catch(() => { });
       }
-    }, 45000);
+    }, 15000);
 
-    return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        recordUserHeartbeat(userSession).catch(() => { });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [userSession, isAdmin]);
+
+  // Vincula o placar exclusivo ao usuário autenticado atual
+  useEffect(() => {
+    signalEngine.setCurrentUser(userSession?.email || null);
+    setSignalsHistory(signalEngine.getHistory());
+  }, [userSession?.email]);
 
   // Hook Webhook Dispatcher to Signal Events
   useEffect(() => {
@@ -351,7 +368,7 @@ export default function App() {
       setSettings(newSettings);
       try {
         localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
-      } catch {}
+      } catch { }
       saveSettingsToSupabase(newSettings);
     },
     [settings]
@@ -411,10 +428,10 @@ export default function App() {
         setUserSession(updated);
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return;
       }
-    } catch {}
+    } catch { }
 
     // 2. Se não estiver liberado manualmente, consulta a API Hiove
     try {
@@ -436,9 +453,9 @@ export default function App() {
         setUserSession(updated);
         try {
           localStorage.setItem('clandex_user_session', JSON.stringify(updated));
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
   }, [userSession]);
 
   // Toggle Sound
@@ -449,7 +466,7 @@ export default function App() {
     audioAlerts.setSoundEnabled(updated);
     try {
       localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
-    } catch {}
+    } catch { }
     saveSettingsToSupabase(newSettings);
   }, [settings]);
 
@@ -459,7 +476,7 @@ export default function App() {
     marketDataManager.setDemoMode(newSettings.activeMode === 'DEMO');
     try {
       localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
-    } catch {}
+    } catch { }
     saveSettingsToSupabase(newSettings);
   }, []);
 
@@ -472,7 +489,7 @@ export default function App() {
     setSettings(newSettings);
     try {
       localStorage.setItem('clandex_app_settings', JSON.stringify(newSettings));
-    } catch {}
+    } catch { }
     saveSettingsToSupabase(newSettings);
   }, [settings]);
 
@@ -480,7 +497,7 @@ export default function App() {
   const handleLogout = useCallback(() => {
     try {
       localStorage.removeItem('clandex_user_session');
-    } catch {}
+    } catch { }
     setUserSession(null);
     setIsAdminModalOpen(false);
   }, []);

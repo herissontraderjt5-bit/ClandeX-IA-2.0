@@ -257,6 +257,15 @@ export async function recordUserHeartbeat(session: UserSession): Promise<void> {
   registry[email] = member;
   saveLocalMembers(registry);
 
+  // Notifica o backend local imediatamente sobre o heartbeat
+  try {
+    fetch('/api/user/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name: member.name }),
+    }).catch(() => {});
+  } catch {}
+
   // Persiste no Supabase na tabela app_settings
   if (sb) {
     try {
@@ -349,10 +358,15 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
       data.members.forEach((m: MemberRecord) => {
         if (m.email) {
           const norm = normalizeEmail(m.email);
+          const prev = registry[norm];
+          const bestLastActive = Math.max(prev?.lastActiveAt || 0, m.lastActiveAt || 0);
+          const bestLastChecked = Math.max(prev?.lastCheckedAt || 0, m.lastCheckedAt || 0);
           registry[norm] = {
-            ...registry[norm],
+            ...prev,
             ...m,
             email: norm,
+            lastActiveAt: bestLastActive > 0 ? bestLastActive : undefined,
+            lastCheckedAt: bestLastChecked > 0 ? bestLastChecked : Date.now(),
           };
         }
       });

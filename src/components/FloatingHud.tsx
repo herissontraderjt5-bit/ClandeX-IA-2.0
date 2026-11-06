@@ -2105,13 +2105,12 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                         <div
                           key={strat.id}
                           onClick={() => handleToggleStrategy(strat.id)}
-                          className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${
-                            isActive
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${isActive
                               ? isHighAssertive
                                 ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:border-emerald-400'
                                 : 'bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border-cyan-500/40 shadow-sm hover:border-cyan-400'
                               : 'bg-black/40 border-neutral-800/80 opacity-50 hover:opacity-80 hover:border-neutral-700'
-                          }`}
+                            }`}
                         >
                           {/* Top Row: Name, Badge & Toggle Switch */}
                           <div className="flex items-center justify-between gap-1.5">
@@ -2124,15 +2123,14 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             <div className="flex items-center gap-1.5 shrink-0">
                               {/* Backtest WinRate Pill */}
                               <span
-                                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
-                                  isHighAssertive
+                                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-lg border flex items-center gap-1 ${isHighAssertive
                                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
                                     : isDecent
-                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                                    : isLow
-                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                    : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                                }`}
+                                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                      : isLow
+                                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                                  }`}
                               >
                                 {winRate}% Assertivo
                               </span>
@@ -2144,11 +2142,10 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                                   e.stopPropagation();
                                   handleToggleStrategy(strat.id);
                                 }}
-                                className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-black uppercase transition-all cursor-pointer ${
-                                  isActive
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-black uppercase transition-all cursor-pointer ${isActive
                                     ? 'bg-cyan-400 text-black shadow-md shadow-cyan-400/30'
                                     : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
-                                }`}
+                                  }`}
                               >
                                 {isActive ? '✓ ATIVA' : 'PAUSADA'}
                               </button>
@@ -2714,8 +2711,8 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                             </div>
                             <span
                               className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${evt.impact === 'HIGH'
-                                  ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
-                                  : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                                ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                                : 'bg-amber-950 text-amber-300 border border-amber-500/40'
                                 }`}
                             >
                               {evt.impact === 'HIGH' ? '🔴 3 Estrelas' : '🟡 2 Estrelas'}

@@ -177,7 +177,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
           <div className="flex items-center gap-2 sm:gap-3 text-xs min-w-0">
             <div className="flex items-center gap-1.5 font-bold text-white tracking-wider whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-              <span>HIOVE LOGIN DIRETO (ETH/USDT)</span>
+              <span>HIOVE LOGIN DIRETO ({currentAsset.symbol.replace('/', '')})</span>
             </div>
             <span className="text-neutral-500 hidden md:inline">•</span>
             <div className="hidden lg:flex items-center gap-1 text-[11px] font-mono text-cyan-300 whitespace-nowrap">
