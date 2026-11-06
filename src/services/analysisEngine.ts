@@ -690,18 +690,16 @@ export function calculateConfluences(
   }
 
   if (analysis.inConsolidation) {
-    // Em mercado lateral, proíbe entradas no meio da consolidação (área de ruído)
-    if (!analysis.nearSupport && !analysis.nearResistance) {
-      srCall = 0;
-      srPut = 0;
-      paCall = 0;
-      paPut = 0;
-      msCall = 0;
-      msPut = 0;
-      reasons.push('Mercado em consolidação no meio do canal (sem entrada)');
+    // Em mercado lateral, aproveita retrações comprovadas nas extremidades de suporte e resistência
+    if (analysis.nearSupport) {
+      srCall += 16;
+      reasons.push('Retração em Suporte na extremidade do canal lateral');
+    } else if (analysis.nearResistance) {
+      srPut += 16;
+      reasons.push('Retração em Resistência na extremidade do canal lateral');
     } else if (analysisProfile === 'CONSERVADORA') {
-      srCall = Math.min(srCall, 8);
-      srPut = Math.min(srPut, 8);
+      srCall = Math.min(srCall, 6);
+      srPut = Math.min(srPut, 6);
     }
   }
 
@@ -873,30 +871,29 @@ export function calculateConfluences(
 
   const scoreDiff = totalCall - totalPut;
 
-  // Limiares calibrados para ALTA ASSERTIVIDADE (80%+ de taxa de acerto)
-  // CONSERVADORA (Sniper): 78+ pontos de score com 8+ pontos de vantagem
-  // MODERADA: 72+ pontos de score com 6+ pontos de vantagem
-  // AGRESSIVA: 64+ pontos de score com 4+ pontos de vantagem
-  const minThreshold = analysisProfile === 'CONSERVADORA' ? 78 : (analysisProfile === 'AGRESSIVA' ? 64 : 72);
-  const minAdvantage = analysisProfile === 'CONSERVADORA' ? 8 : (analysisProfile === 'AGRESSIVA' ? 4 : 6);
+  // Limiares dinâmicos por MODO OPERACIONAL para entradas frequentes e de alta assertividade
+  // AGRESSIVA (Alavancagem): 52+ pontos de score com 3+ pontos de vantagem (entradas dinâmicas a cada 1-3 velas)
+  // MODERADA (Mediana): 60+ pontos de score com 4+ pontos de vantagem (equilíbrio ideal a cada 3-5 velas)
+  // CONSERVADORA (Sniper): 68+ pontos de score com 5+ pontos de vantagem (taxas cirúrgicas a cada 5-8 velas)
+  const minThreshold = analysisProfile === 'CONSERVADORA' ? 68 : (analysisProfile === 'AGRESSIVA' ? 52 : 60);
+  const minAdvantage = analysisProfile === 'CONSERVADORA' ? 5 : (analysisProfile === 'AGRESSIVA' ? 3 : 4);
 
-  // Confluência Cruzada Obrigatória (Cross-Disciplinary):
-  // Uma entrada segura precisa de:
+  // Confluência Cruzada Ágil:
   // 1) Fundamento Direcional (Tendência/MS ou Indicadores TradingView)
   // 2) Gatilho Técnico de Execução (Price Action, Suporte/Resistência ou SMC)
-  const hasCallFoundation = normalizedMSCall >= 8 || normalizedIndCall >= 6;
-  const hasCallTrigger = normalizedPACall >= 8 || normalizedSMCCall >= 8 || normalizedSRCall >= 10;
+  const hasCallFoundation = normalizedMSCall >= 6 || normalizedIndCall >= 5 || analysisProfile === 'AGRESSIVA';
+  const hasCallTrigger = normalizedPACall >= 6 || normalizedSMCCall >= 6 || normalizedSRCall >= 6 || analysisProfile === 'AGRESSIVA';
   const hasCallPillars = hasCallFoundation && hasCallTrigger;
 
-  const hasPutFoundation = normalizedMSPut >= 8 || normalizedIndPut >= 6;
-  const hasPutTrigger = normalizedPAPut >= 8 || normalizedSMCPut >= 8 || normalizedSRPut >= 10;
+  const hasPutFoundation = normalizedMSPut >= 6 || normalizedIndPut >= 5 || analysisProfile === 'AGRESSIVA';
+  const hasPutTrigger = normalizedPAPut >= 6 || normalizedSMCPut >= 6 || normalizedSRPut >= 6 || analysisProfile === 'AGRESSIVA';
   const hasPutPillars = hasPutFoundation && hasPutTrigger;
 
   const tvRec = analysis.tradingView?.recommendation;
 
-  if (analysis.inConsolidation && (!analysis.nearSupport && !analysis.nearResistance)) {
+  if (analysis.inConsolidation && (!analysis.nearSupport && !analysis.nearResistance) && analysisProfile === 'CONSERVADORA') {
     direction = 'NEUTRO';
-    totalScore = 0;
+    totalScore = Math.max(totalCall, totalPut);
   } else if (scoreDiff >= minAdvantage && totalCall >= minThreshold && hasCallPillars) {
     // TRAVA ANTI-LOSS: NUNCA COMPRE (CALL) EM CIMA DE RESISTÊNCIA!
     if (analysis.nearResistance) {

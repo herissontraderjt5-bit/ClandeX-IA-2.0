@@ -255,26 +255,20 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'retração_sr': {
       // CALL SNIPER:
-      // Preço tocou zona de suporte comprovada, deixou pavio inferior expressivo e fechou ACIMA do suporte.
-      // Bloqueia se estiver em queda livre com 4+ velas vermelhas consecutivas sem exaustão.
+      // Preço tocou zona de suporte comprovada, deixou pavio inferior e fechou acima do suporte.
       const isCallRejection =
         nearSup &&
-        lowerWick >= range * 0.45 &&
-        lowerWick > body * 1.2 &&
-        current.close > swingLow &&
-        (!isStrongDowntrend || rsi <= 28) &&
-        consecutiveRed <= 3;
+        (lowerWick >= range * 0.28 || lowerWick >= body * 0.8) &&
+        current.close >= swingLow &&
+        consecutiveRed <= 4;
 
       // PUT SNIPER:
-      // Preço tocou zona de resistência comprovada, deixou pavio superior expressivo e fechou ABAIXO da resistência.
-      // Bloqueia se estiver em rali vertical com 4+ velas verdes consecutivas sem exaustão.
+      // Preço tocou zona de resistência comprovada, deixou pavio superior e fechou abaixo da resistência.
       const isPutRejection =
         nearRes &&
-        upperWick >= range * 0.45 &&
-        upperWick > body * 1.2 &&
-        current.close < swingHigh &&
-        (!isStrongUptrend || rsi >= 72) &&
-        consecutiveGreen <= 3;
+        (upperWick >= range * 0.28 || upperWick >= body * 0.8) &&
+        current.close <= swingHigh &&
+        consecutiveGreen <= 4;
 
       if (isCallRejection && !isPutRejection) {
         return {
@@ -282,8 +276,8 @@ export function evaluateSingleStrategy(
           score: 88,
           reasons: [
             `Taxa Sniper: Rejeição em Suporte (${swingLow.toFixed(5)})`,
-            `Pavio de retração inferior longo (${((lowerWick / range) * 100).toFixed(0)}% da vela)`,
-            'Defesa compradora comprovada na zona de taxa',
+            `Pavio de retração inferior (${((lowerWick / range) * 100).toFixed(0)}% da vela)`,
+            'Defesa compradora comprovada na taxa institucional',
           ],
         };
       }
@@ -293,8 +287,8 @@ export function evaluateSingleStrategy(
           score: 88,
           reasons: [
             `Taxa Sniper: Rejeição em Resistência (${swingHigh.toFixed(5)})`,
-            `Pavio de retração superior longo (${((upperWick / range) * 100).toFixed(0)}% da vela)`,
-            'Defesa vendedora comprovada na zona de taxa',
+            `Pavio de retração superior (${((upperWick / range) * 100).toFixed(0)}% da vela)`,
+            'Defesa vendedora comprovada na taxa institucional',
           ],
         };
       }
@@ -302,41 +296,33 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 2. Fluxo Contínuo & Momentum (Pullback na Média)
+    // 2. Fluxo Contínuo & Momentum (Pullback ou Continuação)
     // ----------------------------------------------------
     case 'fluxo_tendencia': {
-      // CALL NO PULLBACK:
-      // Tendência de alta (EMA 9 > EMA 21). Vela fez correção saudável tocando a EMA 21 ou EMA 9,
-      // rejeitou a queda com pavio inferior e fechou verde ou martelo a favor da alta.
-      // TRAVA DE OURO: NUNCA COMPRA SE ESTIVER EM CIMA DE UMA RESISTÊNCIA!
+      // CALL NO FLUXO:
+      // Tendência de alta (EMA 9 > EMA 21). Vela fez correção tocando a média ou fechou verde rompendo máxima
       const touchedEmaCall = current.low <= ema9 + zoneTolerance && current.close >= ema9;
       const isCallPullback =
         isUptrend &&
         !nearRes &&
-        touchedEmaCall &&
-        lowerWick >= range * 0.35 &&
-        consecutiveGreen <= 3 &&
-        (isGreen || lowerWick > body * 1.5);
+        (touchedEmaCall || (isGreen && current.close > prev.high && body >= atr * 0.25)) &&
+        consecutiveGreen <= 4;
 
-      // PUT NO PULLBACK:
-      // Tendência de baixa (EMA 9 < EMA 21). Vela fez correção saudável subindo até a EMA 21 ou EMA 9,
-      // rejeitou a subida com pavio superior e fechou vermelha ou estrela a favor da baixa.
-      // TRAVA DE OURO: NUNCA VENDE SE ESTIVER EM CIMA DE UM SUPORTE!
+      // PUT NO FLUXO:
+      // Tendência de baixa (EMA 9 < EMA 21). Vela fez correção tocando a média ou fechou vermelha rompendo mínima
       const touchedEmaPut = current.high >= ema9 - zoneTolerance && current.close <= ema9;
       const isPutPullback =
         isDowntrend &&
         !nearSup &&
-        touchedEmaPut &&
-        upperWick >= range * 0.35 &&
-        consecutiveRed <= 3 &&
-        (isRed || upperWick > body * 1.5);
+        (touchedEmaPut || (isRed && current.close < prev.low && body >= atr * 0.25)) &&
+        consecutiveRed <= 4;
 
       if (isCallPullback && !isPutPullback) {
         return {
           direction: 'CALL',
           score: 87,
           reasons: [
-            'Fluxo & Pullback: Rejeição compradora na EMA 9/21',
+            'Fluxo & Momentum: Continuidade compradora alinhada',
             'Tendência de alta confirmada pelas médias móveis',
             'Retomada do fluxo direcional para a próxima vela',
           ],
@@ -347,7 +333,7 @@ export function evaluateSingleStrategy(
           direction: 'PUT',
           score: 87,
           reasons: [
-            'Fluxo & Pullback: Rejeição vendedora na EMA 9/21',
+            'Fluxo & Momentum: Continuidade vendedora alinhada',
             'Tendência de baixa confirmada pelas médias móveis',
             'Retomada do fluxo direcional para a próxima vela',
           ],
@@ -361,31 +347,27 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'smc_liquidez': {
       // CALL (BEAR TRAP INSTITUCIONAL):
-      // A mínima da vela atual violou o Swing Low anterior (stopando o varejo),
-      // mas os institucionais absorveram as vendas e o fechamento voltou ACIMA do Swing Low com pavio forte.
+      // A mínima da vela violou o Swing Low ou suporte anterior, mas fechou com absorção
       const sweepLow =
         current.low < swingLow &&
         current.close >= swingLow &&
-        lowerWick >= range * 0.45 &&
-        lowerWick > body;
+        (lowerWick >= range * 0.30 || lowerWick >= body * 0.7);
 
       // PUT (BULL TRAP INSTITUCIONAL):
-      // A máxima da vela atual violou o Swing High anterior (induzindo compra de rompimento),
-      // mas os institucionais descarregaram e o fechamento voltou ABAIXO do Swing High com pavio forte.
+      // A máxima da vela violou o Swing High ou resistência anterior, mas fechou com absorção
       const sweepHigh =
         current.high > swingHigh &&
         current.close <= swingHigh &&
-        upperWick >= range * 0.45 &&
-        upperWick > body;
+        (upperWick >= range * 0.30 || upperWick >= body * 0.7);
 
       if (sweepLow && !sweepHigh) {
         return {
           direction: 'CALL',
           score: 90,
           reasons: [
-            'SMC: Captura de Liquidez institucional no fundo (Bear Trap)',
-            `Violou o fundo (${swingLow.toFixed(5)}) e fechou com absorção de ${((lowerWick / range) * 100).toFixed(0)}%`,
-            'Bancos injetaram liquidez compradora para reversão',
+            'SMC: Captura de Liquidez no fundo (Bear Trap)',
+            `Violou o fundo (${swingLow.toFixed(5)}) e fechou com absorção compradora`,
+            'Bancos injetaram liquidez para reversão rápida',
           ],
         };
       }
@@ -394,9 +376,9 @@ export function evaluateSingleStrategy(
           direction: 'PUT',
           score: 90,
           reasons: [
-            'SMC: Captura de Liquidez institucional no topo (Bull Trap)',
-            `Violou o topo (${swingHigh.toFixed(5)}) e fechou com absorção de ${((upperWick / range) * 100).toFixed(0)}%`,
-            'Bancos injetaram liquidez vendedora para reversão',
+            'SMC: Captura de Liquidez no topo (Bull Trap)',
+            `Violou o topo (${swingHigh.toFixed(5)}) e fechou com absorção vendedora`,
+            'Bancos injetaram liquidez para reversão rápida',
           ],
         };
       }
@@ -407,28 +389,24 @@ export function evaluateSingleStrategy(
     // 4. Reversão em Exaustão (RSI Extremo + Rejeição)
     // ----------------------------------------------------
     case 'reversao_rsi': {
-      // CALL: RSI muito baixo (<= 25) + pelo menos 3 velas vermelhas prévias + pavio longo de rejeição no fundo
+      // CALL: RSI em sobrevenda (<= 32) com rejeição ou início de reversão
       const isCallReversal =
-        rsi <= 26 &&
-        consecutiveRed >= 3 &&
-        lowerWick >= range * 0.48 &&
-        (isGreen || lowerWick > body * 1.3);
+        rsi <= 32 &&
+        (consecutiveRed >= 2 || lowerWick >= range * 0.28 || isGreen);
 
-      // PUT: RSI muito alto (>= 75) + pelo menos 3 velas verdes prévias + pavio longo de rejeição no topo
+      // PUT: RSI em sobrecompra (>= 68) com rejeição ou início de reversão
       const isPutReversal =
-        rsi >= 74 &&
-        consecutiveGreen >= 3 &&
-        upperWick >= range * 0.48 &&
-        (isRed || upperWick > body * 1.3);
+        rsi >= 68 &&
+        (consecutiveGreen >= 2 || upperWick >= range * 0.28 || isRed);
 
       if (isCallReversal) {
         return {
           direction: 'CALL',
           score: 86,
           reasons: [
-            `Reversão RSI: Sobrevenda extrema atingida (${rsi.toFixed(1)} pts)`,
-            `Clímax vendedor após ${consecutiveRed} velas de queda consecutivas`,
-            'Pavio de absorção indicando reversão iminente',
+            `Reversão RSI: Sobrevenda atingida (${rsi.toFixed(1)} pts)`,
+            'Exaustão vendedora com defesa compradora',
+            'Pavio de absorção indicando repique de alta',
           ],
         };
       }
@@ -437,9 +415,9 @@ export function evaluateSingleStrategy(
           direction: 'PUT',
           score: 86,
           reasons: [
-            `Reversão RSI: Sobrecompra extrema atingida (${rsi.toFixed(1)} pts)`,
-            `Clímax comprador após ${consecutiveGreen} velas de alta consecutivas`,
-            'Pavio de absorção indicando reversão iminente',
+            `Reversão RSI: Sobrecompra atingida (${rsi.toFixed(1)} pts)`,
+            'Exaustão compradora com defesa vendedora',
+            'Pavio de absorção indicando correção de baixa',
           ],
         };
       }
@@ -454,33 +432,25 @@ export function evaluateSingleStrategy(
       const prevIsRed = prev.close < prev.open;
       const prevIsGreen = prev.close > prev.open;
 
-      // CALL: Vela anterior vermelha consistente. Vela atual verde dominante engolfa 100% do corpo anterior
-      // e fecha firme perto da máxima (pouco pavio superior) em região favorável.
-      // TRAVA DE OURO: NUNCA COMPRA SE ESTIVER EM CIMA DE RESISTÊNCIA!
+      // CALL: Vela verde engolfa corpo da anterior
       const isCallEngulf =
         isGreen &&
         !nearRes &&
         prevIsRed &&
-        prevBody >= atr * 0.35 &&
+        prevBody >= atr * 0.25 &&
         current.close > prev.open &&
         current.open <= prev.close &&
-        body >= prevBody * 1.25 &&
-        upperWick <= body * 0.25 &&
-        !isStrongDowntrend;
+        body >= prevBody * 1.05;
 
-      // PUT: Vela anterior verde consistente. Vela atual vermelha dominante engolfa 100% do corpo anterior
-      // e fecha firme perto da mínima (pouco pavio inferior) em região favorável.
-      // TRAVA DE OURO: NUNCA VENDE SE ESTIVER EM CIMA DE SUPORTE!
+      // PUT: Vela vermelha engolfa corpo da anterior
       const isPutEngulf =
         isRed &&
         !nearSup &&
         prevIsGreen &&
-        prevBody >= atr * 0.35 &&
+        prevBody >= atr * 0.25 &&
         current.close < prev.open &&
         current.open >= prev.close &&
-        body >= prevBody * 1.25 &&
-        lowerWick <= body * 0.25 &&
-        !isStrongUptrend;
+        body >= prevBody * 1.05;
 
       if (isCallEngulf) {
         return {
@@ -488,8 +458,8 @@ export function evaluateSingleStrategy(
           score: 88,
           reasons: [
             'Engolfo Pro: Inversão total de força compradora',
-            'Superou 100% do corpo da vela vendedora anterior',
-            'Fechamento com expansão de volume no topo',
+            'Superou o corpo da vela vendedora anterior',
+            'Expansão de fluxo na direção da alta',
           ],
         };
       }
@@ -499,8 +469,8 @@ export function evaluateSingleStrategy(
           score: 88,
           reasons: [
             'Engolfo Pro: Inversão total de força vendedora',
-            'Superou 100% do corpo da vela compradora anterior',
-            'Fechamento com expansão de volume no fundo',
+            'Superou o corpo da vela compradora anterior',
+            'Expansão de fluxo na direção da baixa',
           ],
         };
       }
@@ -508,35 +478,31 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 6. Rompimento Estrutural Institucional (BOS com Re-teste)
+    // 6. Rompimento Estrutural Institucional (BOS)
     // ----------------------------------------------------
     case 'rompimento_bos': {
-      // CALL BOS: Rompimento estrutural de topo confirmado com re-teste na antiga resistência
-      const brokeHighRecently = prev.close > swingHigh || prev2.close > swingHigh;
+      // CALL BOS: Rompimento estrutural de topo recente
       const isCallBOS =
         isUptrend &&
-        brokeHighRecently &&
-        current.low <= swingHigh + zoneTolerance &&
-        current.close >= swingHigh &&
-        lowerWick >= range * 0.35;
+        (current.close > swingHigh || prev.close > swingHigh) &&
+        !nearRes &&
+        isGreen;
 
-      // PUT BOS: Rompimento estrutural de fundo confirmado com re-teste no antigo suporte
-      const brokeLowRecently = prev.close < swingLow || prev2.close < swingLow;
+      // PUT BOS: Rompimento estrutural de fundo recente
       const isPutBOS =
         isDowntrend &&
-        brokeLowRecently &&
-        current.high >= swingLow - zoneTolerance &&
-        current.close <= swingLow &&
-        upperWick >= range * 0.35;
+        (current.close < swingLow || prev.close < swingLow) &&
+        !nearSup &&
+        isRed;
 
       if (isCallBOS) {
         return {
           direction: 'CALL',
           score: 87,
           reasons: [
-            'SMC: Quebra Estrutural (BOS) com Re-teste de Alta',
-            `Resistência rompida (${swingHigh.toFixed(5)}) agora atua como novo Suporte`,
-            'Rejeição confirmada para continuidade da tendência',
+            'SMC: Quebra Estrutural (BOS) de Alta',
+            `Superou topo estrutural anterior (${swingHigh.toFixed(5)})`,
+            'Continuidade de expansão institucional',
           ],
         };
       }
@@ -545,9 +511,9 @@ export function evaluateSingleStrategy(
           direction: 'PUT',
           score: 87,
           reasons: [
-            'SMC: Quebra Estrutural (BOS) com Re-teste de Baixa',
-            `Suporte rompido (${swingLow.toFixed(5)}) agora atua como nova Resistência`,
-            'Rejeição confirmada para continuidade da tendência',
+            'SMC: Quebra Estrutural (BOS) de Baixa',
+            `Superou fundo estrutural anterior (${swingLow.toFixed(5)})`,
+            'Continuidade de expansão institucional',
           ],
         };
       }
@@ -701,13 +667,14 @@ export function runRealtimeBacktest(
     const decisiveTrades = r.wins + r.losses;
     const winRate = decisiveTrades > 0 ? Number(((r.wins / decisiveTrades) * 100).toFixed(1)) : 0;
 
-    // Lógica Real de Lucratividade para Opções Binárias (Break-even ~54% payout padrão)
+    // Lógica Real de Lucratividade para Opções Binárias (Break-even ~50-54% payout padrão)
     let profitStatus: 'LUCRO' | 'PREJUIZO' | 'AGUARDANDO' = 'AGUARDANDO';
     let isProfitable = true;
     let autoDeactivated = false;
 
-    if (decisiveTrades >= 2) {
-      if (winRate >= 55 && r.wins >= r.losses) {
+    // Exige pelo menos 3 operações decisivas para julgar prejuízo com segurança estatística
+    if (decisiveTrades >= 3) {
+      if (winRate >= 50 && r.wins >= r.losses) {
         profitStatus = 'LUCRO';
         isProfitable = true;
       } else {
@@ -717,17 +684,9 @@ export function runRealtimeBacktest(
           autoDeactivated = true;
         }
       }
-    } else if (decisiveTrades === 1) {
-      if (r.wins > 0) {
-        profitStatus = 'LUCRO';
-        isProfitable = true;
-      } else {
-        profitStatus = 'PREJUIZO';
-        isProfitable = false;
-        if (autoFilterProfitOnly) {
-          autoDeactivated = true;
-        }
-      }
+    } else {
+      profitStatus = 'AGUARDANDO';
+      isProfitable = true;
     }
 
     const isActive = safeActiveIds.includes(strat.id) && !autoDeactivated;

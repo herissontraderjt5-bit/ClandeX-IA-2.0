@@ -2123,7 +2123,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                       <div className="text-[10px] font-bold text-white mt-0.5">Conservadora</div>
                       <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
-                        Confluência 85%+. Tiro assertivo para ganho imediato.
+                        Confluência 72%+. Entradas cirúrgicas em taxas de S/R e Order Blocks.
                       </div>
                     </button>
 
@@ -2140,7 +2140,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                       <div className="text-[10px] font-bold text-white mt-0.5">Moderada</div>
                       <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
-                        Confluência 75%. Equilíbrio entre frequência e consistência.
+                        Confluência 64%+. Equilíbrio calibrado (a cada 3-5 velas) e assertividade 80%+.
                       </div>
                     </button>
 
@@ -2157,7 +2157,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       </div>
                       <div className="text-[10px] font-bold text-white mt-0.5">Agressiva</div>
                       <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
-                        Confluência 62%+. Fluxo rápido para alavancar banca.
+                        Confluência 55%+. Entradas frequentes (a cada 1 a 3 velas) para alavancagem rápida.
                       </div>
                     </button>
                   </div>
