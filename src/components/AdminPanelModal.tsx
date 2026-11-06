@@ -187,7 +187,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         setActionMessage({ type: 'success', text: `${email} excluído da base.` });
         await fetchMembers();
       }
-    } catch {}
+    } catch { }
   };
 
   // Testar e-mail na API da Hiove
@@ -321,11 +321,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           {/* Feedback Message Bar */}
           {actionMessage && (
             <div
-              className={`p-3 rounded-2xl text-xs font-bold flex items-center justify-between border ${
-                actionMessage.type === 'success'
-                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                  : 'bg-rose-950/50 text-rose-300 border-rose-500/50'
-              }`}
+              className={`p-3 rounded-2xl text-xs font-bold flex items-center justify-between border ${actionMessage.type === 'success'
+                ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                : 'bg-rose-950/50 text-rose-300 border-rose-500/50'
+                }`}
             >
               <span>{actionMessage.text}</span>
               <button
@@ -365,11 +364,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       key={d}
                       type="button"
                       onClick={() => setNewDays(d)}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                        newDays === d
-                          ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                          : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
-                      }`}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${newDays === d
+                        ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                        : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
+                        }`}
                     >
                       {d === 1 ? '24h (1d)' : d === 9999 ? 'Vitalício' : `${d}d`}
                     </button>
@@ -427,11 +425,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-neutral-400">Status Hiove:</span>
                     <span
-                      className={`font-bold px-2 py-0.5 rounded ${
-                        testResult.access === true
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-rose-950 text-rose-300 border border-rose-500/40'
-                      }`}
+                      className={`font-bold px-2 py-0.5 rounded ${testResult.access === true
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                        }`}
                     >
                       {testResult.access === true ? '✅ Acesso Aprovado (Depositou)' : '❌ Sem Depósito Confirmado'}
                     </span>
@@ -473,18 +470,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setStatusFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    statusFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${statusFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
+                    }`}
                 >
                   Todos ({members.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setStatusFilter('ONLINE')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    statusFilter === 'ONLINE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-neutral-400'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${statusFilter === 'ONLINE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-neutral-400'
+                    }`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   Online ({stats.onlineCount})
@@ -492,18 +487,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setStatusFilter('ACTIVE')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    statusFilter === 'ACTIVE' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${statusFilter === 'ACTIVE' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
+                    }`}
                 >
                   Ativos ({stats.activeCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setStatusFilter('EXPIRED')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                    statusFilter === 'EXPIRED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${statusFilter === 'EXPIRED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
+                    }`}
                 >
                   Expirados ({stats.pendingCount})
                 </button>
@@ -546,8 +539,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       const remainingDays = isMaster
                         ? 9999
                         : m.expiresAt
-                        ? Math.max(0, Math.ceil((m.expiresAt - Date.now()) / (86400 * 1000)))
-                        : (m.accessDays || 30);
+                          ? Math.max(0, Math.ceil((m.expiresAt - Date.now()) / (86400 * 1000)))
+                          : (m.accessDays || 30);
                       const isExpired = !isMaster && (m.status === 'EXPIRED' || remainingDays <= 0);
 
                       return (
@@ -620,18 +613,17 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                               <div className="space-y-1.5">
                                 <div className="flex items-center gap-2">
                                   <span
-                                    className={`font-black text-xs ${
-                                      remainingDays > 5
-                                        ? 'text-emerald-300'
-                                        : remainingDays > 0
+                                    className={`font-black text-xs ${remainingDays > 5
+                                      ? 'text-emerald-300'
+                                      : remainingDays > 0
                                         ? 'text-amber-300'
                                         : 'text-rose-400'
-                                    }`}
+                                      }`}
                                   >
                                     {remainingDays >= 9999
                                       ? 'Vitalício (∞)'
                                       : m.expiresAt && m.expiresAt > Date.now()
-                                      ? (() => {
+                                        ? (() => {
                                           const diffMs = m.expiresAt - Date.now();
                                           const diffHours = Math.ceil(diffMs / (3600 * 1000));
                                           if (diffHours <= 24) {
@@ -639,9 +631,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                           }
                                           return `${Math.ceil(diffMs / (86400 * 1000))} dias restantes`;
                                         })()
-                                      : remainingDays > 0
-                                      ? `${remainingDays} dias restantes`
-                                      : '0 dias (Expirado)'}
+                                        : remainingDays > 0
+                                          ? `${remainingDays} dias restantes`
+                                          : '0 dias (Expirado)'}
                                   </span>
                                 </div>
 
