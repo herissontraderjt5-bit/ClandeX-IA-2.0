@@ -422,8 +422,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [isDragging, position]);
 
-  // HUD Tabs: 'sinal' | 'analise' | 'noticias' | 'voz' | 'chat'
-  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'noticias' | 'voz' | 'chat'>('sinal');
+  // HUD Tabs: 'sinal' | 'analise' | 'indicadores' | 'voz' | 'chat'
+  const [activeTab, setActiveTab] = useState<'sinal' | 'analise' | 'indicadores' | 'voz' | 'chat'>('sinal');
   const [copiedSignal, setCopiedSignal] = useState(false);
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
@@ -514,6 +514,69 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const technicalData = useMemo(() => {
     return computeTechnicalOverview(activeCandles, timeframe, asset, liveTvData);
   }, [activeCandles, timeframe, asset, liveTvData, currentCandle?.close]);
+
+  // Consenso Institucional Geral dos 10 Indicadores Técnicos
+  const indicatorConsensus = useMemo(() => {
+    const indicators = [
+      { name: 'Tendência Maior', signal: technicalData.majorTrend.status === 'LATERAL' ? 'NEUTRO' : technicalData.majorTrend.status },
+      { name: 'RSI (14)', signal: technicalData.rsi.signal },
+      { name: 'MACD', signal: technicalData.macd.status },
+      { name: 'Médias Rápidas (EMA 9/21)', signal: technicalData.maShort.status === 'LATERAL' ? 'NEUTRO' : technicalData.maShort.status },
+      { name: 'Médias Longas (SMA 50/200)', signal: technicalData.maLong.status === 'LATERAL' ? 'NEUTRO' : technicalData.maLong.status },
+      { name: 'Bandas de Bollinger', signal: technicalData.bollingerBands.status },
+      { name: 'Estocástico (14,3,3)', signal: technicalData.stochastic.status },
+      { name: 'ADX (14)', signal: technicalData.adx.status },
+      { name: 'Volume Institucional', signal: technicalData.volume.status },
+      { name: 'Delta de Pressão', signal: technicalData.delta.status },
+    ];
+
+    let callCount = 0;
+    let putCount = 0;
+    let neutralCount = 0;
+
+    for (const ind of indicators) {
+      if (ind.signal === 'ALTA') callCount++;
+      else if (ind.signal === 'BAIXA') putCount++;
+      else neutralCount++;
+    }
+
+    const total = indicators.length;
+    const callPercent = Math.round((callCount / total) * 100);
+    const putPercent = Math.round((putCount / total) * 100);
+    const neutralPercent = Math.max(0, 100 - callPercent - putPercent);
+
+    let verdict: 'FORTE COMPRA' | 'COMPRA' | 'NEUTRO' | 'VENDA' | 'FORTE VENDA' = 'NEUTRO';
+    let bias: 'CALL' | 'PUT' | 'NEUTRO' = 'NEUTRO';
+
+    if (callCount >= 7) {
+      verdict = 'FORTE COMPRA';
+      bias = 'CALL';
+    } else if (callCount >= 5 && callCount > putCount) {
+      verdict = 'COMPRA';
+      bias = 'CALL';
+    } else if (putCount >= 7) {
+      verdict = 'FORTE VENDA';
+      bias = 'PUT';
+    } else if (putCount >= 5 && putCount > callCount) {
+      verdict = 'VENDA';
+      bias = 'PUT';
+    } else {
+      verdict = 'NEUTRO';
+      bias = 'NEUTRO';
+    }
+
+    return {
+      indicators,
+      callCount,
+      putCount,
+      neutralCount,
+      callPercent,
+      putPercent,
+      neutralPercent,
+      verdict,
+      bias,
+    };
+  }, [technicalData]);
 
   // Chat IA State
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'model'; text: string; timestamp: number }>>([
@@ -1141,18 +1204,19 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
             </button>
 
             <button
-              onClick={() => setActiveTab('noticias')}
-              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'noticias'
+              onClick={() => setActiveTab('indicadores')}
+              className={`flex-1 py-1.5 px-1 sm:px-1.5 rounded-lg font-mono text-[10px] sm:text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'indicadores'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Newspaper className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span>Notícias</span>
-              {relevantEvents.upcomingHighImpact ? (
+              <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Indicadores</span>
+              {indicatorConsensus.verdict.includes('COMPRA') && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              )}
+              {indicatorConsensus.verdict.includes('VENDA') && (
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/50 shrink-0" />
               )}
             </button>
 
@@ -2189,14 +2253,215 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
-                {/* 2. TENDÊNCIA MAIOR DE ACORDO COM O TIMEFRAME SELECIONADO */}
+                {/* ATALHO RÁPIDO PARA O PAINEL INSTITUCIONAL DE INDICADORES */}
                 <div
-                  className={`p-3 rounded-2xl border transition-all shadow-md ${technicalData.majorTrend.status === 'ALTA'
-                    ? 'bg-emerald-950/20 border-emerald-500/40'
-                    : technicalData.majorTrend.status === 'BAIXA'
-                      ? 'bg-rose-950/20 border-rose-500/40'
-                      : 'bg-amber-950/20 border-amber-500/40'
+                  onClick={() => setActiveTab('indicadores')}
+                  className="p-3 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-black border border-cyan-500/30 hover:border-cyan-400 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-md group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                      <Activity className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
+                        <span>Painel Completo de Indicadores</span>
+                        <span
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                            indicatorConsensus.bias === 'CALL'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : indicatorConsensus.bias === 'PUT'
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                          }`}
+                        >
+                          {indicatorConsensus.verdict}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-neutral-400">
+                        RSI, MACD, Médias Móveis, Bollinger, Estocástico, ADX, Volume e Delta de Pressão
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            )}
+
+            {/* TAB EXCLUSIVA: INDICADORES TÉCNICOS & CONFLUÊNCIA INSTITUCIONAL */}
+            {activeTab === 'indicadores' && (
+              <div className="space-y-3.5">
+                {/* 1. HEADER DO PAINEL DE INDICADORES */}
+                <div className="p-3.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl space-y-2.5 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white tracking-wider uppercase">
+                          PAINEL TÉCNICO DE INDICADORES
+                        </h4>
+                        <span className="text-[10px] text-neutral-400">
+                          {asset.symbol} • {timeframe} • TradingView Scanner 1:1
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                        AO VIVO
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-white bg-black/60 px-2 py-0.5 rounded-lg border border-neutral-800">
+                        {technicalData.currentPrice.toFixed(asset.category === 'CRYPTO' ? 2 : 5)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. TERMÔMETRO DE CONSENSO INSTITUCIONAL GERAL */}
+                  <div
+                    className={`p-3 rounded-xl border transition-all ${
+                      indicatorConsensus.bias === 'CALL'
+                        ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                        : indicatorConsensus.bias === 'PUT'
+                          ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
+                          : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
                     }`}
+                  >
+                    <div className="flex items-center justify-between pb-2">
+                      <div className="flex items-center gap-2">
+                        {indicatorConsensus.bias === 'CALL' && (
+                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                            <TrendingUp className="w-4 h-4" />
+                          </div>
+                        )}
+                        {indicatorConsensus.bias === 'PUT' && (
+                          <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
+                            <TrendingDown className="w-4 h-4" />
+                          </div>
+                        )}
+                        {indicatorConsensus.bias === 'NEUTRO' && (
+                          <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                            <Gauge className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-[10px] text-neutral-400 uppercase font-semibold">
+                            Consenso Geral dos 10 Indicadores
+                          </div>
+                          <div
+                            className={`text-sm font-black tracking-wider ${
+                              indicatorConsensus.bias === 'CALL'
+                                ? 'text-emerald-400'
+                                : indicatorConsensus.bias === 'PUT'
+                                  ? 'text-rose-400'
+                                  : 'text-amber-400'
+                            }`}
+                          >
+                            {indicatorConsensus.verdict}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-xs font-mono font-bold text-white">
+                          {indicatorConsensus.bias === 'CALL'
+                            ? `${indicatorConsensus.callPercent}% ALTA`
+                            : indicatorConsensus.bias === 'PUT'
+                              ? `${indicatorConsensus.putPercent}% BAIXA`
+                              : `${indicatorConsensus.neutralPercent}% NEUTRO`}
+                        </div>
+                        <div className="text-[9px] text-neutral-400 font-mono">
+                          {indicatorConsensus.callCount}C / {indicatorConsensus.neutralCount}N / {indicatorConsensus.putCount}V
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Barra de Distribuição Visual do Consenso */}
+                    <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden flex border border-white/10">
+                      <div
+                        className="bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${indicatorConsensus.callPercent}%` }}
+                        title={`Alta: ${indicatorConsensus.callPercent}%`}
+                      />
+                      <div
+                        className="bg-amber-500/60 transition-all duration-500"
+                        style={{ width: `${indicatorConsensus.neutralPercent}%` }}
+                        title={`Neutro: ${indicatorConsensus.neutralPercent}%`}
+                      />
+                      <div
+                        className="bg-rose-500 transition-all duration-500"
+                        style={{ width: `${indicatorConsensus.putPercent}%` }}
+                        title={`Baixa: ${indicatorConsensus.putPercent}%`}
+                      />
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between text-[9px] font-mono">
+                      <span className="text-emerald-400 font-bold">
+                        ▲ {indicatorConsensus.callCount} Confirmando Alta
+                      </span>
+                      <span className="text-neutral-400">
+                        ▬ {indicatorConsensus.neutralCount} Neutros
+                      </span>
+                      <span className="text-rose-400 font-bold">
+                        ▼ {indicatorConsensus.putCount} Confirmando Baixa
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. DELTA DE PRESSÃO COMPRADORA X VENDEDORA */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg font-mono">
+                  <div className="flex items-center justify-between pb-1 border-b border-neutral-800/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+                      <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                      PRESSÃO DE ORDER FLOW (DELTA)
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                        technicalData.delta.status === 'ALTA'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.delta.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300'
+                      }`}
+                    >
+                      {technicalData.delta.netDelta > 0 ? `+${technicalData.delta.netDelta}% NET` : `${technicalData.delta.netDelta}% NET`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs font-bold pt-1">
+                    <span className="text-emerald-400">
+                      Compradores: {technicalData.delta.buyerPercent}%
+                    </span>
+                    <span className="text-rose-400">
+                      Vendedores: {technicalData.delta.sellerPercent}%
+                    </span>
+                  </div>
+
+                  <div className="w-full bg-neutral-900 rounded-full h-2.5 overflow-hidden flex border border-neutral-800">
+                    <div
+                      className="bg-emerald-500 transition-all duration-500"
+                      style={{ width: `${technicalData.delta.buyerPercent}%` }}
+                    />
+                    <div
+                      className="bg-rose-500 transition-all duration-500"
+                      style={{ width: `${technicalData.delta.sellerPercent}%` }}
+                    />
+                  </div>
+
+                  <div className="text-[9.5px] text-neutral-400 leading-tight">
+                    {technicalData.delta.description}
+                  </div>
+                </div>
+
+                {/* 4. TENDÊNCIA MAIOR DO TIMEFRAME */}
+                <div
+                  className={`p-3 rounded-2xl border transition-all shadow-md ${
+                    technicalData.majorTrend.status === 'ALTA'
+                      ? 'bg-emerald-950/20 border-emerald-500/40'
+                      : technicalData.majorTrend.status === 'BAIXA'
+                        ? 'bg-rose-950/20 border-rose-500/40'
+                        : 'bg-amber-950/20 border-amber-500/40'
+                  }`}
                 >
                   <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
@@ -2204,12 +2469,13 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                       TENDÊNCIA MAIOR ({timeframe})
                     </span>
                     <span
-                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${technicalData.majorTrend.status === 'ALTA'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
-                        : technicalData.majorTrend.status === 'BAIXA'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
-                        }`}
+                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
+                        technicalData.majorTrend.status === 'ALTA'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
+                          : technicalData.majorTrend.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                      }`}
                     >
                       {technicalData.majorTrend.status === 'ALTA' && <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
                       {technicalData.majorTrend.status === 'BAIXA' && <TrendingDown className="w-3.5 h-3.5 text-rose-400" />}
@@ -2224,527 +2490,268 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
-                {/* 3. GRID DE INDICADORES TÉCNICOS EXIGIDOS */}
+                {/* 5. GRID DOS INDICADORES TÉCNICOS DETALHADOS */}
                 <div className="space-y-2">
-                  {/* RSI */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        RSI (14)
+                  {/* RSI (14) com barra de nível */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                          RSI (Relative Strength Index 14)
+                        </div>
+                        <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                          <span>{technicalData.rsi.value}</span>
+                          <span className="text-[10px] text-neutral-400 font-normal">pts</span>
+                        </div>
                       </div>
-                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                        <span>{technicalData.rsi.value}</span>
-                        <span className="text-[10px] text-neutral-400 font-normal">pts</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.rsi.condition === 'SOBRECOMPRADO'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                          : technicalData.rsi.condition === 'SOBREVENDIDO'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                          technicalData.rsi.condition === 'SOBRECOMPRADO'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : technicalData.rsi.condition === 'SOBREVENDIDO'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                        }`}
                       >
                         {technicalData.rsi.statusLabel}
                       </span>
                     </div>
+
+                    {/* Barra visual de Sobrevenda / Neutro / Sobrecompra */}
+                    <div className="relative pt-1 pb-1">
+                      <div className="h-1.5 w-full bg-neutral-950 rounded-full overflow-hidden flex border border-neutral-800">
+                        <div className="w-[30%] bg-emerald-500/40 border-r border-emerald-500/50" />
+                        <div className="w-[40%] bg-neutral-700/40" />
+                        <div className="w-[30%] bg-rose-500/40 border-l border-rose-500/50" />
+                      </div>
+                      {/* Marcador da posição atual do RSI */}
+                      <div
+                        className="absolute top-0.5 -ml-1 w-2 h-2.5 bg-cyan-400 rounded-sm shadow-[0_0_8px_rgba(6,182,212,0.8)] transition-all"
+                        style={{ left: `${Math.min(Math.max(technicalData.rsi.value, 2), 98)}%` }}
+                      />
+                      <div className="flex items-center justify-between text-[8px] font-mono text-neutral-500 pt-1">
+                        <span>0 (Sobrevenda &lt;30)</span>
+                        <span>50</span>
+                        <span>100 (Sobrecompra &gt;70)</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* MACD */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* MACD (12, 26, 9) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
                         MACD (12, 26, 9)
                       </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                      <div className="text-[10px] text-neutral-300 font-mono">
                         {technicalData.macd.description}
                       </div>
+                      <div className="text-[9px] text-neutral-500 font-mono pt-0.5">
+                        Linha: <strong className="text-neutral-300">{technicalData.macd.macdLine}</strong> • Sinal: <strong className="text-neutral-300">{technicalData.macd.signalLine}</strong> • Hist: <strong className={technicalData.macd.histogram >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{technicalData.macd.histogram}</strong>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.macd.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.macd.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.macd.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.macd.status}
-                      </span>
-                    </div>
+                      }`}
+                    >
+                      {technicalData.macd.status}
+                    </span>
                   </div>
 
-                  {/* MÉDIAS MÓVEIS DE CURTO PERÍODO */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* Médias Móveis Rápidas (EMA 9 e EMA 21) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        MÉDIAS CURTO PERÍODO (EMA 9 / 21)
+                        Médias Rápidas (EMA 9 & EMA 21)
                       </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                      <div className="text-xs font-mono text-white font-bold">
+                        EMA 9: <span className="text-cyan-400">{technicalData.maShort.ema9.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span> • EMA 21: <span className="text-neutral-300">{technicalData.maShort.ema21.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span>
+                      </div>
+                      <div className="text-[9.5px] text-neutral-400 font-mono">
                         {technicalData.maShort.label}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maShort.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.maShort.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.maShort.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          }`}
-                      >
-                        {technicalData.maShort.status}
-                      </span>
-                    </div>
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                      }`}
+                    >
+                      {technicalData.maShort.status}
+                    </span>
                   </div>
 
-                  {/* MÉDIAS MÓVEIS DE LONGO PERÍODO */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* Médias Móveis Longas (SMA 50 e SMA 200) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        MÉDIAS LONGO PERÍODO (SMA 50 / 200)
+                        Médias Institucionais (SMA 50 & SMA 200)
                       </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                      <div className="text-xs font-mono text-white font-bold">
+                        SMA 50: <span className="text-amber-400">{technicalData.maLong.sma50.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span> • SMA 200: <span className="text-neutral-300">{technicalData.maLong.sma200.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span>
+                      </div>
+                      <div className="text-[9.5px] text-neutral-400 font-mono">
                         {technicalData.maLong.label}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.maLong.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.maLong.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.maLong.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          }`}
-                      >
-                        {technicalData.maLong.status}
-                      </span>
-                    </div>
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                      }`}
+                    >
+                      {technicalData.maLong.status}
+                    </span>
                   </div>
 
-                  {/* BANDAS DE BOLLINGER */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* Bandas de Bollinger (20, 2) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        BANDAS DE BOLLINGER (20, 2)
+                        Bandas de Bollinger (20, 2)
                       </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
+                      <div className="text-[10px] text-neutral-300 font-mono">
                         {technicalData.bollingerBands.description}
                       </div>
+                      <div className="text-[9px] text-neutral-500 font-mono pt-0.5">
+                        Sup: {technicalData.bollingerBands.upper.toFixed(2)} • Méd: {technicalData.bollingerBands.middle.toFixed(2)} • Inf: {technicalData.bollingerBands.lower.toFixed(2)} • %B: {(technicalData.bollingerBands.percentB * 100).toFixed(0)}%
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.bollingerBands.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.bollingerBands.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.bollingerBands.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.bollingerBands.status}
-                      </span>
-                    </div>
+                      }`}
+                    >
+                      {technicalData.bollingerBands.status}
+                    </span>
                   </div>
 
-                  {/* VOLUME */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* Estocástico Rápido (14, 3, 3) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        VOLUME (FLUXO NEGOCIADO)
+                        Estocástico Rápido (14, 3, 3)
                       </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
-                        {technicalData.volume.description}
+                      <div className="text-xs font-mono font-bold text-white">
+                        %K: <span className="text-cyan-400">{technicalData.stochastic.kValue.toFixed(1)}</span> • %D: <span className="text-neutral-300">{technicalData.stochastic.dValue.toFixed(1)}</span>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.volume.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.volume.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.volume.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* DELTA */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        DELTA (FLUXO COMPRADOR X VENDEDOR)
-                      </div>
-                      <div className="text-[10px] text-neutral-400 font-mono truncate max-w-[190px]">
-                        {technicalData.delta.description}
+                      <div className="text-[9.5px] text-neutral-400 font-mono">
+                        {technicalData.stochastic.label}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.delta.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.delta.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.delta.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* ADX */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        ADX (ÍNDICE DIRECIONAL MÉDIO)
-                      </div>
-                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                        <span>{technicalData.adx.value}</span>
-                        <span className="text-[10px] text-neutral-400 font-normal">força</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.adx.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.adx.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.adx.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* ESTOCÁSTICO */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        ESTOCÁSTICO (%K 14)
-                      </div>
-                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                        <span>{technicalData.stochastic.label}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.stochastic.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.stochastic.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.stochastic.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.stochastic.status}
-                      </span>
-                    </div>
+                      }`}
+                    >
+                      {technicalData.stochastic.status}
+                    </span>
                   </div>
 
-                  {/* ATR / VOLATILIDADE */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex items-center justify-between">
+                  {/* ADX (14) - Força da Tendência */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
                     <div>
                       <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        ATR / VOLATILIDADE
+                        ADX (Average Directional Index 14)
                       </div>
-                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                        <span>{technicalData.atr.pips}</span>
-                        <span className="text-[10px] text-neutral-400 font-normal">pips</span>
+                      <div className="text-xs font-mono font-bold text-white">
+                        ADX: <span className="text-amber-400">{technicalData.adx.value.toFixed(1)}</span> • {technicalData.adx.trendStrength}
+                      </div>
+                      <div className="text-[9px] text-neutral-400 font-mono">
+                        +DI (Compradores): {technicalData.adx.plusDI.toFixed(1)} • -DI (Vendedores): {technicalData.adx.minusDI.toFixed(1)}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${technicalData.atr.status === 'ALTA'
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.adx.status === 'ALTA'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.adx.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                      }`}
+                    >
+                      {technicalData.adx.status}
+                    </span>
+                  </div>
+
+                  {/* Volume Institucional */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        Volume Institucional (vs Média 20)
+                      </div>
+                      <div className="text-[10.5px] font-mono font-bold text-white">
+                        {technicalData.volume.ratio.toFixed(2)}x a média recente
+                      </div>
+                      <div className="text-[9.5px] text-neutral-400 font-mono">
+                        {technicalData.volume.description}
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.volume.status === 'ALTA'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : technicalData.volume.status === 'BAIXA'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                      }`}
+                    >
+                      {technicalData.volume.status}
+                    </span>
+                  </div>
+
+                  {/* ATR (Average True Range) */}
+                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
+                        ATR (Volatilidade Média em Pips)
+                      </div>
+                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
+                        <span>{technicalData.atr.pips.toFixed(1)}</span>
+                        <span className="text-[10px] text-neutral-400 font-normal">pips/vela</span>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
+                        technicalData.atr.status === 'ALTA'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                           : technicalData.atr.status === 'BAIXA'
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                          }`}
-                      >
-                        {technicalData.atr.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. ATALHO RÁPIDO PARA A ABA DEDICADA DE NOTÍCIAS */}
-                <div
-                  onClick={() => setActiveTab('noticias')}
-                  className="p-3 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-black border border-cyan-500/30 hover:border-cyan-400 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-md group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
-                      <Newspaper className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
-                        <span>Aba Exclusiva de Notícias & Calendário</span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                          {realNewsList.length} notícias
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-neutral-400">
-                        Clique para abrir a central completa de notícias TradingView e eventos econômicos
-                      </div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
-            )}
-
-            {/* TAB EXCLUSIVA: NOTÍCIAS REAIS & CALENDÁRIO ECONÔMICO INSTITUCIONAL */}
-            {activeTab === 'noticias' && (
-              <div className="space-y-3.5">
-                {/* 1. Header & Alerta Geral de Notícias */}
-                <div className="p-3.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl space-y-2.5 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                        <Newspaper className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-white tracking-wider uppercase">
-                          NOTÍCIAS & CALENDÁRIO ECONÔMICO
-                        </h4>
-                        <span className="text-[10px] text-neutral-400">
-                          Monitorando par {asset.symbol} • Fonte TradingView & Institucional
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                      AO VIVO
+                      }`}
+                    >
+                      {technicalData.atr.status}
                     </span>
                   </div>
-
-                  {/* Banner de Risco de Notícias */}
-                  {relevantEvents.upcomingHighImpact ? (
-                    <div className="p-3 bg-gradient-to-r from-rose-950/70 via-neutral-900 to-black border border-rose-500/50 rounded-xl space-y-1 shadow-[0_0_15px_rgba(244,63,94,0.25)]">
-                      <div className="flex items-center gap-1.5 text-rose-300 font-bold text-xs">
-                        <AlertTriangle className="w-4 h-4 text-rose-400 animate-bounce" />
-                        <span>ALERTA DE ALTO IMPACTO (3 ESTRELAS) PRÓXIMO!</span>
-                      </div>
-                      <p className="text-[10.5px] text-neutral-300 leading-relaxed">
-                        Há evento econômico de máxima volatilidade iminente. O CandleX-IA recomenda não abrir operações em opções binárias 2 minutos antes e 2 minutos após o horário da notícia.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-2.5 bg-emerald-950/30 border border-emerald-500/40 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-emerald-300 font-bold text-[11px]">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span>MERCADO LIMPO: Sem notícias de 3 estrelas iminentes</span>
-                      </div>
-                      <span className="text-[9px] text-emerald-400 font-mono bg-emerald-900/40 px-2 py-0.5 rounded border border-emerald-500/30">
-                        Alta Confiança
-                      </span>
-                    </div>
-                  )}
                 </div>
 
-                {/* 2. Sessão Global de Mercado (Sessões & Horários Mundiais) */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                      <Globe className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>SESSÕES GLOBAIS DE MERCADO</span>
-                    </div>
-                    <span className="text-[9px] text-neutral-400">
-                      {currentSession.sessionOverlap ? '⚡ Overlap Ativo (Alta Liquidez)' : 'Liquidez Padrão'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.london ? 'bg-cyan-950/40 border-cyan-500/40 text-cyan-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                      }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold">LONDRES</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.london ? 'bg-cyan-400 animate-pulse' : 'bg-neutral-600'}`} />
-                      </div>
-                      <span className="text-[9px] text-neutral-400 pt-1">04h - 13h BRT</span>
-                    </div>
-
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.newYork ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                      }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold">NOVA YORK</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.newYork ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
-                      </div>
-                      <span className="text-[9px] text-neutral-400 pt-1">09h - 18h BRT</span>
-                    </div>
-
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.tokyo ? 'bg-purple-950/40 border-purple-500/40 text-purple-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                      }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold">TÓQUIO</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.tokyo ? 'bg-purple-400 animate-pulse' : 'bg-neutral-600'}`} />
-                      </div>
-                      <span className="text-[9px] text-neutral-400 pt-1">20h - 05h BRT</span>
-                    </div>
-
-                    <div className={`p-2 rounded-xl border flex flex-col justify-between ${currentSession.sydney ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' : 'bg-black/40 border-neutral-800 text-neutral-500'
-                      }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold">SYDNEY</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${currentSession.sydney ? 'bg-amber-400 animate-pulse' : 'bg-neutral-600'}`} />
-                      </div>
-                      <span className="text-[9px] text-neutral-400 pt-1">18h - 03h BRT</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Feed de Notícias Reais de Mercado (TradingView) */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                      <Newspaper className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>MANCHETES & NOTÍCIAS AO VIVO</span>
-                    </div>
-                    <span className="text-[9px] font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/40">
-                      TRADINGVIEW FEED
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {realNewsList.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1.5 transition-all hover:border-cyan-500/40"
-                      >
-                        <div className="flex items-center justify-between text-[9px]">
-                          <span className="text-cyan-400 font-bold">{item.source}</span>
-                          <span className="text-neutral-500">{item.timeAgo}</span>
-                        </div>
-
-                        <div className="text-xs font-bold text-white leading-tight">
-                          {item.title}
-                        </div>
-
-                        <p className="text-[10px] text-neutral-300 leading-relaxed">
-                          {item.summary}
-                        </p>
-
-                        <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[9px]">
-                          <span
-                            className={`px-1.5 py-0.5 rounded font-bold ${item.impact === 'HIGH'
-                              ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
-                              : 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
-                              }`}
-                          >
-                            {item.impact === 'HIGH' ? '🔴 ALTO IMPACTO (3★)' : '🟡 MÉDIO IMPACTO (2★)'}
-                          </span>
-
-                          <span
-                            className={`px-1.5 py-0.5 rounded font-bold ${item.sentiment === 'BULLISH'
-                              ? 'text-emerald-400 bg-emerald-950/40'
-                              : item.sentiment === 'BEARISH'
-                                ? 'text-rose-400 bg-rose-950/40'
-                                : 'text-neutral-400 bg-neutral-900'
-                              }`}
-                          >
-                            {item.sentiment === 'BULLISH' ? '↗ ALTA (CALL)' : item.sentiment === 'BEARISH' ? '↘ BAIXA (PUT)' : '⚪ NEUTRO'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4. Calendário Econômico Filtrável */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>CALENDÁRIO ECONÔMICO PROGRAMADO</span>
-                    </div>
-
-                    {/* Filtros de Impacto */}
-                    <div className="flex items-center gap-1 bg-black/60 p-0.5 rounded-lg border border-neutral-800 text-[9px]">
-                      <button
-                        type="button"
-                        onClick={() => setNewsImpactFilter('ALL')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'ALL' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-neutral-400'
-                          }`}
-                      >
-                        Todas
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewsImpactFilter('HIGH')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'HIGH' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'text-neutral-400'
-                          }`}
-                      >
-                        🔴 3★
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewsImpactFilter('MEDIUM')}
-                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${newsImpactFilter === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-neutral-400'
-                          }`}
-                      >
-                        🟡 2★
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lista de Eventos Econômicos */}
-                  <div className="space-y-2">
-                    {filteredEconomicEvents.length === 0 ? (
-                      <div className="py-4 text-center text-neutral-500 text-[11px]">
-                        Nenhum evento econômico com este filtro para {asset.symbol}.
-                      </div>
-                    ) : (
-                      filteredEconomicEvents.map((evt) => (
-                        <div
-                          key={evt.id}
-                          className="p-2.5 bg-neutral-950/80 border border-neutral-800/90 rounded-xl space-y-1 hover:border-cyan-500/40 transition-all"
-                        >
-                          <div className="flex items-center justify-between text-[10px]">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800">
-                                {evt.time}
-                              </span>
-                              <span className="font-bold text-cyan-400">{evt.currency}</span>
-                              <span className="text-white font-medium truncate max-w-[200px]">{evt.event}</span>
-                            </div>
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${evt.impact === 'HIGH'
-                                ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
-                                : 'bg-amber-950 text-amber-300 border border-amber-500/40'
-                                }`}
-                            >
-                              {evt.impact === 'HIGH' ? '🔴 3 Estrelas' : '🟡 2 Estrelas'}
-                            </span>
-                          </div>
-
-                          {(evt.forecast || evt.previous) && (
-                            <div className="flex items-center justify-between text-[9px] text-neutral-400 pt-0.5 border-t border-neutral-900">
-                              <span>Projeção: <strong className="text-white">{evt.forecast || '-'}</strong></span>
-                              <span>Anterior: <strong className="text-white">{evt.previous || '-'}</strong></span>
-                            </div>
-                          )}
-
-                          {evt.description && (
-                            <p className="text-[9.5px] text-neutral-400 italic">
-                              {evt.description}
-                            </p>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* 5. Regra de Ouro do Trader Institucional */}
-                <div className="p-3 bg-gradient-to-r from-amber-950/20 via-neutral-900 to-black border border-amber-500/30 rounded-2xl space-y-1 font-mono text-[10.5px]">
-                  <div className="flex items-center gap-1.5 text-amber-300 font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Regra de Ouro de Notícias em Opções Binárias</span>
+                {/* 6. REGRA DE OURO DA CONFLUÊNCIA INSTITUCIONAL */}
+                <div className="p-3 bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border border-cyan-500/30 rounded-2xl space-y-1 font-mono text-[10.5px]">
+                  <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Regra de Ouro da Confluência Institucional</span>
                   </div>
                   <p className="text-neutral-400 leading-relaxed">
-                    Em horários de notícias de 3 estrelas (como Payroll, CPI e Taxa de Juros), a volatilidade extrema no mercado real pode gerar rompimentos falsos. Já em mercados OTC, os gráficos seguem algoritmo interno e não são impactados pelas notícias ao vivo.
+                    Para entradas de máxima assertividade em Opções Binárias, aguarde o <strong className="text-cyan-300">Consenso Geral</strong> atingir ao menos <strong className="text-emerald-400">70%</strong> na mesma direção (CALL ou PUT) alinhado à Tendência Maior. Evite abrir ordens quando o Consenso estiver Neutro.
                   </p>
                 </div>
               </div>
