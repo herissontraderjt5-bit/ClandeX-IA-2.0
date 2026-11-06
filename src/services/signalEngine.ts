@@ -75,6 +75,9 @@ export class SignalEngine {
   private lastResolvedTime = 0;
   private lastEvaluatedCandleTime = 0;
   private lastConfirmedCandleTime = 0;
+  // Cooldown anti-sinal seguido: registra o momento (ms) em que o último sinal foi confirmado
+  // e impede novo sinal até o intervalo mínimo por perfil expirar.
+  private lastSignalConfirmedAt = 0;
   private backtestResults: StrategyBacktestResult[] = [];
   private onBacktestUpdatedCallback: ((results: StrategyBacktestResult[]) => void) | null = null;
   private onSignalsUpdated: ((
@@ -201,6 +204,7 @@ export class SignalEngine {
     this.lastCancelledSignal = null;
     this.activePreAlert = null;
     this.latestConfirmedSignal = null;
+    this.lastSignalConfirmedAt = 0; // Zera o cooldown ao resetar o placar
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem(this.getStorageKey());
@@ -325,21 +329,28 @@ export class SignalEngine {
     let preAlertMinScore = 58;
     let confirmMinScore = 64;
 
+    // Cooldown mínimo (em ms) entre sinais confirmados por perfil:
+    // AGRESSIVA: 1 minuto | MODERADA: 2 minutos | CONSERVADORA: 3 minutos
+    let signalCooldownMs = 120_000; // padrão Moderada = 2 min
+
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
       // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva (a cada 5-8 velas)
       preAlertMinScore = 66;
       confirmMinScore = 72;
+      signalCooldownMs = 180_000; // 3 minutos
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagem / Alta Frequência):
       // Entradas dinâmicas rápidas (a cada 1 a 3 velas) aproveitando fluxos e momentum
       preAlertMinScore = 48;
       confirmMinScore = 55;
+      signalCooldownMs = 60_000; // 1 minuto
     } else {
       // Moderada (Mediana):
       // Equilíbrio calibrado entre frequência ágil (a cada 3-5 velas) e assertividade 80%+
       preAlertMinScore = 58;
       confirmMinScore = 64;
+      signalCooldownMs = 120_000; // 2 minutos
     }
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
@@ -480,6 +491,8 @@ export class SignalEngine {
           this.activePreAlert = null;
           this.lastCancelledSignal = null;
           this.lastResolvedTrade = null;
+          // Registra cooldown: impede sinal imediato logo após a confirmação
+          this.lastSignalConfirmedAt = Date.now();
 
           if (settings.confirmedSound) {
             if (confirmed.direction === 'CALL') {
@@ -567,6 +580,8 @@ export class SignalEngine {
           this.latestConfirmedTime = Date.now();
           this.lastCancelledSignal = null;
           this.lastResolvedTrade = null;
+          // Registra cooldown: impede sinal imediato logo após a confirmação
+          this.lastSignalConfirmedAt = Date.now();
 
           if (settings.confirmedSound) {
             if (confirmed.direction === 'CALL') {
@@ -618,6 +633,8 @@ export class SignalEngine {
           this.latestConfirmedTime = Date.now();
           this.lastCancelledSignal = null;
           this.lastResolvedTrade = null;
+          // Registra cooldown: impede sinal imediato logo após a confirmação
+          this.lastSignalConfirmedAt = Date.now();
 
           if (settings.confirmedSound) {
             if (confirmed.direction === 'CALL') {
@@ -739,7 +756,9 @@ export class SignalEngine {
       remainingSec > 10 &&
       !this.activePreAlert &&
       !activeRunningTrade &&
-      this.lastEvaluatedCandleTime !== currentCandle.time
+      this.lastEvaluatedCandleTime !== currentCandle.time &&
+      // COOLDOWN ANTI-SINAL SEGUIDO: aguarda o intervalo mínimo por perfil antes de novo sinal
+      Date.now() - this.lastSignalConfirmedAt >= signalCooldownMs
     ) {
       const targetCandleTime = candleBoundary + tfSec;
       const targetExpTime = targetCandleTime + expirationSeconds;

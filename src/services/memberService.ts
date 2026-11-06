@@ -32,7 +32,7 @@ function saveLocalMembers(map: Record<string, MemberRecord>) {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(LOCAL_STORAGE_REGISTRY_KEY, JSON.stringify(map));
-  } catch {}
+  } catch { }
 }
 
 /**
@@ -128,8 +128,8 @@ export async function recordUserLoginAttempt(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, source }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   return record;
 }
@@ -164,7 +164,7 @@ export async function checkMemberAccessStatus(emailInput: string): Promise<{
         registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
         saveLocalMembers(registry);
       }
-    } catch {}
+    } catch { }
   }
 
   const member = registry[email];
@@ -263,8 +263,8 @@ export async function recordUserHeartbeat(session: UserSession): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, name: member.name }),
-    }).catch(() => {});
-  } catch {}
+    }).catch(() => { });
+  } catch { }
 
   // Persiste no Supabase na tabela app_settings
   if (sb) {
@@ -372,7 +372,7 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
       });
       saveLocalMembers(registry);
     }
-  } catch {}
+  } catch { }
 
   // Garante que o Admin Master sempre exista
   if (!registry[ADMIN_MASTER_EMAIL]) {
@@ -460,7 +460,7 @@ export async function updateMemberAccessDays(
       if (data && data.weights && typeof data.weights === 'object') {
         registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
       }
-    } catch {}
+    } catch { }
   }
 
   const existing = registry[email];
@@ -513,7 +513,7 @@ export async function updateMemberAccessDays(
       headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
       body: JSON.stringify({ adminEmail, email, days: accessDays }),
     });
-  } catch {}
+  } catch { }
 
   return { success: true, member: updated };
 }
@@ -547,7 +547,7 @@ export async function grantMemberManual(
       if (data && data.weights && typeof data.weights === 'object') {
         registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
       }
-    } catch {}
+    } catch { }
   }
 
   const accessDays = Math.max(1, days);
@@ -585,7 +585,7 @@ export async function grantMemberManual(
         },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
-    } catch {}
+    } catch { }
   }
 
   try {
@@ -594,7 +594,7 @@ export async function grantMemberManual(
       headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
       body: JSON.stringify({ adminEmail, email, days: accessDays, notes: record.notes }),
     });
-  } catch {}
+  } catch { }
 
   return { success: true, member: record };
 }
@@ -626,7 +626,7 @@ export async function revokeMember(
       if (data && data.weights && typeof data.weights === 'object') {
         registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
       }
-    } catch {}
+    } catch { }
   }
 
   if (registry[email]) {
@@ -646,7 +646,7 @@ export async function revokeMember(
           },
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
-      } catch {}
+      } catch { }
     }
   }
 
@@ -656,7 +656,7 @@ export async function revokeMember(
       headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
       body: JSON.stringify({ adminEmail, email, notes }),
     });
-  } catch {}
+  } catch { }
 
   return { success: true, member: registry[email] };
 }
@@ -687,7 +687,7 @@ export async function deleteMember(
       if (data && data.weights && typeof data.weights === 'object') {
         registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
       }
-    } catch {}
+    } catch { }
   }
 
   delete registry[email];
@@ -704,7 +704,7 @@ export async function deleteMember(
         },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
-    } catch {}
+    } catch { }
   }
 
   try {
@@ -713,7 +713,7 @@ export async function deleteMember(
       headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
       body: JSON.stringify({ adminEmail, email }),
     });
-  } catch {}
+  } catch { }
 
   return { success: true };
 }
