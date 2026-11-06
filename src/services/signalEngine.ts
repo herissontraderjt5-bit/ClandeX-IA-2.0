@@ -400,8 +400,9 @@ export class SignalEngine {
     const expirationSeconds = tfSec;
     const candleBoundary = currentCandle?.time || (now - (((now % tfSec) + tfSec) % tfSec));
 
-    // Momento exato da CONFIRMAÇÃO FALTANDO 10 SEGUNDOS RESTANTES na vela atual
-    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 1;
+    // Momento exato da CONFIRMAÇÃO FALTANDO ENTRE 10 E 5 SEGUNDOS RESTANTES na vela atual
+    // O usuário definiu: "o pré-alerta só vai confirmar a entrada ou cancelar a operação faltando entre 10 a 5 segundos"
+    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 5;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
     // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela no Horário de Brasília)
@@ -443,6 +444,35 @@ export class SignalEngine {
             stage: 'CANCELLED',
             cancelledAt: Date.now(),
             cancelReason,
+          };
+          this.lastCancelledSignal = cancelled;
+          this.lastCancelledTime = Date.now();
+          this.lastConfirmedCandleTime = currentCandle.time;
+          this.activePreAlert = null;
+
+          audioAlerts.playCancelAlert();
+          if (this.onSignalEventCallback) {
+            this.onSignalEventCallback(cancelled, 'CANCELLED');
+          }
+          this.notify();
+          return;
+        }
+
+        // TRAVA ABSOLUTA FINAL: nunca confirmar CALL em Resistência nem PUT em Suporte
+        // mesmo que o pré-alerta tenha sido emitido antes do preço atingir o nível
+        const isFinalBuyAtResistance = this.activePreAlert.direction === 'CALL' && marketAnalysis?.nearResistance;
+        const isFinalSellAtSupport   = this.activePreAlert.direction === 'PUT'  && marketAnalysis?.nearSupport;
+
+        if (isFinalBuyAtResistance || isFinalSellAtSupport) {
+          const srReason = isFinalBuyAtResistance
+            ? 'CALL bloqueado: preço atingiu zona de Resistência. Operação cancelada para proteção de banca.'
+            : 'PUT bloqueado: preço atingiu zona de Suporte. Operação cancelada para proteção de banca.';
+
+          const cancelled: SignalRecord = {
+            ...this.activePreAlert,
+            stage: 'CANCELLED',
+            cancelledAt: Date.now(),
+            cancelReason: srReason,
           };
           this.lastCancelledSignal = cancelled;
           this.lastCancelledTime = Date.now();
@@ -656,7 +686,8 @@ export class SignalEngine {
     }
 
     // 4. CANCELAMENTO DO PRÉ-ALERTA DURANTE A VELA:
-    // OBRIGATORIAMENTE SÓ CANCELA SE HOUVER PAVIO DE REJEIÇÃO MAIOR QUE O CORPO DA VELA
+    // Cancela se houver pavio de rejeição maior que o corpo da vela
+    // OU se o preço atingiu zona de Suporte/Resistência contrária ao sinal durante a vela
     if (this.activePreAlert && remainingSec < tfSec - 3 && remainingSec > 10) {
       const body = Math.abs(currentCandle.close - currentCandle.open);
       const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
@@ -671,6 +702,17 @@ export class SignalEngine {
       } else if (this.activePreAlert.direction === 'PUT' && lowerWick > body && lowerWick > 0.00001) {
         hasWickReversal = true;
         wickReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo (${body.toFixed(5)}). Pré-alerta abortado.`;
+      }
+
+      // Bloqueia CALL se preço atingiu resistência durante a vela
+      if (!hasWickReversal && this.activePreAlert.direction === 'CALL' && marketAnalysis?.nearResistance) {
+        hasWickReversal = true;
+        wickReason = 'CALL cancelado: preço atingiu zona de Resistência durante a vela. Proteção de banca ativada.';
+      }
+      // Bloqueia PUT se preço atingiu suporte durante a vela
+      if (!hasWickReversal && this.activePreAlert.direction === 'PUT' && marketAnalysis?.nearSupport) {
+        hasWickReversal = true;
+        wickReason = 'PUT cancelado: preço atingiu zona de Suporte durante a vela. Proteção de banca ativada.';
       }
 
       if (hasWickReversal) {
@@ -690,7 +732,22 @@ export class SignalEngine {
       }
     }
 
-    // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação faltando 10s)
+    // Se o pré-alerta ultrapassou a janela de confirmação (10s a 5s) sem confirmação, cancela para evitar entrada tardia
+    if (this.activePreAlert && remainingSec < 5) {
+      const cancelled: SignalRecord = {
+        ...this.activePreAlert,
+        stage: 'CANCELLED',
+        cancelledAt: Date.now(),
+        cancelReason: 'Janela de confirmação (10s a 5s) ultrapassada. Entrada abortada.',
+      };
+      this.lastCancelledSignal = cancelled;
+      this.lastCancelledTime = Date.now();
+      this.activePreAlert = null;
+      this.notify();
+      return;
+    }
+
+    // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação faltando 10s a 5s)
     // 5.1 Prioridade para as ESTRATÉGIAS MODULARES ATIVAS SELECIONADAS PELO USUÁRIO COM FILTRO DE CONFLUÊNCIA
     const activeStrategies = settings.activeStrategies || getStoredActiveStrategies();
     const stratDecision = getBestActiveStrategySignal(
@@ -856,18 +913,22 @@ export class SignalEngine {
         tradeCandle = (currentCandle && Math.abs(currentCandle.time - entryTime) < expirationSec) ? currentCandle : null;
       }
 
-      // Localiza a vela subsequente (iniciada em expTime)
+      // Localiza a vela SUBSEQUENTE (iniciada em expTime):
+      // REGRA CRÍTICA: nextCandle DEVE ser estritamente posterior a tradeCandle para não
+      // confundir a mesma vela como "próxima" e usar seu close indevido como fechamento.
       let nextCandle: Candle | null = null;
       let minExpDiff = Infinity;
       for (const c of candleList) {
+        // Apenas velas que comecem DEPOIS da vela da operação (time > entryTime)
+        if (c.time <= entryTime) continue;
         const delta = Math.abs(c.time - expTime);
         if (delta < minExpDiff) {
           minExpDiff = delta;
           nextCandle = c;
         }
       }
-      if (minExpDiff > expirationSec * 1.5) {
-        nextCandle = (currentCandle && Math.abs(currentCandle.time - expTime) < expirationSec) ? currentCandle : null;
+      if (minExpDiff > expirationSec * 2) {
+        nextCandle = null; // Descarta se estiver muito longe do tempo esperado
       }
 
       // A vela do sinal encerra quando:
@@ -884,23 +945,23 @@ export class SignalEngine {
 
       if (isExpired) {
         // ABERTURA OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: Preço travado no momento em que a vela do sinal abriu (candleOpenPrice) - NUNCA SOBRESCREVER!
-        // Prioridade 2: Taxa de abertura da vela da operação no gráfico (tradeCandle.open)
-        // Prioridade 3: entryPrice
-        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-          ? trade.candleOpenPrice
-          : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : trade.entryPrice);
+        // Prioridade 1: tradeCandle.open (abertura real da vela da operação no gráfico da corretora)
+        // Prioridade 2: Preço travado (candleOpenPrice)
+        // Prioridade 3: entryPrice (fallback)
+        const officialOpen = (tradeCandle && tradeCandle.open > 0)
+          ? tradeCandle.open
+          : ((trade.candleOpenPrice && trade.candleOpenPrice > 0) ? trade.candleOpenPrice : trade.entryPrice);
 
         // FECHAMENTO OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: Fechamento da vela da operação (tradeCandle.close se isClosed ou se a próxima vela já abriu)
-        // Prioridade 2: Abertura da próxima vela (o open da nova vela é exatamente o close da vela anterior)
-        // Prioridade 3: Fechamento da vela da operação se já disponível (tradeCandle.close)
-        // Prioridade 4: Última cotação capturada antes da expiração (candleClosePrice)
-        // Prioridade 5: Preço atual de mercado (currentPrice)
+        // Prioridade 1: tradeCandle.close se a vela encerrou (isClosed)
+        // Prioridade 2: nextCandle.open (o open da vela seguinte é exatamente o fechamento da anterior)
+        // Prioridade 3: tradeCandle.close
+        // Prioridade 4: Última cotação capturada antes da expiração
+        // Prioridade 5: Preço atual de mercado
         let officialClose: number;
-        if (tradeCandle && (tradeCandle.isClosed || nextCandle) && tradeCandle.close > 0) {
+        if (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0) {
           officialClose = tradeCandle.close;
-        } else if (nextCandle && nextCandle.open > 0) {
+        } else if (nextCandle && nextCandle.open > 0 && nextCandle.time > entryTime) {
           officialClose = nextCandle.open;
         } else if (tradeCandle && tradeCandle.close > 0) {
           officialClose = tradeCandle.close;
@@ -994,7 +1055,8 @@ export class SignalEngine {
       return;
     }
 
-    this.resolvePendingTrades(currentPrice, nowSec, 0, allCandles);
+    const activeCandle = allCandles && allCandles.length > 0 ? allCandles[allCandles.length - 1] : undefined;
+    this.resolvePendingTrades(currentPrice, nowSec, 0, allCandles, activeCandle);
   }
 
   /**

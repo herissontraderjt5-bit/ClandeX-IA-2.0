@@ -209,22 +209,33 @@ export function evaluateSingleStrategy(
     }
   }
 
-  // Suporte e Resistência Verdadeiros (Swing Highs e Swing Lows dos últimos 25 a 40 candles)
+  // Suporte e Resistência Verdadeiros (Mapeamento de TODOS os Swing Highs e Swing Lows recentes)
   const lookback = Math.min(40, index);
   let swingHigh = -Infinity;
   let swingLow = Infinity;
   let touchesHigh = 0;
   let touchesLow = 0;
+  const allSwingHighs: number[] = [];
+  const allSwingLows: number[] = [];
 
-  for (let k = index - lookback; k < index; k++) {
+  for (let k = Math.max(1, index - lookback); k < index; k++) {
     const c = candles[k];
+    const prevC = candles[k - 1];
+    const nextC = candles[k + 1];
     if (!c) continue;
     if (c.high > swingHigh) swingHigh = c.high;
     if (c.low < swingLow) swingLow = c.low;
+
+    if (prevC && nextC) {
+      if (c.high >= prevC.high && c.high >= nextC.high) allSwingHighs.push(c.high);
+      if (c.low <= prevC.low && c.low <= nextC.low) allSwingLows.push(c.low);
+    }
   }
+  if (swingHigh > -Infinity) allSwingHighs.push(swingHigh);
+  if (swingLow < Infinity) allSwingLows.push(swingLow);
 
   // Conta toques nas regiões para validar consistência
-  const zoneTolerance = atr * 0.45;
+  const zoneTolerance = atr * 0.85;
   for (let k = index - lookback; k < index; k++) {
     const c = candles[k];
     if (!c) continue;
@@ -232,8 +243,17 @@ export function evaluateSingleStrategy(
     if (Math.abs(c.low - swingLow) <= zoneTolerance) touchesLow++;
   }
 
-  const nearRes = Math.abs(current.high - swingHigh) <= zoneTolerance || current.high >= swingHigh;
-  const nearSup = Math.abs(current.low - swingLow) <= zoneTolerance || current.low <= swingLow;
+  // Zona de Resistência: se o preço atual ou pavio superior está testando QUALQUER topo recente
+  const nearRes =
+    Math.abs(current.high - swingHigh) <= zoneTolerance ||
+    current.high >= swingHigh ||
+    allSwingHighs.some((h) => Math.abs(current.close - h) <= zoneTolerance || Math.abs(current.high - h) <= zoneTolerance || (current.high >= h && current.close <= h + zoneTolerance * 0.4));
+
+  // Zona de Suporte: se o preço atual ou pavio inferior está testando QUALQUER fundo recente
+  const nearSup =
+    Math.abs(current.low - swingLow) <= zoneTolerance ||
+    current.low <= swingLow ||
+    allSwingLows.some((l) => Math.abs(current.close - l) <= zoneTolerance || Math.abs(current.low - l) <= zoneTolerance || (current.low <= l && current.close >= l - zoneTolerance * 0.4));
 
   // RSI de 9 períodos com suavização
   let gains = 0;

@@ -200,9 +200,11 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   if (highestHigh > -Infinity) rawPeaks.push({ price: highestHigh, type: 'HIGH' });
   if (lowestLow < Infinity) rawPeaks.push({ price: lowestLow, type: 'LOW' });
 
-  // Cluster nearby levels within 0.25 * ATR
+  // Cluster nearby levels within 0.25 * ATR, separando Topos (Resistências) e Fundos (Suportes)
   const clusterDistance = Math.max(atr * 0.25, 0.00005);
   const clusteredLevels: { price: number; touches: number }[] = [];
+  const swingHighs: { price: number; touches: number }[] = [];
+  const swingLows: { price: number; touches: number }[] = [];
 
   for (const peak of rawPeaks) {
     const existing = clusteredLevels.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
@@ -211,6 +213,24 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
       existing.price = (existing.price * (existing.touches - 1) + peak.price) / existing.touches;
     } else {
       clusteredLevels.push({ price: peak.price, touches: 1 });
+    }
+
+    if (peak.type === 'HIGH') {
+      const exH = swingHighs.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
+      if (exH) {
+        exH.touches += 1;
+        exH.price = (exH.price * (exH.touches - 1) + peak.price) / exH.touches;
+      } else {
+        swingHighs.push({ price: peak.price, touches: 1 });
+      }
+    } else {
+      const exL = swingLows.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
+      if (exL) {
+        exL.touches += 1;
+        exL.price = (exL.price * (exL.touches - 1) + peak.price) / exL.touches;
+      } else {
+        swingLows.push({ price: peak.price, touches: 1 });
+      }
     }
   }
 
@@ -294,10 +314,15 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     if (rawSupports[i]) keyLevels.push(rawSupports[i]);
   }
 
-  // Proximity to S/R (within 0.70 * ATR) - Proteção rigorosa contra compra em topo e venda em fundo
-  const proximityThreshold = atr * 0.70;
-  const nearSupport = rawSupports.slice(0, 3).some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold);
-  const nearResistance = rawResistances.slice(0, 3).some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold);
+  // Proximity to S/R: detecta se o preço ou pavio está testando ou encostando em Resistência ou Suporte
+  const proximityThreshold = atr * 1.25;
+  const nearSupport =
+    rawSupports.slice(0, 3).some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold) ||
+    swingLows.some((l) => Math.abs(currentPrice - l.price) <= proximityThreshold || (latest.low <= l.price + proximityThreshold && latest.low >= l.price - proximityThreshold * 0.5));
+
+  const nearResistance =
+    rawResistances.slice(0, 3).some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold) ||
+    swingHighs.some((h) => Math.abs(currentPrice - h.price) <= proximityThreshold || (latest.high >= h.price - proximityThreshold && latest.high <= h.price + proximityThreshold * 0.5));
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;
