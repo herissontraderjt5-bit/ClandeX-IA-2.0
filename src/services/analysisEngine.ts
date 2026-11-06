@@ -314,28 +314,28 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     if (rawSupports[i]) keyLevels.push(rawSupports[i]);
   }
 
-  // Proximity to S/R: detecta se o preço ou pavio da vela atual está diretamente na zona de toque de uma taxa principal
-  const proximityThreshold = Math.max(atr * 0.45, 0.00015);
+  // Proximity to S/R: detecta se o preço ou pavio da vela atual está diretamente na zona de toque de uma taxa principal consolidada
+  const proximityThreshold = Math.max(atr * 0.35, 0.00012);
 
-  // Considera todas as resistências ativas e o topo máximo expressivo
-  const keyResistances = rawResistances.slice(0, 3);
-  const nearResistance =
-    keyResistances.some((r) =>
-      Math.abs(r.price - currentPrice) <= proximityThreshold ||
-      Math.abs(r.price - latest.high) <= proximityThreshold ||
-      (latest.high >= r.price - proximityThreshold && latest.close <= r.price + proximityThreshold * 0.5)
-    ) ||
-    (highestHigh > -Infinity && (latest.high >= highestHigh - proximityThreshold || currentPrice >= highestHigh - proximityThreshold));
+  // Apenas níveis de Resistência e Suporte estabelecidos com 2 ou mais toques reais representam barreiras contra tendência
+  const establishedResistances = rawResistances.filter((r) => r.touches >= 2 || r.strength === 'STRONG');
+  const establishedSupports = rawSupports.filter((s) => s.touches >= 2 || s.strength === 'STRONG');
 
-  // Considera todos os suportes ativos e o fundo mínimo expressivo
-  const keySupports = rawSupports.slice(0, 3);
-  const nearSupport =
-    keySupports.some((s) =>
-      Math.abs(currentPrice - s.price) <= proximityThreshold ||
-      Math.abs(latest.low - s.price) <= proximityThreshold ||
-      (latest.low <= s.price + proximityThreshold && latest.close >= s.price - proximityThreshold * 0.5)
-    ) ||
-    (lowestLow < Infinity && (latest.low <= lowestLow + proximityThreshold || currentPrice <= lowestLow + proximityThreshold));
+  // Só é considerado perto de resistência se estiver testando um teto com 2+ toques E deixando rejeição superior
+  const nearResistance = establishedResistances.some(
+    (r) =>
+      (Math.abs(r.price - currentPrice) <= proximityThreshold || Math.abs(r.price - latest.high) <= proximityThreshold) &&
+      latest.close <= r.price &&
+      upperWick >= body * 0.35
+  );
+
+  // Só é considerado perto de suporte se estiver testando um chão com 2+ toques E deixando rejeição inferior
+  const nearSupport = establishedSupports.some(
+    (s) =>
+      (Math.abs(currentPrice - s.price) <= proximityThreshold || Math.abs(latest.low - s.price) <= proximityThreshold) &&
+      latest.close >= s.price &&
+      lowerWick >= body * 0.35
+  );
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;
@@ -933,13 +933,13 @@ export function calculateConfluences(
     direction = 'NEUTRO';
     totalScore = Math.max(totalCall, totalPut);
   } else if (scoreDiff >= minAdvantage && totalCall >= minThreshold && hasCallPillars) {
-    // TRAVA ANTI-LOSS: NUNCA COMPRE (CALL) EM CIMA DE RESISTÊNCIA!
+    // TRAVA ANTI-LOSS: NUNCA COMPRE (CALL) EM CIMA DE RESISTÊNCIA COM REJEIÇÃO COMPROVADA!
     if (analysis.nearResistance) {
       direction = 'NEUTRO';
       totalScore = 40;
-      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: COMPRA (CALL) BLOQUEADA! O preço está em cima de uma RESISTÊNCIA.');
-    } else if (tvRec === 'FORTE VENDA' || tvRec === 'VENDA') {
-      // Filtro Institucional: se TradingView oficial indica VENDA ou FORTE VENDA, não abra CALL contra a maré
+      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: COMPRA (CALL) BLOQUEADA! O preço rejeitou em zona de RESISTÊNCIA.');
+    } else if (tvRec === 'FORTE VENDA') {
+      // Filtro Institucional: se TradingView oficial indica FORTE VENDA, não abra CALL contra a maré
       direction = 'NEUTRO';
       totalScore = Math.min(totalCall, 50);
       reasons.unshift(`Proteção Anti-Loss: CALL abortado pois o TradingView indica ${tvRec}`);
@@ -952,13 +952,13 @@ export function calculateConfluences(
       smcFinalScore = normalizedSMCCall;
     }
   } else if (scoreDiff <= -minAdvantage && totalPut >= minThreshold && hasPutPillars) {
-    // TRAVA ANTI-LOSS: NUNCA VENDA (PUT) EM CIMA DE SUPORTE!
+    // TRAVA ANTI-LOSS: NUNCA VENDA (PUT) EM CIMA DE SUPORTE COM REJEIÇÃO COMPROVADA!
     if (analysis.nearSupport) {
       direction = 'NEUTRO';
       totalScore = 40;
-      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: VENDA (PUT) BLOQUEADA! O preço está em cima de um SUPORTE.');
-    } else if (tvRec === 'FORTE COMPRA' || tvRec === 'COMPRA') {
-      // Filtro Institucional: se TradingView oficial indica COMPRA ou FORTE COMPRA, não abra PUT contra a maré
+      reasons.unshift('⛔ PROTEÇÃO ANTI-LOSS: VENDA (PUT) BLOQUEADA! O preço rejeitou em zona de SUPORTE.');
+    } else if (tvRec === 'FORTE COMPRA') {
+      // Filtro Institucional: se TradingView oficial indica FORTE COMPRA, não abra PUT contra a maré
       direction = 'NEUTRO';
       totalScore = Math.min(totalPut, 50);
       reasons.unshift(`Proteção Anti-Loss: PUT abortado pois o TradingView indica ${tvRec}`);

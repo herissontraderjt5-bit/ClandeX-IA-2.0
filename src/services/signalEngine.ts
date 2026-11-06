@@ -241,9 +241,9 @@ export class SignalEngine {
         const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expSec);
         const entryTime = trade.entryTimestamp || (expTime - expSec);
 
-        // Localiza a vela da operação correspondente à abertura da vela do sinal (entryTime, tolerância máxima de 2s)
-        const targetCandle = candleList.find((c) => Math.abs(c.time - entryTime) <= 2)
-          || (currentCandle && Math.abs(currentCandle.time - entryTime) <= 2 ? currentCandle : null);
+        // Localiza a vela da operação correspondente à abertura da vela do sinal (entryTime, tolerância de até 20s)
+        const targetCandle = candleList.find((c) => Math.abs(c.time - entryTime) < Math.min(20, expSec * 0.4))
+          || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expSec * 0.4) ? currentCandle : null);
 
         // Quando a vela do sinal abre (segundo 00:00 da vela oficial): trava a taxa oficial de abertura da vela de forma IMUTÁVEL
         if (!trade.isEntered) {
@@ -251,7 +251,7 @@ export class SignalEngine {
             trade.isEntered = true;
             const officialCandleOpen = (targetCandle && targetCandle.open > 0)
               ? targetCandle.open
-              : (currentCandle && Math.abs(currentCandle.time - entryTime) <= 2 && currentCandle.open > 0)
+              : (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expSec * 0.4) && currentCandle.open > 0)
                 ? currentCandle.open
                 : currentPrice;
 
@@ -448,22 +448,12 @@ export class SignalEngine {
           return;
         }
 
-        // TRAVA ABSOLUTA FINAL: nunca confirmar CALL em Resistência nem PUT em Suporte
-        // mesmo que o pré-alerta tenha sido emitido antes do preço atingir o nível
-        const zoneTol = Math.max((marketAnalysis?.atr || 0) * 0.45, 0.00015);
+        // TRAVA ABSOLUTA FINAL: só cancela se o preço estiver em zona de resistência/suporte E demonstrar rejeição (pavio oposto)
         const isFinalBuyAtResistance = this.activePreAlert.direction === 'CALL' && (
-          marketAnalysis?.nearResistance ||
-          (marketAnalysis?.keyLevels?.some(l => l.type === 'RESISTANCE' && (
-            Math.abs(currentCandle.high - l.price) <= zoneTol ||
-            currentCandle.high >= l.price - zoneTol
-          )))
+          marketAnalysis?.nearResistance && upperWick >= body * 0.40
         );
         const isFinalSellAtSupport = this.activePreAlert.direction === 'PUT' && (
-          marketAnalysis?.nearSupport ||
-          (marketAnalysis?.keyLevels?.some(l => l.type === 'SUPPORT' && (
-            Math.abs(currentCandle.low - l.price) <= zoneTol ||
-            currentCandle.low <= l.price + zoneTol
-          )))
+          marketAnalysis?.nearSupport && lowerWick >= body * 0.40
         );
 
         if (isFinalBuyAtResistance || isFinalSellAtSupport) {
@@ -859,15 +849,15 @@ export class SignalEngine {
       const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expirationSec);
       const entryTime = trade.entryTimestamp || (expTime - expirationSec);
 
-      // Localiza a vela exata da operação (iniciada em entryTime, tolerância máxima de 2s)
-      const tradeCandle = candleList.find((c) => Math.abs(c.time - entryTime) <= 2)
-        || (currentCandle && Math.abs(currentCandle.time - entryTime) <= 2 ? currentCandle : null);
+      // Localiza a vela exata da operação (iniciada em entryTime, tolerância de até 20s)
+      const tradeCandle = candleList.find((c) => Math.abs(c.time - entryTime) < Math.min(20, expirationSec * 0.4))
+        || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expirationSec * 0.4) ? currentCandle : null);
 
-      // Localiza a vela SUBSEQUENTE (iniciada em expTime, tolerância máxima de 2s):
+      // Localiza a vela SUBSEQUENTE (iniciada em expTime, tolerância de até 20s):
       // REGRA CRÍTICA: nextCandle DEVE ser estritamente posterior a tradeCandle para não
       // confundir a mesma vela como "próxima" e usar seu close indevido como fechamento.
-      const nextCandle = candleList.find((c) => Math.abs(c.time - expTime) <= 2 && c.time > entryTime)
-        || (currentCandle && Math.abs(currentCandle.time - expTime) <= 2 && currentCandle.time > entryTime ? currentCandle : null);
+      const nextCandle = candleList.find((c) => Math.abs(c.time - expTime) < Math.min(20, expirationSec * 0.4) && c.time > entryTime)
+        || (currentCandle && Math.abs(currentCandle.time - expTime) < Math.min(20, expirationSec * 0.4) && currentCandle.time > entryTime ? currentCandle : null);
 
       // A vela do sinal encerra quando:
       // - O tempo de expiração foi atingido (nowSec >= expTime)

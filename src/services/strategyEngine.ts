@@ -235,7 +235,7 @@ export function evaluateSingleStrategy(
   if (swingLow < Infinity) allSwingLows.push(swingLow);
 
   // Conta toques nas regiões para validar consistência
-  const zoneTolerance = Math.max(atr * 0.45, 0.00015);
+  const zoneTolerance = Math.max(atr * 0.35, 0.00012);
   for (let k = index - lookback; k < index; k++) {
     const c = candles[k];
     if (!c) continue;
@@ -243,25 +243,23 @@ export function evaluateSingleStrategy(
     if (Math.abs(c.low - swingLow) <= zoneTolerance) touchesLow++;
   }
 
-  // Zona de Resistência: se a vela atual ou pavio superior está testando ou ultrapassou a região de resistência/topo recente
+  // Zona de Resistência: só é barreira se o topo teve rejeição comprovada (2+ toques)
+  // e a vela atual fechar abaixo dele com pavio superior de rejeição
+  const isEstablishedResistance = touchesHigh >= 2;
   const nearRes =
-    current.high >= swingHigh - zoneTolerance ||
-    current.close >= swingHigh - zoneTolerance ||
-    allSwingHighs.some((h) =>
-      Math.abs(current.high - h) <= zoneTolerance ||
-      Math.abs(current.close - h) <= zoneTolerance ||
-      (current.high >= h - zoneTolerance && current.close <= h + zoneTolerance * 0.5)
-    );
+    isEstablishedResistance &&
+    Math.abs(current.high - swingHigh) <= zoneTolerance &&
+    current.close <= swingHigh &&
+    upperWick >= body * 0.35;
 
-  // Zona de Suporte: se a vela atual ou pavio inferior está testando ou ultrapassou a região de suporte/fundo recente
+  // Zona de Suporte: só é barreira se o fundo teve rejeição comprovada (2+ toques)
+  // e a vela atual fechar acima dele com pavio inferior de rejeição
+  const isEstablishedSupport = touchesLow >= 2;
   const nearSup =
-    current.low <= swingLow + zoneTolerance ||
-    current.close <= swingLow + zoneTolerance ||
-    allSwingLows.some((l) =>
-      Math.abs(current.low - l) <= zoneTolerance ||
-      Math.abs(current.close - l) <= zoneTolerance ||
-      (current.low <= l + zoneTolerance && current.close >= l - zoneTolerance * 0.5)
-    );
+    isEstablishedSupport &&
+    Math.abs(current.low - swingLow) <= zoneTolerance &&
+    current.close >= swingLow &&
+    lowerWick >= body * 0.35;
 
   // RSI de 9 períodos com suavização
   let gains = 0;
@@ -328,22 +326,26 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'fluxo_tendencia': {
       // CALL NO FLUXO:
-      // Tendência de alta (EMA 9 > EMA 21). Vela fez correção tocando a média ou fechou verde rompendo máxima
+      // Tendência de alta (EMA 9 >= EMA 21 ou close > SMA 20).
+      // Vela verde saudável sem rejeição superior excessiva
+      const hasCallMomentum = isGreen && body >= atr * 0.18 && upperWick <= body * 0.70;
       const touchedEmaCall = current.low <= ema9 + zoneTolerance && current.close >= ema9;
       const isCallPullback =
         isUptrend &&
         !nearRes &&
-        (touchedEmaCall || (isGreen && current.close > prev.high && body >= atr * 0.25)) &&
-        consecutiveGreen <= 4;
+        (touchedEmaCall || (hasCallMomentum && (current.close >= prev.close || prevIsGreen))) &&
+        consecutiveGreen <= 5;
 
       // PUT NO FLUXO:
-      // Tendência de baixa (EMA 9 < EMA 21). Vela fez correção tocando a média ou fechou vermelha rompendo mínima
+      // Tendência de baixa (EMA 9 <= EMA 21 ou close < SMA 20).
+      // Vela vermelha saudável sem rejeição inferior excessiva
+      const hasPutMomentum = isRed && body >= atr * 0.18 && lowerWick <= body * 0.70;
       const touchedEmaPut = current.high >= ema9 - zoneTolerance && current.close <= ema9;
       const isPutPullback =
         isDowntrend &&
         !nearSup &&
-        (touchedEmaPut || (isRed && current.close < prev.low && body >= atr * 0.25)) &&
-        consecutiveRed <= 4;
+        (touchedEmaPut || (hasPutMomentum && (current.close <= prev.close || prevIsRed))) &&
+        consecutiveRed <= 5;
 
       if (isCallPullback && !isPutPullback) {
         return {
@@ -460,25 +462,27 @@ export function evaluateSingleStrategy(
       const prevIsRed = prev.close < prev.open;
       const prevIsGreen = prev.close > prev.open;
 
-      // CALL: Vela verde engolfa corpo da anterior
+      // CALL: Vela verde engolfa corpo da anterior sem pavio de rejeição superior
       const isCallEngulf =
         isGreen &&
         !nearRes &&
         prevIsRed &&
-        prevBody >= atr * 0.25 &&
+        prevBody >= atr * 0.18 &&
         current.close > prev.open &&
-        current.open <= prev.close &&
-        body >= prevBody * 1.05;
+        current.open <= prev.close + zoneTolerance &&
+        body >= prevBody * 0.95 &&
+        upperWick <= body * 0.60;
 
-      // PUT: Vela vermelha engolfa corpo da anterior
+      // PUT: Vela vermelha engolfa corpo da anterior sem pavio de rejeição inferior
       const isPutEngulf =
         isRed &&
         !nearSup &&
         prevIsGreen &&
-        prevBody >= atr * 0.25 &&
+        prevBody >= atr * 0.18 &&
         current.close < prev.open &&
-        current.open >= prev.close &&
-        body >= prevBody * 1.05;
+        current.open >= prev.close - zoneTolerance &&
+        body >= prevBody * 0.95 &&
+        lowerWick <= body * 0.60;
 
       if (isCallEngulf) {
         return {
@@ -509,19 +513,21 @@ export function evaluateSingleStrategy(
     // 6. Rompimento Estrutural Institucional (BOS)
     // ----------------------------------------------------
     case 'rompimento_bos': {
-      // CALL BOS: Rompimento estrutural de topo recente
+      // CALL BOS: Rompimento estrutural de topo recente com expansão de corpo
       const isCallBOS =
         isUptrend &&
-        (current.close > swingHigh || prev.close > swingHigh) &&
-        !nearRes &&
-        isGreen;
+        (current.close > swingHigh || current.high > swingHigh) &&
+        isGreen &&
+        body >= atr * 0.20 &&
+        upperWick <= body * 0.55;
 
-      // PUT BOS: Rompimento estrutural de fundo recente
+      // PUT BOS: Rompimento estrutural de fundo recente com expansão de corpo
       const isPutBOS =
         isDowntrend &&
-        (current.close < swingLow || prev.close < swingLow) &&
-        !nearSup &&
-        isRed;
+        (current.close < swingLow || current.low < swingLow) &&
+        isRed &&
+        body >= atr * 0.20 &&
+        lowerWick <= body * 0.55;
 
       if (isCallBOS) {
         return {
