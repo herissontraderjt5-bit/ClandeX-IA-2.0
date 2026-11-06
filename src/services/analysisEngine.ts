@@ -315,19 +315,27 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   }
 
   // Proximity to S/R: detecta se o preço ou pavio da vela atual está diretamente na zona de toque de uma taxa principal
-  const proximityThreshold = Math.max(atr * 0.35, 0.00012);
+  const proximityThreshold = Math.max(atr * 0.45, 0.00015);
 
-  // Considera apenas as 2 resistências ativas mais próximas e o topo máximo expressivo
-  const keyResistances = rawResistances.slice(0, 2);
+  // Considera todas as resistências ativas e o topo máximo expressivo
+  const keyResistances = rawResistances.slice(0, 3);
   const nearResistance =
-    keyResistances.some((r) => Math.abs(r.price - currentPrice) <= proximityThreshold || Math.abs(r.price - latest.high) <= proximityThreshold) ||
-    (highestHigh > -Infinity && Math.abs(highestHigh - currentPrice) <= proximityThreshold);
+    keyResistances.some((r) =>
+      Math.abs(r.price - currentPrice) <= proximityThreshold ||
+      Math.abs(r.price - latest.high) <= proximityThreshold ||
+      (latest.high >= r.price - proximityThreshold && latest.close <= r.price + proximityThreshold * 0.5)
+    ) ||
+    (highestHigh > -Infinity && (latest.high >= highestHigh - proximityThreshold || currentPrice >= highestHigh - proximityThreshold));
 
-  // Considera apenas os 2 suportes ativos mais próximos e o fundo mínimo expressivo
-  const keySupports = rawSupports.slice(0, 2);
+  // Considera todos os suportes ativos e o fundo mínimo expressivo
+  const keySupports = rawSupports.slice(0, 3);
   const nearSupport =
-    keySupports.some((s) => Math.abs(currentPrice - s.price) <= proximityThreshold || Math.abs(latest.low - s.price) <= proximityThreshold) ||
-    (lowestLow < Infinity && Math.abs(currentPrice - lowestLow) <= proximityThreshold);
+    keySupports.some((s) =>
+      Math.abs(currentPrice - s.price) <= proximityThreshold ||
+      Math.abs(latest.low - s.price) <= proximityThreshold ||
+      (latest.low <= s.price + proximityThreshold && latest.close >= s.price - proximityThreshold * 0.5)
+    ) ||
+    (lowestLow < Infinity && (latest.low <= lowestLow + proximityThreshold || currentPrice <= lowestLow + proximityThreshold));
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
   let maxRecent = -Infinity;

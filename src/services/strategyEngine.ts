@@ -235,7 +235,7 @@ export function evaluateSingleStrategy(
   if (swingLow < Infinity) allSwingLows.push(swingLow);
 
   // Conta toques nas regiões para validar consistência
-  const zoneTolerance = Math.max(atr * 0.35, 0.00015);
+  const zoneTolerance = Math.max(atr * 0.45, 0.00015);
   for (let k = index - lookback; k < index; k++) {
     const c = candles[k];
     if (!c) continue;
@@ -243,15 +243,25 @@ export function evaluateSingleStrategy(
     if (Math.abs(c.low - swingLow) <= zoneTolerance) touchesLow++;
   }
 
-  // Zona de Resistência: se a vela atual ou pavio superior está testando o topo recente mais expressivo
+  // Zona de Resistência: se a vela atual ou pavio superior está testando ou ultrapassou a região de resistência/topo recente
   const nearRes =
-    Math.abs(current.high - swingHigh) <= zoneTolerance ||
-    (current.high >= swingHigh && current.close <= swingHigh + zoneTolerance * 0.3);
+    current.high >= swingHigh - zoneTolerance ||
+    current.close >= swingHigh - zoneTolerance ||
+    allSwingHighs.some((h) =>
+      Math.abs(current.high - h) <= zoneTolerance ||
+      Math.abs(current.close - h) <= zoneTolerance ||
+      (current.high >= h - zoneTolerance && current.close <= h + zoneTolerance * 0.5)
+    );
 
-  // Zona de Suporte: se a vela atual ou pavio inferior está testando o fundo recente mais expressivo
+  // Zona de Suporte: se a vela atual ou pavio inferior está testando ou ultrapassou a região de suporte/fundo recente
   const nearSup =
-    Math.abs(current.low - swingLow) <= zoneTolerance ||
-    (current.low <= swingLow && current.close >= swingLow - zoneTolerance * 0.3);
+    current.low <= swingLow + zoneTolerance ||
+    current.close <= swingLow + zoneTolerance ||
+    allSwingLows.some((l) =>
+      Math.abs(current.low - l) <= zoneTolerance ||
+      Math.abs(current.close - l) <= zoneTolerance ||
+      (current.low <= l + zoneTolerance && current.close >= l - zoneTolerance * 0.5)
+    );
 
   // RSI de 9 períodos com suavização
   let gains = 0;

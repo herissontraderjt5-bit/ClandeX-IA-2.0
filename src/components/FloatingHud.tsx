@@ -892,15 +892,18 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
   // Live PnL check during active trade
   const isCallTrade = activeTrade?.direction === 'CALL';
-  const tradeRefOpen = activeTrade?.candleOpenPrice || activeTrade?.entryPrice || 0;
+  const tradeRefOpen = (currentCandle && activeTrade?.entryTimestamp && Math.abs(currentCandle.time - activeTrade.entryTimestamp) <= 2 && currentCandle.open > 0)
+    ? currentCandle.open
+    : (activeTrade?.candleOpenPrice || activeTrade?.entryPrice || 0);
+  const livePrice = currentCandle?.close || asset.currentPrice;
   const isWinning = isTradeRunning
     ? isCallTrade
-      ? asset.currentPrice > tradeRefOpen
-      : asset.currentPrice < tradeRefOpen
+      ? livePrice > tradeRefOpen
+      : livePrice < tradeRefOpen
     : false;
-  const isTied = isTradeRunning ? asset.currentPrice === tradeRefOpen : false;
+  const isTied = isTradeRunning ? livePrice === tradeRefOpen : false;
   const diffPips = isTradeRunning && activeTrade
-    ? Math.abs(asset.currentPrice - tradeRefOpen) * (asset.pipDecimals === 5 ? 10000 : 100)
+    ? Math.abs(livePrice - tradeRefOpen) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
   // Has recently resolved trade (exibe por 7 segundos completos para visualização clara do WIN/LOSS)
@@ -1558,7 +1561,7 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800 text-neutral-300">
-                          <span>Abertura: <strong className="text-white">{(activeTrade.candleOpenPrice || activeTrade.entryPrice).toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Abertura: <strong className="text-white">{(tradeRefOpen > 0 ? tradeRefOpen : (activeTrade.candleOpenPrice || activeTrade.entryPrice)).toFixed(asset.pipDecimals)}</strong></span>
                           <span>Término: <strong className="text-emerald-300">{activeTrade.expirationTimeFormatted || 'Fechamento'} BRT</strong></span>
                         </div>
                       </div>
