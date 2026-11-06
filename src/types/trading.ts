@@ -182,6 +182,9 @@ export interface StrategyBacktestResult {
   lastSignalDirection?: 'CALL' | 'PUT';
   lastSignalTime?: number;
   isActive: boolean;
+  isProfitable?: boolean;
+  profitStatus?: 'LUCRO' | 'PREJUIZO' | 'AGUARDANDO';
+  autoDeactivated?: boolean;
 }
 
 export interface DataSourceInfo {
@@ -240,6 +243,7 @@ export interface AppSettings {
   activeMode: 'REAL' | 'DEMO';
   analysisProfile?: AnalysisProfile; // CONSERVADORA (Sniper), MODERADA (Mediana), AGRESSIVA (Alavancagem)
   activeStrategies?: string[]; // IDs das estratégias ativas selecionadas pelo usuário
+  autoFilterProfitOnly?: boolean; // Se a IA desativa automaticamente estratégias em prejuízo
   timerOffsetSeconds?: number; // Ajuste fino de tempo em segundos com a Hiove (-15s a +15s)
   webhook: WebhookConfig;
 }

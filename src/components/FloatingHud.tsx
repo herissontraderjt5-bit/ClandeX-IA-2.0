@@ -67,6 +67,9 @@ import {
   getStoredActiveStrategies,
   storeActiveStrategies,
   runRealtimeBacktest,
+  getStoredAutoFilterProfit,
+  storeAutoFilterProfit,
+  getProfitableStrategyIds,
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
@@ -436,7 +439,13 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Estratégias Separadas e Backtest em Tempo Real
+  // Estratégias Separadas e Backtest em Tempo Real com Auto-Filtro IA de Lucro
+  const [autoFilterProfitOnly, setAutoFilterProfitOnly] = useState<boolean>(() => {
+    return settings.autoFilterProfitOnly !== undefined
+      ? settings.autoFilterProfitOnly
+      : getStoredAutoFilterProfit();
+  });
+
   const [activeStrategyIds, setActiveStrategyIds] = useState<string[]>(() => {
     return settings.activeStrategies && settings.activeStrategies.length > 0
       ? settings.activeStrategies
@@ -446,7 +455,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [backtestList, setBacktestList] = useState<StrategyBacktestResult[]>(() => {
     try {
       const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
-      return runRealtimeBacktest(list, activeStrategyIds || []);
+      return runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
     } catch (e) {
       console.error('[FloatingHud] Error initializing backtestList:', e);
       return [];
@@ -457,12 +466,48 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   useEffect(() => {
     try {
       const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
-      const results = runRealtimeBacktest(list, activeStrategyIds || []);
+      const results = runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
       setBacktestList(results);
+
+      // A IA SELECIONA E DESATIVA AUTOMATICAMENTE AS ESTRATÉGIAS EM PREJUÍZO
+      if (autoFilterProfitOnly && results.length > 0) {
+        const profitableIds = results
+          .filter((r) => r.isProfitable && !r.autoDeactivated)
+          .map((r) => r.id);
+        const safeTargetIds = profitableIds.length > 0 ? profitableIds : [results[0].id];
+
+        // Se houver discrepância com as ativas atuais, sincroniza
+        const needsSync =
+          safeTargetIds.length !== activeStrategyIds.length ||
+          !safeTargetIds.every((id) => activeStrategyIds.includes(id));
+
+        if (needsSync) {
+          setActiveStrategyIds(safeTargetIds);
+          storeActiveStrategies(safeTargetIds);
+          settings.activeStrategies = safeTargetIds;
+        }
+      }
     } catch (e) {
       console.error('[FloatingHud] Error updating backtestList:', e);
     }
-  }, [candles, activeStrategyIds]);
+  }, [candles, activeStrategyIds, autoFilterProfitOnly]);
+
+  const handleToggleAutoFilterProfit = () => {
+    const nextVal = !autoFilterProfitOnly;
+    setAutoFilterProfitOnly(nextVal);
+    storeAutoFilterProfit(nextVal);
+    settings.autoFilterProfitOnly = nextVal;
+
+    if (nextVal && backtestList.length > 0) {
+      const profitableIds = backtestList
+        .filter((r) => r.isProfitable && !r.autoDeactivated)
+        .map((r) => r.id);
+      const safeTargetIds = profitableIds.length > 0 ? profitableIds : [backtestList[0].id];
+      setActiveStrategyIds(safeTargetIds);
+      storeActiveStrategies(safeTargetIds);
+      settings.activeStrategies = safeTargetIds;
+    }
+  };
 
   const handleToggleStrategy = (stratId: string) => {
     const updated = activeStrategyIds.includes(stratId)
@@ -483,7 +528,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   const handleActivateTopStrategies = () => {
     const topIds = backtestList
-      .filter((b) => b.winRate >= 65)
+      .filter((b) => b.winRate >= 65 && b.isProfitable)
       .map((b) => b.id);
     const finalIds = topIds.length > 0 ? topIds : AVAILABLE_STRATEGIES.slice(0, 3).map((s) => s.id);
     setActiveStrategyIds(finalIds);
@@ -2118,138 +2163,162 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
                   </div>
                 </div>
 
-                {/* 3. ESTRATÉGIAS SEPARADAS & BACKTEST EM TEMPO REAL */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-3 shadow-xl">
+                {/* 3. ESTRATÉGIAS SEPARADAS & BACKTEST EM TEMPO REAL COM AUTO-FILTRO IA */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-xl font-mono">
                   {/* Header */}
                   <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800">
                     <div className="flex items-center gap-2">
                       <Layers className="w-4 h-4 text-cyan-400" />
                       <div>
-                        <div className="text-[11px] font-mono font-black text-white flex items-center gap-1.5">
-                          <span>ESTRATÉGIAS & BACKTEST EM TEMPO REAL</span>
+                        <div className="text-[11px] font-black text-white flex items-center gap-1.5">
+                          <span>ESTRATÉGIAS & BACKTEST REAL</span>
                           <span className="text-[9px] font-bold text-cyan-400 bg-cyan-950/70 border border-cyan-500/40 px-1.5 py-0.2 rounded-full">
                             {activeStrategyIds.length} Ativas
                           </span>
                         </div>
-                        <div className="text-[9.5px] font-mono text-neutral-400">
-                          Selecione as estratégias para a IA operar. Backtest recalculado vela a vela no gráfico de {asset.symbol}.
+                        <div className="text-[9.5px] text-neutral-400">
+                          Backtest vela a vela no gráfico de {asset.symbol}.
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {/* Banner do Auto-Filtro IA de Lucro */}
+                  <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/90 flex items-center justify-between gap-2 shadow-inner">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`p-1.5 rounded-lg border shrink-0 ${
+                        autoFilterProfitOnly
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                          : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                      }`}>
+                        <Bot className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-bold text-white flex items-center gap-1.5">
+                          <span>Auto-Filtro IA de Lucro</span>
+                          <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                            autoFilterProfitOnly
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                          }`}>
+                            {autoFilterProfitOnly ? 'ATIVADO' : 'DESLIGADO'}
+                          </span>
+                        </div>
+                        <div className="text-[9px] text-neutral-400 truncate">
+                          A IA desativa automaticamente estratégias em prejuízo (&lt;55% de acerto).
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleAutoFilterProfit}
+                      className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer shrink-0 ${
+                        autoFilterProfitOnly
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                          : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white'
+                      }`}
+                    >
+                      {autoFilterProfitOnly ? '✓ LIGADO' : 'DESLIGADO'}
+                    </button>
+                  </div>
+
                   {/* Quick Filter Buttons */}
-                  <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                  <div className="flex items-center gap-1.5 text-[10px]">
                     <button
                       onClick={handleActivateTopStrategies}
-                      className="flex-1 py-1 px-2 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                      className="flex-1 py-1 px-2 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 text-emerald-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
                     >
                       <Sparkles className="w-3 h-3 text-emerald-400" />
-                      <span>🎯 Top Assertivas (&gt;65%)</span>
+                      <span>🎯 Top Lucrativas (&gt;65%)</span>
                     </button>
                     <button
                       onClick={handleActivateAllStrategies}
-                      className="py-1 px-2.5 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                      className="py-1 px-2 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-cyan-300 font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shadow-sm"
                     >
                       <span>⚡ Ativar Todas</span>
                     </button>
                   </div>
 
-                  {/* List of Strategy Cards */}
-                  <div className="space-y-2">
+                  {/* List of Strategy Cards - Resumido e Limpo */}
+                  <div className="space-y-1.5">
                     {(backtestList || []).map((strat) => {
                       if (!strat) return null;
                       const isActive = (activeStrategyIds || []).includes(strat.id);
                       const winRate = Number(strat.winRate) || 0;
                       const isHighAssertive = winRate >= 65;
-                      const isDecent = winRate >= 50 && winRate < 65;
-                      const isLow = winRate > 0 && winRate < 50;
+                      const isDecent = winRate >= 55 && winRate < 65;
+                      const isLow = strat.totalTrades > 0 && winRate < 55;
 
                       return (
                         <div
                           key={strat.id}
                           onClick={() => handleToggleStrategy(strat.id)}
-                          className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${isActive
+                          className={`p-2 rounded-xl border transition-all cursor-pointer select-none flex items-center justify-between gap-2 ${
+                            isActive
                               ? isHighAssertive
-                                ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:border-emerald-400'
+                                ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/40 shadow-sm hover:border-emerald-400'
                                 : 'bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border-cyan-500/40 shadow-sm hover:border-cyan-400'
-                              : 'bg-black/40 border-neutral-800/80 opacity-50 hover:opacity-80 hover:border-neutral-700'
-                            }`}
+                              : 'bg-black/40 border-neutral-800/80 opacity-60 hover:opacity-90 hover:border-neutral-700'
+                          }`}
                         >
-                          {/* Top Row: Name, Badge & Toggle Switch */}
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-xs font-black font-mono text-white truncate">
+                          {/* Left: Nome & Placar Real */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-white truncate">
                                 {strat.badge || strat.name}
                               </span>
+                              {strat.autoDeactivated && (
+                                <span className="text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 shrink-0">
+                                  ✕ DESATIVADA PELA IA
+                                </span>
+                              )}
                             </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {/* Backtest WinRate Pill */}
-                              <span
-                                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-lg border flex items-center gap-1 ${isHighAssertive
-                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                                    : isDecent
-                                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                                      : isLow
-                                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                                  }`}
-                              >
-                                {winRate}% Assertivo
-                              </span>
-
-                              {/* Toggle Button */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleStrategy(strat.id);
-                                }}
-                                className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-black uppercase transition-all cursor-pointer ${isActive
-                                    ? 'bg-cyan-400 text-black shadow-md shadow-cyan-400/30'
-                                    : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
-                                  }`}
-                              >
-                                {isActive ? '✓ ATIVA' : 'PAUSADA'}
-                              </button>
+                            <div className="text-[9.5px] text-neutral-400 flex items-center gap-2 mt-0.5">
+                              <span>Placar: <strong className="text-emerald-400">{strat.wins || 0}W</strong> - <strong className="text-rose-400">{strat.losses || 0}L</strong></span>
+                              <span>•</span>
+                              <span>Velas: <strong className="text-neutral-300">{strat.totalTrades || 0}</strong></span>
+                              {(strat.consecutiveWins || 0) > 0 && (
+                                <span className="text-amber-400 font-bold flex items-center gap-0.5">
+                                  <Flame className="w-2.5 h-2.5 inline" /> {strat.consecutiveWins}
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          {/* Strategy Description */}
-                          <p className="text-[9.5px] font-mono text-neutral-300 leading-snug">
-                            {strat.description}
-                          </p>
+                          {/* Right: Assertividade & Botão */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
+                                isHighAssertive
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                                  : isDecent
+                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                    : isLow
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                              }`}
+                            >
+                              {winRate}%
+                            </span>
 
-                          {/* Live Backtest Metrics */}
-                          <div className="pt-1 border-t border-neutral-800/80 flex items-center justify-between text-[9px] font-mono text-neutral-400">
-                            <div className="flex items-center gap-2">
-                              <span>
-                                Placar: <strong className="text-emerald-400">{strat.wins || 0}W</strong> - <strong className="text-rose-400">{strat.losses || 0}L</strong>
-                                {(strat.ties || 0) > 0 && <span> - <strong className="text-neutral-300">{strat.ties}E</strong></span>}
-                              </span>
-                              <span>•</span>
-                              <span>
-                                Velas: <strong className="text-neutral-200">{strat.totalTrades || 0}</strong>
-                              </span>
-                            </div>
-                            {(strat.consecutiveWins || 0) > 0 && (
-                              <span className="text-emerald-400 font-bold flex items-center gap-0.5">
-                                <Flame className="w-2.5 h-2.5 text-amber-400 inline" />
-                                {strat.consecutiveWins} seguidos
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleStrategy(strat.id);
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-cyan-400 text-black shadow-sm shadow-cyan-400/30'
+                                  : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
+                              }`}
+                            >
+                              {isActive ? 'ATIVA' : 'PAUSADA'}
+                            </button>
                           </div>
                         </div>
                       );
                     })}
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-black/60 border border-neutral-800 text-[9.5px] font-mono text-neutral-400 leading-relaxed flex items-center gap-1.5">
-                    <span className="text-cyan-400 font-bold">💡 Dica Pro:</span>
-                    <span>
-                      Você pode desmarcar as estratégias que estão com assertividade baixa no ativo e manter apenas as com &gt;65% ativas.
-                    </span>
                   </div>
                 </div>
 
@@ -2287,477 +2356,359 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
               </div>
             )}
 
-            {/* TAB EXCLUSIVA: INDICADORES TÉCNICOS & CONFLUÊNCIA INSTITUCIONAL */}
+            {/* TAB EXCLUSIVA: INDICADORES TÉCNICOS RESUMIDOS & CONFLUÊNCIA */}
             {activeTab === 'indicadores' && (
-              <div className="space-y-3.5">
-                {/* 1. HEADER DO PAINEL DE INDICADORES */}
-                <div className="p-3.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl space-y-2.5 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                        <Activity className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-white tracking-wider uppercase">
-                          PAINEL TÉCNICO DE INDICADORES
-                        </h4>
-                        <span className="text-[10px] text-neutral-400">
-                          {asset.symbol} • {timeframe} • TradingView Scanner 1:1
-                        </span>
-                      </div>
+              <div className="space-y-2.5 font-mono">
+                {/* 1. Header Compacto */}
+                <div className="p-2.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                      <Activity className="w-4 h-4" />
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                        AO VIVO
-                      </span>
-                      <span className="text-[10px] font-mono font-bold text-white bg-black/60 px-2 py-0.5 rounded-lg border border-neutral-800">
-                        {technicalData.currentPrice.toFixed(asset.category === 'CRYPTO' ? 2 : 5)}
+                    <div>
+                      <h4 className="text-xs font-black text-white tracking-wider uppercase">
+                        PAINEL DE INDICADORES
+                      </h4>
+                      <span className="text-[9.5px] text-neutral-400">
+                        {asset.symbol} • {timeframe} • Scanner 1:1
                       </span>
                     </div>
                   </div>
-
-                  {/* 2. TERMÔMETRO DE CONSENSO INSTITUCIONAL GERAL */}
-                  <div
-                    className={`p-3 rounded-xl border transition-all ${
-                      indicatorConsensus.bias === 'CALL'
-                        ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                        : indicatorConsensus.bias === 'PUT'
-                          ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                          : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between pb-2">
-                      <div className="flex items-center gap-2">
-                        {indicatorConsensus.bias === 'CALL' && (
-                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
-                            <TrendingUp className="w-4 h-4" />
-                          </div>
-                        )}
-                        {indicatorConsensus.bias === 'PUT' && (
-                          <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
-                            <TrendingDown className="w-4 h-4" />
-                          </div>
-                        )}
-                        {indicatorConsensus.bias === 'NEUTRO' && (
-                          <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                            <Gauge className="w-4 h-4" />
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-[10px] text-neutral-400 uppercase font-semibold">
-                            Consenso Geral dos 10 Indicadores
-                          </div>
-                          <div
-                            className={`text-sm font-black tracking-wider ${
-                              indicatorConsensus.bias === 'CALL'
-                                ? 'text-emerald-400'
-                                : indicatorConsensus.bias === 'PUT'
-                                  ? 'text-rose-400'
-                                  : 'text-amber-400'
-                            }`}
-                          >
-                            {indicatorConsensus.verdict}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-xs font-mono font-bold text-white">
-                          {indicatorConsensus.bias === 'CALL'
-                            ? `${indicatorConsensus.callPercent}% ALTA`
-                            : indicatorConsensus.bias === 'PUT'
-                              ? `${indicatorConsensus.putPercent}% BAIXA`
-                              : `${indicatorConsensus.neutralPercent}% NEUTRO`}
-                        </div>
-                        <div className="text-[9px] text-neutral-400 font-mono">
-                          {indicatorConsensus.callCount}C / {indicatorConsensus.neutralCount}N / {indicatorConsensus.putCount}V
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Barra de Distribuição Visual do Consenso */}
-                    <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden flex border border-white/10">
-                      <div
-                        className="bg-emerald-500 transition-all duration-500"
-                        style={{ width: `${indicatorConsensus.callPercent}%` }}
-                        title={`Alta: ${indicatorConsensus.callPercent}%`}
-                      />
-                      <div
-                        className="bg-amber-500/60 transition-all duration-500"
-                        style={{ width: `${indicatorConsensus.neutralPercent}%` }}
-                        title={`Neutro: ${indicatorConsensus.neutralPercent}%`}
-                      />
-                      <div
-                        className="bg-rose-500 transition-all duration-500"
-                        style={{ width: `${indicatorConsensus.putPercent}%` }}
-                        title={`Baixa: ${indicatorConsensus.putPercent}%`}
-                      />
-                    </div>
-
-                    <div className="pt-2 flex items-center justify-between text-[9px] font-mono">
-                      <span className="text-emerald-400 font-bold">
-                        ▲ {indicatorConsensus.callCount} Confirmando Alta
-                      </span>
-                      <span className="text-neutral-400">
-                        ▬ {indicatorConsensus.neutralCount} Neutros
-                      </span>
-                      <span className="text-rose-400 font-bold">
-                        ▼ {indicatorConsensus.putCount} Confirmando Baixa
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                      AO VIVO
+                    </span>
+                    <span className="text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-lg border border-neutral-800">
+                      {technicalData.currentPrice.toFixed(asset.category === 'CRYPTO' ? 2 : 5)}
+                    </span>
                   </div>
                 </div>
 
-                {/* 3. DELTA DE PRESSÃO COMPRADORA X VENDEDORA */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg font-mono">
-                  <div className="flex items-center justify-between pb-1 border-b border-neutral-800/80">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
-                      <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-                      PRESSÃO DE ORDER FLOW (DELTA)
+                {/* 2. Termômetro de Consenso Geral Institucional (Compacto) */}
+                <div
+                  className={`p-3 rounded-xl border transition-all ${
+                    indicatorConsensus.bias === 'CALL'
+                      ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                      : indicatorConsensus.bias === 'PUT'
+                        ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
+                        : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-1.5">
+                    <div className="flex items-center gap-2">
+                      {indicatorConsensus.bias === 'CALL' && (
+                        <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                      {indicatorConsensus.bias === 'PUT' && (
+                        <div className="p-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
+                          <TrendingDown className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                      {indicatorConsensus.bias === 'NEUTRO' && (
+                        <div className="p-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                          <Gauge className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-[9px] text-neutral-400 uppercase font-semibold">
+                          Veredito Consolidado (10 Indicadores)
+                        </div>
+                        <div
+                          className={`text-xs font-black tracking-wider ${
+                            indicatorConsensus.bias === 'CALL'
+                              ? 'text-emerald-400'
+                              : indicatorConsensus.bias === 'PUT'
+                                ? 'text-rose-400'
+                                : 'text-amber-400'
+                          }`}
+                        >
+                          {indicatorConsensus.verdict}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-white">
+                        {indicatorConsensus.bias === 'CALL'
+                          ? `${indicatorConsensus.callPercent}% ALTA`
+                          : indicatorConsensus.bias === 'PUT'
+                            ? `${indicatorConsensus.putPercent}% BAIXA`
+                            : `${indicatorConsensus.neutralPercent}% NEUTRO`}
+                      </div>
+                      <div className="text-[9px] text-neutral-400">
+                        {indicatorConsensus.callCount}C / {indicatorConsensus.neutralCount}N / {indicatorConsensus.putCount}V
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barra de Distribuição Visual do Consenso */}
+                  <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden flex border border-white/10">
+                    <div
+                      className="bg-emerald-500 transition-all duration-500"
+                      style={{ width: `${indicatorConsensus.callPercent}%` }}
+                    />
+                    <div
+                      className="bg-amber-500/60 transition-all duration-500"
+                      style={{ width: `${indicatorConsensus.neutralPercent}%` }}
+                    />
+                    <div
+                      className="bg-rose-500 transition-all duration-500"
+                      style={{ width: `${indicatorConsensus.putPercent}%` }}
+                    />
+                  </div>
+
+                  <div className="pt-1.5 flex items-center justify-between text-[8.5px]">
+                    <span className="text-emerald-400 font-bold">▲ {indicatorConsensus.callCount} Alta</span>
+                    <span className="text-neutral-400">▬ {indicatorConsensus.neutralCount} Neutro</span>
+                    <span className="text-rose-400 font-bold">▼ {indicatorConsensus.putCount} Baixa</span>
+                  </div>
+                </div>
+
+                {/* 3. Order Flow Delta & Tendência Macro Integrados (Compacto) */}
+                <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-neutral-300 font-bold flex items-center gap-1">
+                      <Gauge className="w-3 h-3 text-cyan-400" />
+                      ORDER FLOW (DELTA)
                     </span>
-                    <span
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded ${
-                        technicalData.delta.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.delta.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300'
-                      }`}
-                    >
+                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                      technicalData.delta.status === 'ALTA'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : technicalData.delta.status === 'BAIXA'
+                          ? 'bg-rose-500/20 text-rose-300'
+                          : 'bg-neutral-800 text-neutral-300'
+                    }`}>
                       {technicalData.delta.netDelta > 0 ? `+${technicalData.delta.netDelta}% NET` : `${technicalData.delta.netDelta}% NET`}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs font-bold pt-1">
-                    <span className="text-emerald-400">
-                      Compradores: {technicalData.delta.buyerPercent}%
-                    </span>
-                    <span className="text-rose-400">
-                      Vendedores: {technicalData.delta.sellerPercent}%
-                    </span>
-                  </div>
-
-                  <div className="w-full bg-neutral-900 rounded-full h-2.5 overflow-hidden flex border border-neutral-800">
+                  <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden flex border border-neutral-800">
                     <div
-                      className="bg-emerald-500 transition-all duration-500"
+                      className="bg-emerald-500 transition-all duration-300"
                       style={{ width: `${technicalData.delta.buyerPercent}%` }}
                     />
                     <div
-                      className="bg-rose-500 transition-all duration-500"
+                      className="bg-rose-500 transition-all duration-300"
                       style={{ width: `${technicalData.delta.sellerPercent}%` }}
                     />
                   </div>
 
-                  <div className="text-[9.5px] text-neutral-400 leading-tight">
-                    {technicalData.delta.description}
+                  <div className="flex items-center justify-between text-[9px] text-neutral-400">
+                    <span className="text-emerald-400 font-semibold">{technicalData.delta.buyerPercent}% Compra</span>
+                    <span className="text-rose-400 font-semibold">{technicalData.delta.sellerPercent}% Venda</span>
                   </div>
                 </div>
 
-                {/* 4. TENDÊNCIA MAIOR DO TIMEFRAME */}
-                <div
-                  className={`p-3 rounded-2xl border transition-all shadow-md ${
-                    technicalData.majorTrend.status === 'ALTA'
-                      ? 'bg-emerald-950/20 border-emerald-500/40'
-                      : technicalData.majorTrend.status === 'BAIXA'
-                        ? 'bg-rose-950/20 border-rose-500/40'
-                        : 'bg-amber-950/20 border-amber-500/40'
-                  }`}
-                >
-                  <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
-                      <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-                      TENDÊNCIA MAIOR ({timeframe})
-                    </span>
-                    <span
-                      className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
-                        technicalData.majorTrend.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
-                          : technicalData.majorTrend.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
-                      }`}
-                    >
-                      {technicalData.majorTrend.status === 'ALTA' && <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />}
-                      {technicalData.majorTrend.status === 'BAIXA' && <TrendingDown className="w-3.5 h-3.5 text-rose-400" />}
-                      {technicalData.majorTrend.status}
-                    </span>
-                  </div>
-                  <div className="pt-1.5 flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-neutral-400">{technicalData.majorTrend.description}</span>
-                    <span className="text-[9px] text-neutral-400 uppercase font-semibold">
-                      Força: <strong className="text-white">{technicalData.majorTrend.strength}</strong>
-                    </span>
-                  </div>
-                </div>
-
-                {/* 5. GRID DOS INDICADORES TÉCNICOS DETALHADOS */}
-                <div className="space-y-2">
-                  {/* RSI (14) com barra de nível */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl space-y-2">
+                {/* 4. Grid de Indicadores Resumidos (2 Colunas, Super Clean) */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {/* RSI */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                          RSI (Relative Strength Index 14)
-                        </div>
-                        <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                          <span>{technicalData.rsi.value}</span>
-                          <span className="text-[10px] text-neutral-400 font-normal">pts</span>
-                        </div>
-                      </div>
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                          technicalData.rsi.condition === 'SOBRECOMPRADO'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : technicalData.rsi.condition === 'SOBREVENDIDO'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                        }`}
-                      >
-                        {technicalData.rsi.statusLabel}
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">RSI (14)</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.rsi.signal === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.rsi.signal === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.rsi.signal}
                       </span>
                     </div>
-
-                    {/* Barra visual de Sobrevenda / Neutro / Sobrecompra */}
-                    <div className="relative pt-1 pb-1">
-                      <div className="h-1.5 w-full bg-neutral-950 rounded-full overflow-hidden flex border border-neutral-800">
-                        <div className="w-[30%] bg-emerald-500/40 border-r border-emerald-500/50" />
-                        <div className="w-[40%] bg-neutral-700/40" />
-                        <div className="w-[30%] bg-rose-500/40 border-l border-rose-500/50" />
-                      </div>
-                      {/* Marcador da posição atual do RSI */}
-                      <div
-                        className="absolute top-0.5 -ml-1 w-2 h-2.5 bg-cyan-400 rounded-sm shadow-[0_0_8px_rgba(6,182,212,0.8)] transition-all"
-                        style={{ left: `${Math.min(Math.max(technicalData.rsi.value, 2), 98)}%` }}
-                      />
-                      <div className="flex items-center justify-between text-[8px] font-mono text-neutral-500 pt-1">
-                        <span>0 (Sobrevenda &lt;30)</span>
-                        <span>50</span>
-                        <span>100 (Sobrecompra &gt;70)</span>
-                      </div>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">{technicalData.rsi.value} <span className="text-[8px] text-neutral-500">pts</span></span>
+                      <span className="text-[8.5px] text-neutral-400 truncate">{technicalData.rsi.statusLabel}</span>
                     </div>
                   </div>
 
-                  {/* MACD (12, 26, 9) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        MACD (12, 26, 9)
-                      </div>
-                      <div className="text-[10px] text-neutral-300 font-mono">
-                        {technicalData.macd.description}
-                      </div>
-                      <div className="text-[9px] text-neutral-500 font-mono pt-0.5">
-                        Linha: <strong className="text-neutral-300">{technicalData.macd.macdLine}</strong> • Sinal: <strong className="text-neutral-300">{technicalData.macd.signalLine}</strong> • Hist: <strong className={technicalData.macd.histogram >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{technicalData.macd.histogram}</strong>
-                      </div>
+                  {/* MACD */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">MACD</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.macd.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.macd.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.macd.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.macd.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.macd.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.macd.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className={`text-xs font-black ${technicalData.macd.histogram >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {technicalData.macd.histogram >= 0 ? `+${technicalData.macd.histogram}` : technicalData.macd.histogram}
+                      </span>
+                      <span className="text-[8.5px] text-neutral-400 truncate">Hist.</span>
+                    </div>
                   </div>
 
-                  {/* Médias Móveis Rápidas (EMA 9 e EMA 21) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        Médias Rápidas (EMA 9 & EMA 21)
-                      </div>
-                      <div className="text-xs font-mono text-white font-bold">
-                        EMA 9: <span className="text-cyan-400">{technicalData.maShort.ema9.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span> • EMA 21: <span className="text-neutral-300">{technicalData.maShort.ema21.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span>
-                      </div>
-                      <div className="text-[9.5px] text-neutral-400 font-mono">
-                        {technicalData.maShort.label}
-                      </div>
+                  {/* EMA 9 / 21 */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">EMA (9/21)</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.maShort.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.maShort.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.maShort.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.maShort.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.maShort.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.maShort.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">
+                        {technicalData.maShort.status === 'ALTA' ? 'EMA 9 > 21' : technicalData.maShort.status === 'BAIXA' ? 'EMA 9 < 21' : 'Alinhadas'}
+                      </span>
+                      <span className="text-[8.5px] text-neutral-400">Curto</span>
+                    </div>
                   </div>
 
-                  {/* Médias Móveis Longas (SMA 50 e SMA 200) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        Médias Institucionais (SMA 50 & SMA 200)
-                      </div>
-                      <div className="text-xs font-mono text-white font-bold">
-                        SMA 50: <span className="text-amber-400">{technicalData.maLong.sma50.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span> • SMA 200: <span className="text-neutral-300">{technicalData.maLong.sma200.toFixed(asset.category === 'CRYPTO' ? 2 : 4)}</span>
-                      </div>
-                      <div className="text-[9.5px] text-neutral-400 font-mono">
-                        {technicalData.maLong.label}
-                      </div>
+                  {/* SMA 50 / 200 */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">SMA (50/200)</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.maLong.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.maLong.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.maLong.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.maLong.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.maLong.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.maLong.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">
+                        {technicalData.maLong.status === 'ALTA' ? '50 > 200' : technicalData.maLong.status === 'BAIXA' ? '50 < 200' : 'Neutras'}
+                      </span>
+                      <span className="text-[8.5px] text-neutral-400">Longo</span>
+                    </div>
                   </div>
 
-                  {/* Bandas de Bollinger (20, 2) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        Bandas de Bollinger (20, 2)
-                      </div>
-                      <div className="text-[10px] text-neutral-300 font-mono">
-                        {technicalData.bollingerBands.description}
-                      </div>
-                      <div className="text-[9px] text-neutral-500 font-mono pt-0.5">
-                        Sup: {technicalData.bollingerBands.upper.toFixed(2)} • Méd: {technicalData.bollingerBands.middle.toFixed(2)} • Inf: {technicalData.bollingerBands.lower.toFixed(2)} • %B: {(technicalData.bollingerBands.percentB * 100).toFixed(0)}%
-                      </div>
+                  {/* Bollinger */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">Bollinger</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.bollingerBands.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.bollingerBands.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.bollingerBands.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.bollingerBands.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.bollingerBands.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.bollingerBands.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">
+                        %B: {(technicalData.bollingerBands.percentB * 100).toFixed(0)}%
+                      </span>
+                      <span className="text-[8.5px] text-neutral-400 truncate">
+                        {technicalData.bollingerBands.percentB > 0.85 ? 'Topo' : technicalData.bollingerBands.percentB < 0.15 ? 'Fundo' : 'Canal'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Estocástico Rápido (14, 3, 3) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        Estocástico Rápido (14, 3, 3)
-                      </div>
-                      <div className="text-xs font-mono font-bold text-white">
-                        %K: <span className="text-cyan-400">{technicalData.stochastic.kValue.toFixed(1)}</span> • %D: <span className="text-neutral-300">{technicalData.stochastic.dValue.toFixed(1)}</span>
-                      </div>
-                      <div className="text-[9.5px] text-neutral-400 font-mono">
-                        {technicalData.stochastic.label}
-                      </div>
+                  {/* Estocástico */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">Estocástico</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.stochastic.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.stochastic.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.stochastic.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.stochastic.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.stochastic.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.stochastic.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">
+                        {technicalData.stochastic.kValue.toFixed(0)} / {technicalData.stochastic.dValue.toFixed(0)}
+                      </span>
+                      <span className="text-[8.5px] text-neutral-400 truncate">
+                        {technicalData.stochastic.kValue > 80 ? 'Sobrecompra' : technicalData.stochastic.kValue < 20 ? 'Sobrevenda' : 'Neutro'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* ADX (14) - Força da Tendência */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        ADX (Average Directional Index 14)
-                      </div>
-                      <div className="text-xs font-mono font-bold text-white">
-                        ADX: <span className="text-amber-400">{technicalData.adx.value.toFixed(1)}</span> • {technicalData.adx.trendStrength}
-                      </div>
-                      <div className="text-[9px] text-neutral-400 font-mono">
-                        +DI (Compradores): {technicalData.adx.plusDI.toFixed(1)} • -DI (Vendedores): {technicalData.adx.minusDI.toFixed(1)}
-                      </div>
+                  {/* ADX */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">ADX</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.adx.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.adx.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.adx.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.adx.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.adx.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.adx.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">{technicalData.adx.value.toFixed(1)} <span className="text-[8px] text-neutral-500">pts</span></span>
+                      <span className="text-[8.5px] text-neutral-400 truncate">
+                        {technicalData.adx.value > 25 ? 'Forte' : 'Fraco'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Volume Institucional */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        Volume Institucional (vs Média 20)
-                      </div>
-                      <div className="text-[10.5px] font-mono font-bold text-white">
-                        {technicalData.volume.ratio.toFixed(2)}x a média recente
-                      </div>
-                      <div className="text-[9.5px] text-neutral-400 font-mono">
-                        {technicalData.volume.description}
-                      </div>
+                  {/* Volume */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">Volume</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.volume.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.volume.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.volume.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.volume.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.volume.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.volume.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">{technicalData.volume.ratio.toFixed(1)}x</span>
+                      <span className="text-[8.5px] text-neutral-400">
+                        {technicalData.volume.ratio >= 1.2 ? 'Alto' : 'Normal'}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* ATR (Average True Range) */}
-                  <div className="p-3 bg-neutral-900/80 border border-neutral-800/90 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-mono text-neutral-400 font-semibold">
-                        ATR (Volatilidade Média em Pips)
-                      </div>
-                      <div className="text-sm font-black font-mono text-white flex items-center gap-1.5">
-                        <span>{technicalData.atr.pips.toFixed(1)}</span>
-                        <span className="text-[10px] text-neutral-400 font-normal">pips/vela</span>
-                      </div>
+                  {/* ATR */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">ATR</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.atr.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.atr.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.atr.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase shrink-0 ${
-                        technicalData.atr.status === 'ALTA'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : technicalData.atr.status === 'BAIXA'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
-                      }`}
-                    >
-                      {technicalData.atr.status}
-                    </span>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">{technicalData.atr.pips.toFixed(1)} <span className="text-[8px] text-neutral-500">pips</span></span>
+                      <span className="text-[8.5px] text-neutral-400">Volatilidade</span>
+                    </div>
+                  </div>
+
+                  {/* Tendência Macro */}
+                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] text-neutral-400 font-semibold">Macro ({timeframe})</span>
+                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                        technicalData.majorTrend.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
+                        technicalData.majorTrend.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                      }`}>
+                        {technicalData.majorTrend.status}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between mt-1">
+                      <span className="text-xs font-black text-white">{technicalData.majorTrend.status}</span>
+                      <span className="text-[8.5px] text-neutral-400 font-semibold">{technicalData.majorTrend.strength}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* 6. REGRA DE OURO DA CONFLUÊNCIA INSTITUCIONAL */}
-                <div className="p-3 bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border border-cyan-500/30 rounded-2xl space-y-1 font-mono text-[10.5px]">
-                  <div className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Regra de Ouro da Confluência Institucional</span>
+                {/* 5. Veredito Rápido Resumido */}
+                <div className="p-2 rounded-xl bg-black/60 border border-neutral-800 text-[10px] text-neutral-300 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span>Confluência: <strong className="text-emerald-400">{indicatorConsensus.callCount} CALL</strong> vs <strong className="text-rose-400">{indicatorConsensus.putCount} PUT</strong></span>
                   </div>
-                  <p className="text-neutral-400 leading-relaxed">
-                    Para entradas de máxima assertividade em Opções Binárias, aguarde o <strong className="text-cyan-300">Consenso Geral</strong> atingir ao menos <strong className="text-emerald-400">70%</strong> na mesma direção (CALL ou PUT) alinhado à Tendência Maior. Evite abrir ordens quando o Consenso estiver Neutro.
-                  </p>
+                  <span className={`font-bold px-2 py-0.5 rounded text-[9px] ${
+                    indicatorConsensus.bias === 'CALL' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                    indicatorConsensus.bias === 'PUT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-neutral-800 text-neutral-400'
+                  }`}>
+                    {indicatorConsensus.verdict}
+                  </span>
                 </div>
               </div>
             )}
 
-            {/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo (ETAPAS 2, 3, 4, 5, 6, 7) */}
+{/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo (ETAPAS 2, 3, 4, 5, 6, 7) */}
             {activeTab === 'voz' && (
               <div className="space-y-3">
                 {/* Voz 3D Top Banner */}

@@ -560,12 +560,45 @@ export function evaluateSingleStrategy(
 }
 
 /**
+ * Obtém se o Auto-Filtro IA de Lucro está ativo (desativa automaticamente estratégias em prejuízo)
+ */
+export function getStoredAutoFilterProfit(): boolean {
+  try {
+    const raw = localStorage.getItem('clandex_auto_filter_profit');
+    if (raw !== null) return raw === 'true';
+  } catch {}
+  return true; // Padrão: ATIVADO (A IA filtra e desativa automaticamente as que dão loss)
+}
+
+/**
+ * Salva a preferência do Auto-Filtro IA no localStorage
+ */
+export function storeAutoFilterProfit(enabled: boolean): void {
+  try {
+    localStorage.setItem('clandex_auto_filter_profit', String(enabled));
+  } catch {}
+}
+
+/**
+ * Retorna os IDs das estratégias que a IA aprovou como lucrativas (WinRate >= 55% e sem prejuízo)
+ */
+export function getProfitableStrategyIds(backtestResults: StrategyBacktestResult[]): string[] {
+  const profitable = backtestResults
+    .filter((b) => b.isProfitable && !b.autoDeactivated)
+    .map((b) => b.id);
+  if (profitable.length > 0) return profitable;
+  return backtestResults.length > 0 ? [backtestResults[0].id] : ['retração_sr'];
+}
+
+/**
  * Executa o Backtest em Tempo Real de TODAS as estratégias
  * sobre o histórico de velas atual do ativo e timeframe.
+ * Classifica lucro real e desativa automaticamente estratégias perdedoras.
  */
 export function runRealtimeBacktest(
   candles?: Candle[],
-  activeStrategyIds: string[] = getStoredActiveStrategies()
+  activeStrategyIds: string[] = getStoredActiveStrategies(),
+  autoFilterProfitOnly = getStoredAutoFilterProfit()
 ): StrategyBacktestResult[] {
   const safeActiveIds = Array.isArray(activeStrategyIds) ? activeStrategyIds : getStoredActiveStrategies();
 
@@ -584,6 +617,9 @@ export function runRealtimeBacktest(
       winRate: 0,
       consecutiveWins: 0,
       isActive: safeActiveIds.includes(strat.id),
+      isProfitable: true,
+      profitStatus: 'AGUARDANDO',
+      autoDeactivated: false,
     }));
   }
 
@@ -595,7 +631,7 @@ export function runRealtimeBacktest(
 
   // Simula vela por vela com limites protegidos contra bounds inválidos
   const maxEvalIndex = candles.length - 2;
-  const startEvalIndex = Math.max(18, candles.length - 80); // Avalia a partir do candle 18 até max
+  const startEvalIndex = Math.max(22, candles.length - 120); // Avalia a partir do candle 22 até max
 
   if (startEvalIndex > maxEvalIndex) {
     return AVAILABLE_STRATEGIES.map((strat) => ({
@@ -611,6 +647,9 @@ export function runRealtimeBacktest(
       winRate: 0,
       consecutiveWins: 0,
       isActive: safeActiveIds.includes(strat.id),
+      isProfitable: true,
+      profitStatus: 'AGUARDANDO',
+      autoDeactivated: false,
     }));
   }
 
@@ -662,6 +701,37 @@ export function runRealtimeBacktest(
     const decisiveTrades = r.wins + r.losses;
     const winRate = decisiveTrades > 0 ? Number(((r.wins / decisiveTrades) * 100).toFixed(1)) : 0;
 
+    // Lógica Real de Lucratividade para Opções Binárias (Break-even ~54% payout padrão)
+    let profitStatus: 'LUCRO' | 'PREJUIZO' | 'AGUARDANDO' = 'AGUARDANDO';
+    let isProfitable = true;
+    let autoDeactivated = false;
+
+    if (decisiveTrades >= 2) {
+      if (winRate >= 55 && r.wins >= r.losses) {
+        profitStatus = 'LUCRO';
+        isProfitable = true;
+      } else {
+        profitStatus = 'PREJUIZO';
+        isProfitable = false;
+        if (autoFilterProfitOnly) {
+          autoDeactivated = true;
+        }
+      }
+    } else if (decisiveTrades === 1) {
+      if (r.wins > 0) {
+        profitStatus = 'LUCRO';
+        isProfitable = true;
+      } else {
+        profitStatus = 'PREJUIZO';
+        isProfitable = false;
+        if (autoFilterProfitOnly) {
+          autoDeactivated = true;
+        }
+      }
+    }
+
+    const isActive = safeActiveIds.includes(strat.id) && !autoDeactivated;
+
     return {
       id: strat.id,
       name: strat.name,
@@ -676,7 +746,10 @@ export function runRealtimeBacktest(
       consecutiveWins: recordStreak(r.consecutiveWins),
       lastSignalDirection: r.lastSignal?.dir,
       lastSignalTime: r.lastSignal?.time,
-      isActive: safeActiveIds.includes(strat.id),
+      isActive,
+      isProfitable,
+      profitStatus,
+      autoDeactivated,
     };
   });
 
@@ -694,6 +767,7 @@ function recordStreak(streak: number): number {
 /**
  * Avalia todas as estratégias ativas na vela mais recente
  * e retorna a estratégia vencedora mais assertiva.
+ * Bloqueia qualquer estratégia em prejuízo para blindar o trader.
  */
 export function getBestActiveStrategySignal(
   candles: Candle[],
@@ -725,11 +799,18 @@ export function getBestActiveStrategySignal(
       continue; // No modo Sniper (Conservador), descarta estratégias muito agressivas
     }
 
+    // Trava de Segurança IA: descarta qualquer estratégia com histórico de prejuízo (< 55%)
+    if (backtestResults) {
+      const bRes = backtestResults.find((b) => b.id === stratId);
+      if (bRes && (bRes.autoDeactivated || bRes.profitStatus === 'PREJUIZO' || (bRes.totalTrades >= 2 && bRes.winRate < 55))) {
+        continue;
+      }
+    }
+
     const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex);
     if (evalRes && evalRes.direction) {
       const historicalWinRate = winRateMap[stratId] || 70;
-      // Se a estratégia no backtest estiver com assertividade muito baixa (<40%), descarta no modo moderado/conservador
-      if (profile !== 'AGRESSIVA' && historicalWinRate > 0 && historicalWinRate < 45) {
+      if (profile !== 'AGRESSIVA' && historicalWinRate > 0 && historicalWinRate < 50) {
         continue;
       }
 
