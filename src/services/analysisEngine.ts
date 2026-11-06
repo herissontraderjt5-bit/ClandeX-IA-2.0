@@ -326,7 +326,7 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     (r) =>
       (Math.abs(r.price - currentPrice) <= proximityThreshold || Math.abs(r.price - latest.high) <= proximityThreshold) &&
       latest.close <= r.price &&
-      upperWick >= body * 0.35
+      upperWick >= bodySize * 0.35
   );
 
   // Só é considerado perto de suporte se estiver testando um chão com 2+ toques E deixando rejeição inferior
@@ -334,7 +334,7 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
     (s) =>
       (Math.abs(currentPrice - s.price) <= proximityThreshold || Math.abs(latest.low - s.price) <= proximityThreshold) &&
       latest.close >= s.price &&
-      lowerWick >= body * 0.35
+      lowerWick >= bodySize * 0.35
   );
 
   // Consolidation detection: if past 6 candles all lie within 1.2 * ATR
