@@ -551,8 +551,8 @@ export class SignalEngine {
           const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
           const body = Math.abs(currentCandle.close - currentCandle.open);
 
-          const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
-          const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
+          const isHardResistanceBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
+          const isHardSupportBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
             const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
@@ -658,8 +658,8 @@ export class SignalEngine {
       const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
       const body = Math.abs(currentCandle.close - currentCandle.open);
 
-      const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
-      const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
+      const isHardResistanceBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
+      const isHardSupportBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
 
       if (!isHardResistanceBlock && !isHardSupportBlock) {
         signalDirection = stratDecision.direction;

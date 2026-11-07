@@ -71,6 +71,15 @@ export const AVAILABLE_STRATEGIES: StrategyDefinition[] = [
     description: 'Consolidação alternada de velas (1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde). Entrada de VENDA (PUT) na 5ª vela vermelha.',
     minProfile: 'MODERADA',
   },
+  {
+    id: 'estrategia_suporte_resistencia',
+    name: 'Suporte e Resistência (Price Action)',
+    badge: '🎯 SUPORTE & RESISTÊNCIA',
+    tag: 'PRICE ACTION',
+    category: 'PRICE_ACTION',
+    description: 'Operações em Zonas de Suporte e Resistência: COMPRA (CALL) em teste de suporte com rejeição compradora, ou VENDA (PUT) em teste de resistência com rejeição vendedora.',
+    minProfile: 'MODERADA',
+  },
 ];
 
 export const DEFAULT_ACTIVE_STRATEGY_IDS = [
@@ -80,6 +89,7 @@ export const DEFAULT_ACTIVE_STRATEGY_IDS = [
   'padrao_4_correcao_50_put',
   'padrao_5_consolidacao_call',
   'padrao_6_consolidacao_put',
+  'estrategia_suporte_resistencia',
 ];
 
 export function getStoredActiveStrategies(): string[] {
@@ -89,7 +99,12 @@ export function getStoredActiveStrategies(): string[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
         const valid = parsed.filter((id) => typeof id === 'string' && AVAILABLE_STRATEGIES.some((s) => s.id === id));
-        if (valid.length > 0) return valid;
+        if (valid.length > 0) {
+          if (!valid.includes('estrategia_suporte_resistencia')) {
+            valid.push('estrategia_suporte_resistencia');
+          }
+          return valid;
+        }
       }
     }
   } catch { }
@@ -286,6 +301,137 @@ export function evaluateSingleStrategy(
           };
         }
       }
+      return { direction: null, score: 0, reasons: [] };
+    }
+
+    // ----------------------------------------------------
+    // ESTRATÉGIA: Suporte e Resistência (Price Action / Retração / Reversão)
+    // ----------------------------------------------------
+    case 'estrategia_suporte_resistencia': {
+      if (index < 5) return { direction: null, score: 0, reasons: [] };
+
+      // Lookback de 20 a 40 velas para mapear topos e fundos prévios
+      const lookback = Math.min(index, 35);
+      const startIdx = index - lookback;
+
+      // Calcular ATR recente para tolerância dinâmica de toque na zona
+      let trSum = 0;
+      let trCount = 0;
+      const atrStart = Math.max(0, index - 14);
+      for (let k = atrStart; k < index; k++) {
+        trSum += (candles[k].high - candles[k].low);
+        trCount++;
+      }
+      const atr = trCount > 0 ? (trSum / trCount) : 0.0004;
+      const zoneTolerance = Math.max(atr * 0.25, 0.0001);
+
+      // Mapear topos (Resistências) e fundos (Suportes) anteriores
+      const resistances: { price: number; touches: number }[] = [];
+      const supports: { price: number; touches: number }[] = [];
+
+      for (let j = startIdx + 1; j < index - 1; j++) {
+        const cPrev = candles[j - 1];
+        const cCurr = candles[j];
+        const cNext = candles[j + 1];
+
+        // Topo local (Swing High)
+        if (cCurr.high >= cPrev.high && cCurr.high >= cNext.high) {
+          const matched = resistances.find((r) => Math.abs(r.price - cCurr.high) <= zoneTolerance);
+          if (matched) {
+            matched.touches++;
+            matched.price = (matched.price + cCurr.high) / 2;
+          } else {
+            resistances.push({ price: cCurr.high, touches: 1 });
+          }
+        }
+
+        // Fundo local (Swing Low)
+        if (cCurr.low <= cPrev.low && cCurr.low <= cNext.low) {
+          const matched = supports.find((s) => Math.abs(s.price - cCurr.low) <= zoneTolerance);
+          if (matched) {
+            matched.touches++;
+            matched.price = (matched.price + cCurr.low) / 2;
+          } else {
+            supports.push({ price: cCurr.low, touches: 1 });
+          }
+        }
+      }
+
+      const body = Math.abs(current.close - current.open);
+      const upperWick = current.high - Math.max(current.open, current.close);
+      const lowerWick = Math.min(current.open, current.close) - current.low;
+
+      // 1. TESTE DE RESISTÊNCIA ➔ SINAL DE VENDA (PUT)
+      // O preço testou o teto da resistência e demonstrou rejeição vendedora com pavio superior
+      const testedResistance = resistances.find(
+        (r) =>
+          (current.high >= r.price - zoneTolerance) &&
+          (current.close <= r.price + zoneTolerance * 0.6)
+      );
+
+      const hasBearishRejection = upperWick >= body * 0.35 && upperWick > 0.00003;
+      const isRedOrInvertedHammer = current.close <= current.open || upperWick >= body;
+
+      // 2. TESTE DE SUPORTE ➔ SINAL DE COMPRA (CALL)
+      // O preço testou o piso do suporte e demonstrou rejeição compradora com pavio inferior
+      const testedSupport = supports.find(
+        (s) =>
+          (current.low <= s.price + zoneTolerance) &&
+          (current.close >= s.price - zoneTolerance * 0.6)
+      );
+
+      const hasBullishRejection = lowerWick >= body * 0.35 && lowerWick > 0.00003;
+      const isGreenOrHammer = current.close >= current.open || lowerWick >= body;
+
+      // Conflito de pavios em vela de alta volatilidade: vence o lado com maior pavio de rejeição
+      if (testedResistance && testedSupport) {
+        if (upperWick > lowerWick && hasBearishRejection) {
+          return {
+            direction: 'PUT',
+            score: 95,
+            reasons: [
+              'Suporte & Resistência: Rejeição no Teto de Resistência',
+              `Preço testou a zona de ${testedResistance.price.toFixed(5)} (${testedResistance.touches} toques) e sofreu rejeição vendedora`,
+              'Entrada de VENDA (PUT) na próxima vela para retração/reversão',
+            ],
+          };
+        } else if (lowerWick > upperWick && hasBullishRejection) {
+          return {
+            direction: 'CALL',
+            score: 95,
+            reasons: [
+              'Suporte & Resistência: Rejeição no Piso de Suporte',
+              `Preço testou a zona de ${testedSupport.price.toFixed(5)} (${testedSupport.touches} toques) e sofreu rejeição compradora`,
+              'Entrada de COMPRA (CALL) na próxima vela para retração/reversão',
+            ],
+          };
+        }
+      }
+
+      if (testedResistance && hasBearishRejection && isRedOrInvertedHammer) {
+        return {
+          direction: 'PUT',
+          score: 95,
+          reasons: [
+            'Suporte & Resistência: Rejeição no Teto de Resistência',
+            `Preço testou a zona de ${testedResistance.price.toFixed(5)} (${testedResistance.touches} toques) e sofreu rejeição vendedora`,
+            'Entrada de VENDA (PUT) na próxima vela para retração/reversão',
+          ],
+        };
+      }
+
+      if (testedSupport && hasBullishRejection && isGreenOrHammer) {
+        return {
+          direction: 'CALL',
+          score: 95,
+          reasons: [
+            'Suporte & Resistência: Rejeição no Piso de Suporte',
+            `Preço testou a zona de ${testedSupport.price.toFixed(5)} (${testedSupport.touches} toques) e sofreu rejeição compradora`,
+            'Entrada de COMPRA (CALL) na próxima vela para retração/reversão',
+          ],
+        };
+      }
+
       return { direction: null, score: 0, reasons: [] };
     }
 
