@@ -893,9 +893,11 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
 
   // Live PnL check during active trade
   const isCallTrade = activeTrade?.direction === 'CALL';
-  const tradeRefOpen = (currentCandle && activeTrade?.entryTimestamp && Math.abs(currentCandle.time - activeTrade.entryTimestamp) < 20 && currentCandle.open > 0)
-    ? currentCandle.open
-    : (activeTrade?.candleOpenPrice || activeTrade?.entryPrice || 0);
+  const tradeRefOpen = (activeTrade?.candleOpenPrice && activeTrade.candleOpenPrice > 0)
+    ? activeTrade.candleOpenPrice
+    : ((currentCandle && activeTrade?.entryTimestamp && Math.abs(currentCandle.time - activeTrade.entryTimestamp) < 20 && currentCandle.open > 0)
+      ? currentCandle.open
+      : (activeTrade?.entryPrice || 0));
   const livePrice = currentCandle?.close || asset.currentPrice;
   const isWinning = isTradeRunning
     ? isCallTrade

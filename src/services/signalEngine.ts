@@ -260,16 +260,27 @@ export class SignalEngine {
             trade.candleOpenPrice = officialCandleOpen;
             updatedEntry = true;
           }
-
-          if (updatedEntry) {
-            const histIndex = this.signalHistory.findIndex((s) => s.id === trade.id);
-            if (histIndex !== -1) {
-              this.signalHistory[histIndex] = { ...trade };
+        } else {
+          // Nos primeiros 3 segundos após a abertura, refina com a abertura exata da vela caso o candle chegue com leve atraso do feed
+          if (trade.entryTimestamp && (nowSec - trade.entryTimestamp) <= 3) {
+            if (targetCandle && targetCandle.open > 0 && targetCandle.open !== trade.candleOpenPrice) {
+              trade.entryPrice = targetCandle.open;
+              trade.candleOpenPrice = targetCandle.open;
+              updatedEntry = true;
             }
           }
-        } else if (!trade.expirationTimestamp || nowSec <= trade.expirationTimestamp) {
-          // Atualiza continuamente a última cotação registrada antes do fechamento
-          trade.candleClosePrice = currentPrice;
+
+          if (!trade.expirationTimestamp || nowSec <= trade.expirationTimestamp) {
+            // Atualiza continuamente a última cotação registrada antes do fechamento
+            trade.candleClosePrice = currentPrice;
+          }
+        }
+
+        if (updatedEntry) {
+          const histIndex = this.signalHistory.findIndex((s) => s.id === trade.id);
+          if (histIndex !== -1) {
+            this.signalHistory[histIndex] = { ...trade };
+          }
         }
       });
 
@@ -772,25 +783,18 @@ export class SignalEngine {
 
       if (isExpired) {
         // ABERTURA OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: tradeCandle.open (abertura real da vela da operação no gráfico da corretora)
-        // Prioridade 2: Preço travado (candleOpenPrice)
-        // Prioridade 3: entryPrice (fallback)
-        const officialOpen = (tradeCandle && tradeCandle.open > 0)
-          ? tradeCandle.open
-          : ((trade.candleOpenPrice && trade.candleOpenPrice > 0) ? trade.candleOpenPrice : trade.entryPrice);
+        // Prioridade 1: Preço travado na entrada (candleOpenPrice ou entryPrice) garantindo consistência com a HUD
+        // Prioridade 2: tradeCandle.open (abertura real da vela da operação no gráfico da corretora)
+        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+          ? trade.candleOpenPrice
+          : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : trade.entryPrice);
 
         // FECHAMENTO OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: tradeCandle.close se a vela encerrou (isClosed)
-        // Prioridade 2: nextCandle.open (o open da vela seguinte é exatamente o fechamento da anterior)
-        // Prioridade 3: tradeCandle.close
-        // Prioridade 4: Última cotação capturada antes da expiração
-        // Prioridade 5: Preço atual de mercado
+        // Prioridade 1: tradeCandle.close se a vela encerrou ou possui cotação válida
+        // Prioridade 2: Última cotação capturada antes/no momento da expiração (candleClosePrice)
+        // Prioridade 3: Preço atual de mercado (currentPrice)
         let officialClose: number;
-        if (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0) {
-          officialClose = tradeCandle.close;
-        } else if (nextCandle && nextCandle.open > 0 && nextCandle.time > entryTime) {
-          officialClose = nextCandle.open;
-        } else if (tradeCandle && tradeCandle.close > 0) {
+        if (tradeCandle && tradeCandle.close > 0) {
           officialClose = tradeCandle.close;
         } else if (trade.candleClosePrice && trade.candleClosePrice > 0) {
           officialClose = trade.candleClosePrice;
@@ -801,38 +805,21 @@ export class SignalEngine {
         const diff = officialClose - officialOpen;
         const EPSILON = 1e-8;
 
+        // REGRA ESTRITA DE OPÇÕES BINÁRIAS (SEM distorções):
+        // CALL = WIN se fechou acima da abertura da vela de entrada (diff > 0)
+        // PUT  = WIN se fechou abaixo da abertura da vela de entrada (diff < 0)
         let outcome: TradeResult = 'EMPATE';
         if (trade.direction === 'CALL') {
-          // CALL: WIN se fechou acima da abertura ou se respeitou retração de 50% do Padrão 3
           if (diff > EPSILON) {
             outcome = 'WIN';
-          } else if (trade.strategyId === 'padrao_3_correcao_50_call') {
-            // No Padrão 3, o trader compra na taxa de 50% da vela de força anterior
-            const prevCandle = candleList.find((c) => c.time < (tradeCandle?.time || entryTime));
-            const mid50 = prevCandle ? (prevCandle.open + prevCandle.close) / 2 : officialOpen;
-            if (officialClose >= mid50 - EPSILON) {
-              outcome = 'WIN';
-            } else {
-              outcome = 'LOSS';
-            }
           } else if (diff < -EPSILON) {
             outcome = 'LOSS';
           } else {
             outcome = 'EMPATE';
           }
         } else {
-          // PUT: WIN se fechou abaixo da abertura ou se respeitou retração de 50% do Padrão 4
           if (diff < -EPSILON) {
             outcome = 'WIN';
-          } else if (trade.strategyId === 'padrao_4_correcao_50_put') {
-            // No Padrão 4, o trader vende na taxa de 50% da vela de força anterior
-            const prevCandle = candleList.find((c) => c.time < (tradeCandle?.time || entryTime));
-            const mid50 = prevCandle ? (prevCandle.open + prevCandle.close) / 2 : officialOpen;
-            if (officialClose <= mid50 + EPSILON) {
-              outcome = 'WIN';
-            } else {
-              outcome = 'LOSS';
-            }
           } else if (diff > EPSILON) {
             outcome = 'LOSS';
           } else {
