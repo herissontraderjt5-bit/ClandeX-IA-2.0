@@ -547,145 +547,80 @@ export class SignalEngine {
         }
       } else {
         // Confirmação direta instantânea de alta convicção faltando 10 segundos
-        // EXIGE que a estratégia E as confluências técnicas de mercado estejam 100% alinhadas
-        const activeStrategies = settings.activeStrategies || getStoredActiveStrategies();
+        // EXCLUSIVO para os 6 Padrões Oficiais CandleX-IA
+        const activeStrategies = (settings.activeStrategies && settings.activeStrategies.length > 0)
+          ? settings.activeStrategies.filter((id) => AVAILABLE_STRATEGIES.some((s) => s.id === id))
+          : getStoredActiveStrategies();
+
         const stratDecision = getBestActiveStrategySignal(
           allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
-          activeStrategies,
+          activeStrategies.length > 0 ? activeStrategies : getStoredActiveStrategies(),
           this.backtestResults,
           profile
         );
 
-        const isBuyingAtResistance = stratDecision?.direction === 'CALL' && marketAnalysis?.nearResistance;
-        const isSellingAtSupport = stratDecision?.direction === 'PUT' && marketAnalysis?.nearSupport;
+        if (stratDecision) {
+          const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
+          const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
+          const body = Math.abs(currentCandle.close - currentCandle.open);
 
-        const isOpposing =
-          stratDecision &&
-          ((stratDecision.direction === 'CALL' && confluences.direction === 'PUT') ||
-           (stratDecision.direction === 'PUT' && confluences.direction === 'CALL'));
+          const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body * 0.5;
+          const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body * 0.5;
 
-        const isAlignedWithConfluence =
-          stratDecision &&
-          !isBuyingAtResistance &&
-          !isSellingAtSupport &&
-          !isOpposing &&
-          stratDecision.score >= confirmMinScore;
+          if (!isHardResistanceBlock && !isHardSupportBlock) {
+            const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
+            const refPrice = currentCandle.close;
 
-        const isMultiConfluenceDirect =
-          !stratDecision &&
-          confluences.direction !== 'NEUTRO' &&
-          confluences.totalScore >= confirmMinScore &&
-          !(confluences.direction === 'CALL' && marketAnalysis?.nearResistance) &&
-          !(confluences.direction === 'PUT' && marketAnalysis?.nearSupport);
+            const confirmed: SignalRecord = {
+              id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              timestamp: Date.now(),
+              formattedTime,
+              entryTimeFormatted,
+              expirationTimeFormatted,
+              asset: assetSymbol,
+              timeframe,
+              expiration: activeExpiration,
+              direction: stratDecision.direction,
+              stage: 'CONFIRMED',
+              entryPrice: refPrice,
+              candleOpenPrice: currentCandle.open,
+              isEntered: true,
+              confluenceScore: stratDecision.score,
+              strategyId: stratDecision.strategy.id,
+              strategyName: stratDecision.strategy.name,
+              strategyBadge: stratDecision.strategy.badge,
+              strategyWinRate: bRes?.winRate,
+              reasons: [...stratDecision.reasons],
+              result: 'PENDING',
+              candleCloseTime: targetEntryTimestamp,
+              entryTimestamp: targetEntryTimestamp,
+              expirationTimestamp: targetExpirationTimestamp,
+              isEstimatedResult: false,
+            };
 
-        if (isAlignedWithConfluence && stratDecision) {
-          const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
-          const refPrice = currentCandle.close;
-          const combinedScore = Math.round((stratDecision.score + (confluences.totalScore || 70)) / 2);
+            this.lastConfirmedCandleTime = currentCandle.time;
+            this.latestConfirmedSignal = confirmed;
+            this.latestConfirmedTime = Date.now();
+            this.lastCancelledSignal = null;
+            this.lastResolvedTrade = null;
+            this.lastSignalConfirmedAt = Date.now();
 
-          const confirmed: SignalRecord = {
-            id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            timestamp: Date.now(),
-            formattedTime,
-            entryTimeFormatted,
-            expirationTimeFormatted,
-            asset: assetSymbol,
-            timeframe,
-            expiration: activeExpiration,
-            direction: stratDecision.direction,
-            stage: 'CONFIRMED',
-            entryPrice: refPrice,
-            candleOpenPrice: currentCandle.open,
-            isEntered: true,
-            confluenceScore: combinedScore,
-            strategyId: stratDecision.strategy.id,
-            strategyName: stratDecision.strategy.name,
-            strategyBadge: stratDecision.strategy.badge,
-            strategyWinRate: bRes?.winRate,
-            reasons: [...stratDecision.reasons, ...confluences.reasons.slice(0, 2)],
-            result: 'PENDING',
-            candleCloseTime: targetEntryTimestamp,
-            entryTimestamp: targetEntryTimestamp,
-            expirationTimestamp: targetExpirationTimestamp,
-            isEstimatedResult: false,
-          };
-
-          this.lastConfirmedCandleTime = currentCandle.time;
-          this.latestConfirmedSignal = confirmed;
-          this.latestConfirmedTime = Date.now();
-          this.lastCancelledSignal = null;
-          this.lastResolvedTrade = null;
-          // Registra cooldown: impede sinal imediato logo após a confirmação
-          this.lastSignalConfirmedAt = Date.now();
-
-          if (settings.confirmedSound) {
-            if (confirmed.direction === 'CALL') {
-              audioAlerts.playCallSignal();
-            } else {
-              audioAlerts.playPutSignal();
+            if (settings.confirmedSound) {
+              if (confirmed.direction === 'CALL') {
+                audioAlerts.playCallSignal();
+              } else {
+                audioAlerts.playPutSignal();
+              }
             }
+
+            this.dispatchSignalEvent(confirmed, 'CONFIRMED');
+
+            this.pendingTrades.push(confirmed);
+            this.signalHistory.unshift(confirmed);
+            this.saveHistory(confirmed);
+            this.notify();
+            return;
           }
-
-          this.dispatchSignalEvent(confirmed, 'CONFIRMED');
-
-          this.pendingTrades.push(confirmed);
-          this.signalHistory.unshift(confirmed);
-          this.saveHistory(confirmed);
-          this.notify();
-          return;
-        } else if (isMultiConfluenceDirect) {
-          const refPrice = currentCandle.close;
-
-          const confirmed: SignalRecord = {
-            id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            timestamp: Date.now(),
-            formattedTime,
-            entryTimeFormatted,
-            expirationTimeFormatted,
-            asset: assetSymbol,
-            timeframe,
-            expiration: activeExpiration,
-            direction: confluences.direction as SignalDirection,
-            stage: 'CONFIRMED',
-            entryPrice: refPrice,
-            candleOpenPrice: currentCandle.open,
-            isEntered: true,
-            confluenceScore: confluences.totalScore,
-            strategyId: 'multi_confluencia',
-            strategyName: 'Multi-Confluência Técnica (IA Scanner)',
-            strategyBadge: '💎 MULTI-CONFLUÊNCIA',
-            strategyWinRate: 83.5,
-            reasons: confluences.reasons.length > 0 ? confluences.reasons.slice(0, 3) : ['Confluência Técnica Institucional'],
-            result: 'PENDING',
-            candleCloseTime: targetEntryTimestamp,
-            entryTimestamp: targetEntryTimestamp,
-            expirationTimestamp: targetExpirationTimestamp,
-            isEstimatedResult: false,
-          };
-
-          this.lastConfirmedCandleTime = currentCandle.time;
-          this.latestConfirmedSignal = confirmed;
-          this.latestConfirmedTime = Date.now();
-          this.lastCancelledSignal = null;
-          this.lastResolvedTrade = null;
-          // Registra cooldown: impede sinal imediato logo após a confirmação
-          this.lastSignalConfirmedAt = Date.now();
-
-          if (settings.confirmedSound) {
-            if (confirmed.direction === 'CALL') {
-              audioAlerts.playCallSignal();
-            } else {
-              audioAlerts.playPutSignal();
-            }
-          }
-
-          this.dispatchSignalEvent(confirmed, 'CONFIRMED');
-
-          this.pendingTrades.push(confirmed);
-          this.signalHistory.unshift(confirmed);
-          this.saveHistory(confirmed);
-          this.notify();
-          return;
         }
       }
     }
@@ -710,11 +645,14 @@ export class SignalEngine {
     }
 
     // 5. STAGE 1: PRÉ-ALERTA (Aviso prévio durante o corpo da vela atual para confirmação faltando 10s a 5s)
-    // 5.1 Prioridade para as ESTRATÉGIAS MODULARES ATIVAS SELECIONADAS PELO USUÁRIO COM FILTRO DE CONFLUÊNCIA
-    const activeStrategies = settings.activeStrategies || getStoredActiveStrategies();
+    // EXCLUSIVO para os 6 Padrões Oficiais CandleX-IA
+    const activeStrategies = (settings.activeStrategies && settings.activeStrategies.length > 0)
+      ? settings.activeStrategies.filter((id) => AVAILABLE_STRATEGIES.some((s) => s.id === id))
+      : getStoredActiveStrategies();
+
     const stratDecision = getBestActiveStrategySignal(
       allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
-      activeStrategies,
+      activeStrategies.length > 0 ? activeStrategies : getStoredActiveStrategies(),
       this.backtestResults,
       profile
     );
@@ -728,45 +666,24 @@ export class SignalEngine {
     let stratWinRate: number | undefined = undefined;
 
     if (stratDecision) {
-      // 1. TRAVA ABSOLUTA: PROIBIDO COMPRAR (CALL) EM RESISTÊNCIA E VENDER (PUT) EM SUPORTE!
-      const isBuyingAtResistance = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance;
-      const isSellingAtSupport = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport;
+      // Trava de Rejeição Extrema: não compra contra teto de resistência com pavio superior maior que metade do corpo
+      const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
+      const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
+      const body = Math.abs(currentCandle.close - currentCandle.open);
 
-      if (isBuyingAtResistance || isSellingAtSupport) {
-        // Bloqueio rigoroso: nunca compra em teto de resistência nem vende em chão de suporte
-        return;
-      }
+      const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body * 0.5;
+      const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body * 0.5;
 
-      // 2. FILTRO RIGOROSO DE TENDÊNCIA E MERCADO:
-      // Se a confluência geral for contrária à decisão da estratégia, anula para proteger a banca
-      const isOpposingMarket = (stratDecision.direction === 'CALL' && confluences.direction === 'PUT') ||
-                               (stratDecision.direction === 'PUT' && confluences.direction === 'CALL');
-      const isConsolidationBlocked = marketAnalysis?.inConsolidation && (!marketAnalysis?.nearSupport && !marketAnalysis?.nearResistance);
-
-      if (!isOpposingMarket && !isConsolidationBlocked && stratDecision.score >= preAlertMinScore) {
+      if (!isHardResistanceBlock && !isHardSupportBlock) {
         signalDirection = stratDecision.direction;
-        signalScore = Math.round((stratDecision.score + confluences.totalScore) / 2);
-        signalReasons = [...stratDecision.reasons, ...confluences.reasons.slice(0, 2)];
+        signalScore = stratDecision.score;
+        signalReasons = [...stratDecision.reasons];
         stratId = stratDecision.strategy.id;
         stratName = stratDecision.strategy.name;
         stratBadge = stratDecision.strategy.badge;
         const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
         stratWinRate = bRes?.winRate;
       }
-    } else if (
-      confluences.direction !== 'NEUTRO' &&
-      confluences.totalScore >= preAlertMinScore &&
-      !(confluences.direction === 'CALL' && marketAnalysis?.nearResistance) &&
-      !(confluences.direction === 'PUT' && marketAnalysis?.nearSupport)
-    ) {
-      // 5.2 FALLBACK: Multi-Confluência Técnica Direta de alta assertividade
-      signalDirection = confluences.direction as SignalDirection;
-      signalScore = confluences.totalScore;
-      signalReasons = confluences.reasons.length > 0 ? confluences.reasons.slice(0, 3) : ['Confluência Técnica Múltipla Institucional'];
-      stratId = 'multi_confluencia';
-      stratName = 'Multi-Confluência Técnica (IA Scanner)';
-      stratBadge = '💎 MULTI-CONFLUÊNCIA';
-      stratWinRate = 83.5;
     }
 
     if (

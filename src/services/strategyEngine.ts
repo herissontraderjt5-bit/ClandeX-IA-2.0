@@ -168,7 +168,7 @@ export function evaluateSingleStrategy(
   }
 
   const atr = calculateAtr(candles, index, 14);
-  const minBodyThreshold = Math.max(atr * 0.08, 0.00002);
+  const minBodyThreshold = Math.max(atr * 0.05, 0.00001);
 
   const isGreen = (c: Candle) => c.close > c.open;
   const isRed = (c: Candle) => c.close < c.open;
@@ -182,18 +182,18 @@ export function evaluateSingleStrategy(
     case 'padrao_1_fluxo_put': {
       if (!prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      const cGreenBefore = isGreen(prev3) && getBody(prev3) >= minBodyThreshold;
-      const c1Red = isRed(prev2) && getBody(prev2) >= minBodyThreshold;
-      const c2Red = isRed(prev1) && getBody(prev1) >= minBodyThreshold;
-      const c3Red = (current.close <= current.open) && (current.high - current.low >= minBodyThreshold);
+      const cGreenBefore = isGreen(prev3);
+      const c1Red = isRed(prev2);
+      const c2Red = isRed(prev1);
+      const c3Red = current.close <= current.open;
 
-      // Continuidade de baixa: as velas vermelhas avançam para baixo
-      const isSequenceAdvancingDown = prev1.close <= prev2.close && current.close <= prev1.open;
+      // Sequência descendente: vela 1, 2 e 3 avançam na baixa
+      const isSequenceAdvancingDown = prev1.close <= prev2.open && current.close <= prev1.open;
 
       if (cGreenBefore && c1Red && c2Red && c3Red && isSequenceAdvancingDown) {
         return {
           direction: 'PUT',
-          score: 92,
+          score: 93,
           reasons: [
             'Padrão 1: Continuação de Fluxo de Baixa (3ª Vela Vermelha)',
             'Inversão após vela verde confirmada por 3 velas vermelhas consecutivas',
@@ -211,18 +211,18 @@ export function evaluateSingleStrategy(
     case 'padrao_2_fluxo_call': {
       if (!prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      const cRedBefore = isRed(prev3) && getBody(prev3) >= minBodyThreshold;
-      const c1Green = isGreen(prev2) && getBody(prev2) >= minBodyThreshold;
-      const c2Green = isGreen(prev1) && getBody(prev1) >= minBodyThreshold;
-      const c3Green = (current.close >= current.open) && (current.high - current.low >= minBodyThreshold);
+      const cRedBefore = isRed(prev3);
+      const c1Green = isGreen(prev2);
+      const c2Green = isGreen(prev1);
+      const c3Green = current.close >= current.open;
 
-      // Continuidade de alta: as velas verdes avançam para cima
-      const isSequenceAdvancingUp = prev1.close >= prev2.close && current.close >= prev1.open;
+      // Sequência ascendente: vela 1, 2 e 3 avançam na alta
+      const isSequenceAdvancingUp = prev1.close >= prev2.open && current.close >= prev1.open;
 
       if (cRedBefore && c1Green && c2Green && c3Green && isSequenceAdvancingUp) {
         return {
           direction: 'CALL',
-          score: 92,
+          score: 93,
           reasons: [
             'Padrão 2: Continuação de Fluxo de Alta (3ª Vela Verde)',
             'Inversão após vela vermelha confirmada por 3 velas verdes consecutivas',
@@ -239,26 +239,25 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'padrao_3_correcao_50_call': {
       const prevBody = prev1.close - prev1.open;
-      const isPrevStrongGreen = isGreen(prev1) && prevBody >= Math.max(atr * 0.28, minBodyThreshold * 2);
+      const isPrevStrongGreen = isGreen(prev1) && prevBody >= Math.max(atr * 0.18, minBodyThreshold);
 
       if (!isPrevStrongGreen) return { direction: null, score: 0, reasons: [] };
 
       const mid50 = prev1.open + prevBody * 0.5;
 
-      // Vela atual vermelha de correção que recua em direção aos 50% mas fecha ACIMA dos 50%
-      const isCurrentRedCorrection = current.close < current.open || current.close < prev1.close;
-      const didRetraceTowards50 = current.low <= prev1.close - prevBody * 0.15;
+      // Vela atual vermelha de correção que fecha ACIMA dos 50% da vela de força
+      const isCurrentRedCorrection = current.close <= current.open || current.close < prev1.close;
       const closesAbove50 = current.close >= mid50;
 
-      if (isCurrentRedCorrection && didRetraceTowards50 && closesAbove50) {
+      if (isCurrentRedCorrection && closesAbove50) {
         return {
           direction: 'CALL',
-          score: 94,
+          score: 95,
           reasons: [
             'Padrão 3: Vela de Força + Correção 50% (CALL)',
             `Vela de força compradora anterior (${prevBody.toFixed(5)} pts)`,
-            `Vela vermelha de correção respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
-            'Entrada de COMPRA (CALL) na vela de correção respeitando o suporte institucional',
+            `Vela vermelha de correção fechou acima dos 50% (${mid50.toFixed(5)})`,
+            'Entrada de COMPRA (CALL) na vela de correção respeitando a zona de 50%',
           ],
         };
       }
@@ -271,26 +270,25 @@ export function evaluateSingleStrategy(
     // ----------------------------------------------------
     case 'padrao_4_correcao_50_put': {
       const prevBody = prev1.open - prev1.close;
-      const isPrevStrongRed = isRed(prev1) && prevBody >= Math.max(atr * 0.28, minBodyThreshold * 2);
+      const isPrevStrongRed = isRed(prev1) && prevBody >= Math.max(atr * 0.18, minBodyThreshold);
 
       if (!isPrevStrongRed) return { direction: null, score: 0, reasons: [] };
 
       const mid50 = prev1.close + prevBody * 0.5;
 
-      // Vela atual verde de correção que repica em direção aos 50% mas fecha ABAIXO dos 50%
-      const isCurrentGreenCorrection = current.close > current.open || current.close > prev1.close;
-      const didRetraceTowards50 = current.high >= prev1.close + prevBody * 0.15;
+      // Vela atual verde de correção que fecha ABAIXO dos 50% da vela de força
+      const isCurrentGreenCorrection = current.close >= current.open || current.close > prev1.close;
       const closesBelow50 = current.close <= mid50;
 
-      if (isCurrentGreenCorrection && didRetraceTowards50 && closesBelow50) {
+      if (isCurrentGreenCorrection && closesBelow50) {
         return {
           direction: 'PUT',
-          score: 94,
+          score: 95,
           reasons: [
             'Padrão 4: Vela de Força + Correção 50% (PUT)',
             `Vela de força vendedora anterior (${prevBody.toFixed(5)} pts)`,
-            `Vela verde de correção respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
-            'Entrada de VENDA (PUT) na vela de correção respeitando a resistência institucional',
+            `Vela verde de correção fechou abaixo dos 50% (${mid50.toFixed(5)})`,
+            'Entrada de VENDA (PUT) na vela de correção respeitando a zona de 50%',
           ],
         };
       }
@@ -311,22 +309,15 @@ export function evaluateSingleStrategy(
       const c5Green = current.close >= current.open;
 
       if (c1Green && c2Red && c3Green && c4Red && c5Green) {
-        // Valida que as 5 velas formam uma consolidação horizontal com topo e fundo definidos
-        const boxHigh = Math.max(prev4.high, prev3.high, prev2.high, prev1.high, current.high);
-        const boxLow = Math.min(prev4.low, prev3.low, prev2.low, prev1.low, current.low);
-        const isConsolidation = (boxHigh - boxLow) <= Math.max(atr * 3.8, minBodyThreshold * 10);
-
-        if (isConsolidation) {
-          return {
-            direction: 'CALL',
-            score: 90,
-            reasons: [
-              'Padrão 5: Saída de Consolidação 5ª Vela (CALL)',
-              'Alternância perfeita de 5 velas (Verde, Vermelha, Verde, Vermelha, Verde)',
-              'Entrada de COMPRA (CALL) na 5ª vela seguindo a direção da Vela 1',
-            ],
-          };
-        }
+        return {
+          direction: 'CALL',
+          score: 91,
+          reasons: [
+            'Padrão 5: Saída de Consolidação 5ª Vela (CALL)',
+            'Alternância confirmada de 5 velas (Verde, Vermelha, Verde, Vermelha, Verde)',
+            'Entrada de COMPRA (CALL) na 5ª vela seguindo a direção da Vela 1',
+          ],
+        };
       }
       return { direction: null, score: 0, reasons: [] };
     }
@@ -345,22 +336,15 @@ export function evaluateSingleStrategy(
       const c5Red = current.close <= current.open;
 
       if (c1Red && c2Green && c3Red && c4Green && c5Red) {
-        // Valida que as 5 velas formam uma consolidação horizontal com topo e fundo definidos
-        const boxHigh = Math.max(prev4.high, prev3.high, prev2.high, prev1.high, current.high);
-        const boxLow = Math.min(prev4.low, prev3.low, prev2.low, prev1.low, current.low);
-        const isConsolidation = (boxHigh - boxLow) <= Math.max(atr * 3.8, minBodyThreshold * 10);
-
-        if (isConsolidation) {
-          return {
-            direction: 'PUT',
-            score: 90,
-            reasons: [
-              'Padrão 6: Saída de Consolidação 5ª Vela (PUT)',
-              'Alternância perfeita de 5 velas (Vermelha, Verde, Vermelha, Verde, Vermelha)',
-              'Entrada de VENDA (PUT) na 5ª vela seguindo a direção da Vela 1',
-            ],
-          };
-        }
+        return {
+          direction: 'PUT',
+          score: 91,
+          reasons: [
+            'Padrão 6: Saída de Consolidação 5ª Vela (PUT)',
+            'Alternância confirmada de 5 velas (Vermelha, Verde, Vermelha, Verde, Vermelha)',
+            'Entrada de VENDA (PUT) na 5ª vela seguindo a direção da Vela 1',
+          ],
+        };
       }
       return { direction: null, score: 0, reasons: [] };
     }
@@ -616,10 +600,10 @@ export function getBestActiveStrategySignal(
       continue;
     }
 
-    // Trava de Segurança IA
-    if (backtestResults) {
+    // Trava de Segurança IA: apenas desprioriza se houver pelo menos 1 outra estratégia ativa elegível
+    if (backtestResults && safeActiveIds.length > 1) {
       const bRes = backtestResults.find((b) => b.id === stratId);
-      if (bRes && (bRes.autoDeactivated || bRes.profitStatus === 'PREJUIZO' || (bRes.totalTrades >= 3 && bRes.winRate < 45))) {
+      if (bRes && bRes.autoDeactivated && bRes.totalTrades >= 5 && bRes.winRate < 40) {
         continue;
       }
     }

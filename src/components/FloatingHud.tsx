@@ -447,9 +447,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   });
 
   const [activeStrategyIds, setActiveStrategyIds] = useState<string[]>(() => {
-    return settings.activeStrategies && settings.activeStrategies.length > 0
-      ? settings.activeStrategies
-      : getStoredActiveStrategies();
+    const valid = settings.activeStrategies?.filter((id) => AVAILABLE_STRATEGIES.some((s) => s.id === id));
+    const initial = (valid && valid.length > 0) ? valid : getStoredActiveStrategies();
+    settings.activeStrategies = initial;
+    return initial;
   });
 
   const [backtestList, setBacktestList] = useState<StrategyBacktestResult[]>(() => {
