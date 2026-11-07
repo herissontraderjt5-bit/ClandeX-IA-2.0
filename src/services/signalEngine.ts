@@ -393,10 +393,12 @@ export class SignalEngine {
     const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 5;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
-    // REGRA OBRIGATÓRIA CANDLEX-IA: A última vela do padrão é EXATAMENTE a vela da operação.
-    // O sinal CALL/PUT e sua seta são ancorados na PRÓPRIA VELA DE ENTRADA (candleBoundary), sem deslocamento!
-    const targetEntryTimestamp = candleBoundary;
-    const targetExpirationTimestamp = candleBoundary + expirationSeconds;
+    // REGRA OBRIGATÓRIA CANDLEX-IA PARA OPÇÕES BINÁRIAS:
+    // A confirmação ocorre entre 10s e 5s da vela de setup (candleBoundary).
+    // A entrada da operação ocorre na abertura da vela do sinal (targetEntryTimestamp = candleBoundary + tfSec),
+    // e expira no fechamento integral dessa mesma vela (targetExpirationTimestamp = targetEntryTimestamp + expirationSeconds).
+    const targetEntryTimestamp = candleBoundary + tfSec;
+    const targetExpirationTimestamp = targetEntryTimestamp + expirationSeconds;
     const entryTimeFormatted = formatBrasiliaTime(targetEntryTimestamp);
     const expirationTimeFormatted = formatBrasiliaTime(targetExpirationTimestamp);
 
@@ -505,8 +507,8 @@ export class SignalEngine {
             timeframe,
             expiration: activeExpiration,
             entryPrice: refPrice,
-            candleOpenPrice: currentCandle.open,
-            isEntered: true, // Já é a própria vela de entrada
+            candleOpenPrice: currentCandle.close,
+            isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
             confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
             strategyId: this.activePreAlert.strategyId,
             strategyName: this.activePreAlert.strategyName,
@@ -583,8 +585,8 @@ export class SignalEngine {
               direction: stratDecision.direction,
               stage: 'CONFIRMED',
               entryPrice: refPrice,
-              candleOpenPrice: currentCandle.open,
-              isEntered: true,
+              candleOpenPrice: currentCandle.close,
+              isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
               confluenceScore: stratDecision.score,
               strategyId: stratDecision.strategy.id,
               strategyName: stratDecision.strategy.name,
@@ -695,10 +697,9 @@ export class SignalEngine {
       this.lastEvaluatedCandleTime !== currentCandle.time &&
       !isCooldownActive
     ) {
-      // REGRA OBRIGATÓRIA CANDLEX-IA: A última vela do padrão é a vela da operação.
-      // A prévia do sinal é ancorada na vela atual (candleBoundary) durante sua formação
-      const targetCandleTime = candleBoundary;
-      const targetExpTime = candleBoundary + expirationSeconds;
+      // Pré-alerta ancorado para a próxima vela (a vela oficial de entrada)
+      const targetCandleTime = candleBoundary + tfSec;
+      const targetExpTime = targetCandleTime + expirationSeconds;
       const preEntryTimeFormatted = formatBrasiliaTime(targetCandleTime);
       const preExpTimeFormatted = formatBrasiliaTime(targetExpTime);
 
@@ -715,7 +716,7 @@ export class SignalEngine {
         stage: 'PRE_ALERT',
         confluenceScore: signalScore,
         entryPrice: currentCandle.close,
-        candleOpenPrice: currentCandle.open,
+        candleOpenPrice: currentCandle.close,
         isEntered: false,
         result: 'PENDING',
         reasons: signalReasons,
@@ -723,8 +724,8 @@ export class SignalEngine {
         strategyName: stratName,
         strategyBadge: stratBadge,
         strategyWinRate: stratWinRate,
-        candleCloseTime: candleBoundary,
-        entryTimestamp: candleBoundary,
+        candleCloseTime: targetCandleTime,
+        entryTimestamp: targetCandleTime,
         expirationTimestamp: targetExpTime,
         isEstimatedResult: false,
       };
