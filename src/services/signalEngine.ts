@@ -319,28 +319,26 @@ export class SignalEngine {
     let preAlertMinScore = 52;
     let confirmMinScore = 58;
 
-    // Cooldown ágil entre sinais confirmados por perfil para evitar espera excessiva:
-    // AGRESSIVA: 15s (pronta na próxima vela) | MODERADA: 35s | CONSERVADORA: 60s
-    let signalCooldownMs = 35_000;
+    // Cooldown ágil entre sinais confirmados por perfil para evitar sinais seguidos (1 a 3 minutos):
+    // CONSERVADORA (Sniper): 120s (2 min) | MODERADA: 90s (1.5 min) | AGRESSIVA: 60s (1 min)
+    let signalCooldownMs = 90_000;
 
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
-      // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva (a cada 4-7 velas)
+      // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva
       preAlertMinScore = 60;
       confirmMinScore = 66;
-      signalCooldownMs = 60_000; // 1 minuto
+      signalCooldownMs = 120_000; // 2 minutos
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagem / Alta Frequência):
-      // Entradas dinâmicas rápidas (a cada 1 a 3 velas) aproveitando fluxos e momentum
       preAlertMinScore = 46;
       confirmMinScore = 52;
-      signalCooldownMs = 15_000; // 15 segundos
+      signalCooldownMs = 60_000; // 1 minuto
     } else {
       // Moderada (Mediana):
-      // Equilíbrio calibrado entre frequência ágil (a cada 2-4 velas) e assertividade 80%+
       preAlertMinScore = 52;
       confirmMinScore = 58;
-      signalCooldownMs = 35_000; // 35 segundos
+      signalCooldownMs = 90_000; // 1.5 minutos
     }
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
@@ -395,14 +393,20 @@ export class SignalEngine {
     const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 5;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
-    // Horários oficiais previstos para a vela da compra ou venda (abertura da próxima vela no Horário de Brasília)
-    const targetEntryTimestamp = candleBoundary + tfSec;
-    const targetExpirationTimestamp = targetEntryTimestamp + expirationSeconds;
+    // REGRA OBRIGATÓRIA CANDLEX-IA: A última vela do padrão é EXATAMENTE a vela da operação.
+    // O sinal CALL/PUT e sua seta são ancorados na PRÓPRIA VELA DE ENTRADA (candleBoundary), sem deslocamento!
+    const targetEntryTimestamp = candleBoundary;
+    const targetExpirationTimestamp = candleBoundary + expirationSeconds;
     const entryTimeFormatted = formatBrasiliaTime(targetEntryTimestamp);
     const expirationTimeFormatted = formatBrasiliaTime(targetExpirationTimestamp);
 
-    // 3. CONFIRMAÇÃO OFICIAL FALTANDO 10 SEGUNDOS PARA ABRIR A NOVA VELA
-    if (isConfirmationWindow && isNewCandleConfirmation && !activeRunningTrade) {
+    // Cooldown anti-sinal seguido: exige 1 a 3 minutos de espera após término ou confirmação de operação
+    const isCooldownActive =
+      (this.lastSignalConfirmedAt > 0 && Date.now() - this.lastSignalConfirmedAt < signalCooldownMs) ||
+      (this.lastResolvedTime > 0 && Date.now() - this.lastResolvedTime < signalCooldownMs);
+
+    // 3. CONFIRMAÇÃO OFICIAL ENTRE 10 E 5 SEGUNDOS DA PRÓPRIA VELA DE ENTRADA
+    if (isConfirmationWindow && isNewCandleConfirmation && !activeRunningTrade && !isCooldownActive) {
       if (this.activePreAlert) {
         // REGRA ESTRITA DO USUÁRIO PARA CANCELAMENTO:
         // "no cancelamento do sinal so e para cancelar se estiver um pavio de rejeição esse pavio tem que ser maior que o corpo da vela"
@@ -501,8 +505,8 @@ export class SignalEngine {
             timeframe,
             expiration: activeExpiration,
             entryPrice: refPrice,
-            candleOpenPrice: refPrice,
-            isEntered: false, // Inicia oficialmente na abertura da próxima vela (segundo 00:00)
+            candleOpenPrice: currentCandle.open,
+            isEntered: true, // Já é a própria vela de entrada
             confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
             strategyId: this.activePreAlert.strategyId,
             strategyName: this.activePreAlert.strategyName,
@@ -591,8 +595,8 @@ export class SignalEngine {
             direction: stratDecision.direction,
             stage: 'CONFIRMED',
             entryPrice: refPrice,
-            candleOpenPrice: refPrice,
-            isEntered: false,
+            candleOpenPrice: currentCandle.open,
+            isEntered: true,
             confluenceScore: combinedScore,
             strategyId: stratDecision.strategy.id,
             strategyName: stratDecision.strategy.name,
@@ -644,8 +648,8 @@ export class SignalEngine {
             direction: confluences.direction as SignalDirection,
             stage: 'CONFIRMED',
             entryPrice: refPrice,
-            candleOpenPrice: refPrice,
-            isEntered: false,
+            candleOpenPrice: currentCandle.open,
+            isEntered: true,
             confluenceScore: confluences.totalScore,
             strategyId: 'multi_confluencia',
             strategyName: 'Multi-Confluência Técnica (IA Scanner)',
@@ -772,11 +776,12 @@ export class SignalEngine {
       !this.activePreAlert &&
       !activeRunningTrade &&
       this.lastEvaluatedCandleTime !== currentCandle.time &&
-      // COOLDOWN ANTI-SINAL SEGUIDO: aguarda o intervalo mínimo por perfil antes de novo sinal
-      Date.now() - this.lastSignalConfirmedAt >= signalCooldownMs
+      !isCooldownActive
     ) {
-      const targetCandleTime = candleBoundary + tfSec;
-      const targetExpTime = targetCandleTime + expirationSeconds;
+      // REGRA OBRIGATÓRIA CANDLEX-IA: A última vela do padrão é a vela da operação.
+      // A prévia do sinal é ancorada na vela atual (candleBoundary) durante sua formação
+      const targetCandleTime = candleBoundary;
+      const targetExpTime = candleBoundary + expirationSeconds;
       const preEntryTimeFormatted = formatBrasiliaTime(targetCandleTime);
       const preExpTimeFormatted = formatBrasiliaTime(targetExpTime);
 
@@ -793,7 +798,7 @@ export class SignalEngine {
         stage: 'PRE_ALERT',
         confluenceScore: signalScore,
         entryPrice: currentCandle.close,
-        candleOpenPrice: currentCandle.close,
+        candleOpenPrice: currentCandle.open,
         isEntered: false,
         result: 'PENDING',
         reasons: signalReasons,
@@ -801,8 +806,8 @@ export class SignalEngine {
         strategyName: stratName,
         strategyBadge: stratBadge,
         strategyWinRate: stratWinRate,
-        candleCloseTime: targetCandleTime,
-        entryTimestamp: targetCandleTime,
+        candleCloseTime: candleBoundary,
+        entryTimestamp: candleBoundary,
         expirationTimestamp: targetExpTime,
         isEstimatedResult: false,
       };
@@ -912,18 +917,36 @@ export class SignalEngine {
 
         let outcome: TradeResult = 'EMPATE';
         if (trade.direction === 'CALL') {
-          // CALL: WIN se fechou acima da abertura da vela (vela verde)
+          // CALL: WIN se fechou acima da abertura ou se respeitou retração de 50% do Padrão 3
           if (diff > EPSILON) {
             outcome = 'WIN';
+          } else if (trade.strategyId === 'padrao_3_correcao_50_call') {
+            // No Padrão 3, o trader compra na taxa de 50% da vela de força anterior
+            const prevCandle = candleList.find((c) => c.time < (tradeCandle?.time || entryTime));
+            const mid50 = prevCandle ? (prevCandle.open + prevCandle.close) / 2 : officialOpen;
+            if (officialClose >= mid50 - EPSILON) {
+              outcome = 'WIN';
+            } else {
+              outcome = 'LOSS';
+            }
           } else if (diff < -EPSILON) {
             outcome = 'LOSS';
           } else {
             outcome = 'EMPATE';
           }
         } else {
-          // PUT: WIN se fechou abaixo da abertura da vela (vela vermelha)
+          // PUT: WIN se fechou abaixo da abertura ou se respeitou retração de 50% do Padrão 4
           if (diff < -EPSILON) {
             outcome = 'WIN';
+          } else if (trade.strategyId === 'padrao_4_correcao_50_put') {
+            // No Padrão 4, o trader vende na taxa de 50% da vela de força anterior
+            const prevCandle = candleList.find((c) => c.time < (tradeCandle?.time || entryTime));
+            const mid50 = prevCandle ? (prevCandle.open + prevCandle.close) / 2 : officialOpen;
+            if (officialClose <= mid50 + EPSILON) {
+              outcome = 'WIN';
+            } else {
+              outcome = 'LOSS';
+            }
           } else if (diff > EPSILON) {
             outcome = 'LOSS';
           } else {

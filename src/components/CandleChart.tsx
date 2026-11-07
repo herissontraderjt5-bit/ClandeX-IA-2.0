@@ -253,37 +253,142 @@ export const CandleChart: React.FC<CandleChartProps> = ({
             );
           })}
 
-          {/* Signal markers on chart */}
-          {recentSignals.slice(0, 5).map((sig) => {
-            // Find candle matching time
-            const idx = visibleCandles.findIndex((c) => Math.abs(c.time - sig.candleCloseTime) < 120);
+          {/* Confirmed Signal markers on chart - ANCORADOS DIRETAMENTE NA VELA DE ENTRADA */}
+          {recentSignals.slice(0, 10).map((sig) => {
+            // Localiza a vela exata do sinal (sem deslocamento)
+            const idx = visibleCandles.findIndex((c) => Math.abs(c.time - sig.candleCloseTime) < 45);
             if (idx === -1) return null;
+            const c = visibleCandles[idx];
             const x = paddingLeft + idx * candleSpacing + candleSpacing / 2;
-            const y = getY(sig.entryPrice);
             const isCall = sig.direction === 'CALL';
+            const yArrow = isCall ? getY(c.low) + 16 : getY(c.high) - 16;
+
+            const isWin = sig.result === 'WIN';
+            const isLoss = sig.result === 'LOSS';
 
             return (
-              <g key={sig.id} className="animate-bounce">
+              <g key={sig.id} className="transition-all duration-300">
+                {/* Linha vertical sutil conectando a seta à vela de entrada */}
+                <line
+                  x1={x}
+                  y1={isCall ? getY(c.low) : getY(c.high)}
+                  x2={x}
+                  y2={yArrow}
+                  stroke={isCall ? '#10b981' : '#ef4444'}
+                  strokeWidth="1.2"
+                  strokeDasharray="2 2"
+                />
+
+                {/* Círculo com Seta Oficial na própria vela */}
                 <circle
                   cx={x}
-                  cy={isCall ? y + 18 : y - 18}
-                  r="10"
-                  fill={isCall ? 'rgba(16, 185, 129, 0.9)' : 'rgba(239, 68, 68, 0.9)'}
+                  cy={yArrow}
+                  r="12"
+                  fill={isCall ? 'rgba(16, 185, 129, 0.95)' : 'rgba(239, 68, 68, 0.95)'}
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
                 />
                 <text
                   x={x}
-                  y={isCall ? y + 22 : y - 14}
+                  y={isCall ? yArrow + 4.5 : yArrow + 4}
                   fill="#ffffff"
-                  fontSize="9"
-                  fontWeight="bold"
+                  fontSize="12"
+                  fontWeight="900"
                   textAnchor="middle"
                   fontFamily="JetBrains Mono, monospace"
                 >
                   {isCall ? '▲' : '▼'}
                 </text>
+
+                {/* Badge de CALL / PUT ou Resultado WIN/LOSS */}
+                <rect
+                  x={x - 22}
+                  y={isCall ? yArrow + 14 : yArrow - 26}
+                  width="44"
+                  height="14"
+                  rx="3"
+                  fill={isWin ? '#059669' : isLoss ? '#dc2626' : (isCall ? '#065f46' : '#991b1b')}
+                  stroke={isCall ? '#34d399' : '#f87171'}
+                  strokeWidth="0.8"
+                />
+                <text
+                  x={x}
+                  y={isCall ? yArrow + 24.5 : yArrow - 15.5}
+                  fill="#ffffff"
+                  fontSize="8"
+                  fontWeight="bold"
+                  textAnchor="middle"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {isWin ? 'WIN' : isLoss ? 'LOSS' : (isCall ? 'CALL' : 'PUT')}
+                </text>
               </g>
             );
           })}
+
+          {/* SINAL PROVISÓRIO (PRÉ-ALERTA) DURANTE A FORMAÇÃO DA VELA ATUAL */}
+          {activePreAlert && visibleCandles.length > 0 && (
+            (() => {
+              const lastIdx = visibleCandles.length - 1;
+              const lastCandle = visibleCandles[lastIdx];
+              const x = paddingLeft + lastIdx * candleSpacing + candleSpacing / 2;
+              const isCall = activePreAlert.direction === 'CALL';
+              const yArrow = isCall ? getY(lastCandle.low) + 16 : getY(lastCandle.high) - 16;
+
+              return (
+                <g className="animate-pulse">
+                  <circle
+                    cx={x}
+                    cy={yArrow}
+                    r="14"
+                    fill="none"
+                    stroke={isCall ? '#34d399' : '#f87171'}
+                    strokeWidth="1.5"
+                    strokeDasharray="3 3"
+                  />
+                  <circle
+                    cx={x}
+                    cy={yArrow}
+                    r="10"
+                    fill={isCall ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}
+                  />
+                  <text
+                    x={x}
+                    y={isCall ? yArrow + 4 : yArrow + 3.5}
+                    fill={isCall ? '#34d399' : '#fca5a5'}
+                    fontSize="11"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    {isCall ? '▲' : '▼'}
+                  </text>
+                  {/* Etiqueta de Sinal Provisório */}
+                  <rect
+                    x={x - 30}
+                    y={isCall ? yArrow + 16 : yArrow - 28}
+                    width="60"
+                    height="13"
+                    rx="3"
+                    fill="rgba(15, 23, 42, 0.9)"
+                    stroke="#fbbf24"
+                    strokeWidth="0.8"
+                  />
+                  <text
+                    x={x}
+                    y={isCall ? yArrow + 25.5 : yArrow - 18.5}
+                    fill="#fbbf24"
+                    fontSize="7.5"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    PRÉVIA {activePreAlert.direction}
+                  </text>
+                </g>
+              );
+            })()
+          )}
 
           {/* Current Live Price Line & Badge */}
           <line

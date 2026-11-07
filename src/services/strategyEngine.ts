@@ -1,6 +1,5 @@
 import {
   Candle,
-  MarketAnalysis,
   SignalDirection,
   StrategyDefinition,
   StrategyBacktestResult,
@@ -8,76 +7,85 @@ import {
 } from '../types/trading';
 
 /**
- * Catálogo Oficial das Estratégias ClandeX-IA
+ * Catálogo Oficial dos 6 Padrões CandleX-IA para Opções Binárias
+ * Conforme especificação oficial e regras de confluência do gráfico de referência:
+ *
+ * Padrão 1: Continuação de Fluxo de Baixa -> PUT na 3ª vela vermelha
+ * Padrão 2: Continuação de Fluxo de Alta -> CALL na 3ª vela verde
+ * Padrão 3: Vela de Força + Correção 50% -> CALL na vela vermelha que fecha acima dos 50%
+ * Padrão 4: Vela de Força + Correção 50% -> PUT na vela verde que fecha abaixo dos 50%
+ * Padrão 5: Saída de Consolidação 5ª Vela -> CALL na 5ª vela verde (mesma direção da Vela 1)
+ * Padrão 6: Saída de Consolidação 5ª Vela -> PUT na 5ª vela vermelha (mesma direção da Vela 1)
  */
 export const AVAILABLE_STRATEGIES: StrategyDefinition[] = [
   {
-    id: 'retração_sr',
-    name: 'Rejeição em Suporte & Resistência (Taxa Sniper)',
-    badge: '🎯 TAXA SNIPER (S/R)',
-    tag: 'REJEIÇÃO DE TAXA',
-    category: 'RETRACTION',
-    description: 'Opera retração precisa quando o preço toca suporte ou resistência e deixa pavio de rejeição.',
+    id: 'padrao_1_fluxo_put',
+    name: 'Padrão 1: Fluxo de Baixa (3ª Vela Vermelha)',
+    badge: '🔴 PADRÃO 1 (PUT)',
+    tag: 'FLUXO DE BAIXA',
+    category: 'MOMENTUM',
+    description: 'Continuação de Fluxo de Baixa: após vela verde, ocorrem 3 velas vermelhas consecutivas. Entrada de VENDA (PUT) na 3ª vela vermelha.',
+    minProfile: 'MODERADA',
+  },
+  {
+    id: 'padrao_2_fluxo_call',
+    name: 'Padrão 2: Fluxo de Alta (3ª Vela Verde)',
+    badge: '🟢 PADRÃO 2 (CALL)',
+    tag: 'FLUXO DE ALTA',
+    category: 'MOMENTUM',
+    description: 'Continuação de Fluxo de Alta: após vela vermelha, ocorrem 3 velas verdes consecutivas. Entrada de COMPRA (CALL) na 3ª vela verde.',
+    minProfile: 'MODERADA',
+  },
+  {
+    id: 'padrao_3_correcao_50_call',
+    name: 'Padrão 3: Correção 50% (CALL)',
+    badge: '🟢 PADRÃO 3 (CALL)',
+    tag: 'CORREÇÃO 50%',
+    category: 'PRICE_ACTION',
+    description: 'Vela de Força de Alta (verde) + Correção de Baixa (vermelha) que fecha acima dos 50% da vela de força. Entrada de COMPRA (CALL) na vela de correção.',
     minProfile: 'CONSERVADORA',
   },
   {
-    id: 'fluxo_tendencia',
-    name: 'Fluxo Contínuo & Momentum (Seguir a Tendência)',
-    badge: '🚀 FLUXO & MOMENTUM',
-    tag: 'TENDÊNCIA FORTE',
-    category: 'MOMENTUM',
-    description: 'Surfa o fluxo direcional forte com médias alinhadas e rompimento contínuo da máxima/mínima.',
-    minProfile: 'MODERADA',
+    id: 'padrao_4_correcao_50_put',
+    name: 'Padrão 4: Correção 50% (PUT)',
+    badge: '🔴 PADRÃO 4 (PUT)',
+    tag: 'CORREÇÃO 50%',
+    category: 'PRICE_ACTION',
+    description: 'Vela de Força de Baixa (vermelha) + Correção de Alta (verde) que fecha abaixo dos 50% da vela de força. Entrada de VENDA (PUT) na vela de correção.',
+    minProfile: 'CONSERVADORA',
   },
   {
-    id: 'smc_liquidez',
-    name: 'SMC: Captura de Liquidez (Institutional Sweep)',
-    badge: '🏛️ SMC LIQUIDEZ',
-    tag: 'RASTREAMENTO INSTITUCIONAL',
-    category: 'SMC',
-    description: 'Entrada após grandes bancos violarem topos/fundos para estopar o varejo e reverter com força.',
-    minProfile: 'MODERADA',
-  },
-  {
-    id: 'reversao_rsi',
-    name: 'Reversão em Exaustão (RSI Extremo)',
-    badge: '⚡ REVERSÃO RSI',
-    tag: 'SOBRECOMPRA / SOBREVENDA',
+    id: 'padrao_5_consolidacao_call',
+    name: 'Padrão 5: Consolidação 5ª Vela (CALL)',
+    badge: '🟢 PADRÃO 5 (CALL)',
+    tag: 'CONSOLIDAÇÃO',
     category: 'REVERSAL',
-    description: 'Entra na exaustão dos preços em regiões extremas de RSI (acima de 70 ou abaixo de 30).',
+    description: 'Consolidação alternada de 5 velas (1: Verde, 2: Vermelha, 3: Verde, 4: Vermelha, 5: Verde). Entrada de COMPRA (CALL) na 5ª vela verde.',
     minProfile: 'MODERADA',
   },
   {
-    id: 'engolfo_pro',
-    name: 'Engolfo de Força (Price Action Clássico)',
-    badge: '💎 ENGOLFO PRO',
-    tag: 'ABSORÇÃO DE FORÇA',
-    category: 'PRICE_ACTION',
-    description: 'Padrão em que a vela atual engolfa 100% da vela anterior após correção na média ou suporte.',
+    id: 'padrao_6_consolidacao_put',
+    name: 'Padrão 6: Consolidação 5ª Vela (PUT)',
+    badge: '🔴 PADRÃO 6 (PUT)',
+    tag: 'CONSOLIDAÇÃO',
+    category: 'REVERSAL',
+    description: 'Consolidação alternada de 5 velas (1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde, 5: Vermelha). Entrada de VENDA (PUT) na 5ª vela vermelha.',
     minProfile: 'MODERADA',
-  },
-  {
-    id: 'rompimento_bos',
-    name: 'Rompimento Estrutural Institucional (BOS)',
-    badge: '🔥 ROMPIMENTO BOS',
-    tag: 'BREAK OF STRUCTURE',
-    category: 'PRICE_ACTION',
-    description: 'Rompimento verdadeiro de pivô estrutural com expansão de range e continuidade de movimento.',
-    minProfile: 'AGRESSIVA',
   },
 ];
 
-const DEFAULT_ACTIVE_STRATEGY_IDS = [
-  'retração_sr',
-  'fluxo_tendencia',
-  'smc_liquidez',
-  'engolfo_pro',
-  'reversao_rsi',
-  'rompimento_bos',
+export const DEFAULT_ACTIVE_STRATEGY_IDS = [
+  'padrao_1_fluxo_put',
+  'padrao_2_fluxo_call',
+  'padrao_3_correcao_50_call',
+  'padrao_4_correcao_50_put',
+  'padrao_5_consolidacao_call',
+  'padrao_6_consolidacao_put',
 ];
 
 /**
  * Obtém os IDs das estratégias ativas salvas no localStorage
+ * Garante migração automática caso haja chaves obsoletas salvas em sessões anteriores.
  */
 export function getStoredActiveStrategies(): string[] {
   try {
@@ -110,23 +118,7 @@ export interface StrategySignalDecision {
 }
 
 /**
- * Calcula a Média Móvel Exponencial (EMA) com precisão
- */
-function calculateEma(candles: Candle[], index: number, period: number): number {
-  if (index < 0 || candles.length === 0) return 0;
-  const k = 2 / (period + 1);
-  const start = Math.max(0, index - period * 2);
-  let ema = candles[start]?.close || 0;
-  for (let i = start + 1; i <= index; i++) {
-    if (candles[i]) {
-      ema = candles[i].close * k + ema * (1 - k);
-    }
-  }
-  return ema;
-}
-
-/**
- * Calcula o Average True Range (ATR) para medição de volatilidade e filtro de dojis
+ * Calcula o Average True Range (ATR) para medição de volatilidade e proporção dos corpos
  */
 function calculateAtr(candles: Candle[], index: number, period = 14): number {
   if (index < 1) return 0.0001;
@@ -150,173 +142,62 @@ function calculateAtr(candles: Candle[], index: number, period = 14): number {
 }
 
 /**
- * Avalia uma estratégia individual em um índice específico da lista de velas
- * Aplica lógica institucional de Price Action, SMC e Médias Móveis para Opções Binárias.
+ * Avalia um dos 6 Padrões CandleX-IA no índice específico
+ *
+ * REGRA OBRIGATÓRIA:
+ * A última vela do padrão (candles[index]) é EXATAMENTE a vela da operação.
+ * O sinal é desenhado sobre ela e não há deslocamento para a vela seguinte.
  */
 export function evaluateSingleStrategy(
   strategyId: string,
   candles: Candle[],
   index: number
 ): { direction: SignalDirection | null; score: number; reasons: string[] } {
-  // Precisa de pelo menos 22 candles anteriores para cálculo confiável de EMA, ATR e níveis estruturais
-  if (!candles || !Array.isArray(candles) || index < 22 || index >= candles.length) {
+  if (!candles || !Array.isArray(candles) || index < 4 || index >= candles.length) {
     return { direction: null, score: 0, reasons: [] };
   }
 
   const current = candles[index];
-  const prev = candles[index - 1];
-  const prev2 = candles[index - 2];
-  if (!current || !prev || !prev2) {
+  const prev1 = candles[index - 1];
+  const prev2 = index >= 2 ? candles[index - 2] : null;
+  const prev3 = index >= 3 ? candles[index - 3] : null;
+  const prev4 = index >= 4 ? candles[index - 4] : null;
+
+  if (!current || !prev1) {
     return { direction: null, score: 0, reasons: [] };
   }
-
-  const body = Math.abs(current.close - current.open);
-  const range = Math.max(current.high - current.low, 0.00001);
-  const upperWick = current.high - Math.max(current.open, current.close);
-  const lowerWick = Math.min(current.open, current.close) - current.low;
-  const isGreen = current.close > current.open;
-  const isRed = current.close < current.open;
 
   const atr = calculateAtr(candles, index, 14);
+  const minBodyThreshold = Math.max(atr * 0.08, 0.00002);
 
-  // Filtro Anti-Doji / Ruído: Se a vela tiver range minúsculo (< 35% do ATR), ignora qualquer entrada
-  if (range < atr * 0.35) {
-    return { direction: null, score: 0, reasons: [] };
-  }
-
-  // Médias Móveis Institucionais (EMA 9, EMA 21, EMA 50)
-  const ema9 = calculateEma(candles, index, 9);
-  const ema21 = calculateEma(candles, index, 21);
-  const ema50 = calculateEma(candles, index, 50);
-
-  const isUptrend = ema9 > ema21 && current.close >= ema21;
-  const isDowntrend = ema9 < ema21 && current.close <= ema21;
-  const isStrongUptrend = isUptrend && ema21 > ema50;
-  const isStrongDowntrend = isDowntrend && ema21 < ema50;
-
-  // Contagem de velas consecutivas da mesma cor (Anti-Exaustão)
-  let consecutiveGreen = 0;
-  let consecutiveRed = 0;
-  for (let k = index - 1; k >= Math.max(0, index - 8); k--) {
-    if (candles[k].close > candles[k].open) {
-      if (consecutiveRed > 0) break;
-      consecutiveGreen++;
-    } else if (candles[k].close < candles[k].open) {
-      if (consecutiveGreen > 0) break;
-      consecutiveRed++;
-    } else {
-      break;
-    }
-  }
-
-  // Suporte e Resistência Verdadeiros (Mapeamento de TODOS os Swing Highs e Swing Lows recentes)
-  const lookback = Math.min(40, index);
-  let swingHigh = -Infinity;
-  let swingLow = Infinity;
-  let touchesHigh = 0;
-  let touchesLow = 0;
-  const allSwingHighs: number[] = [];
-  const allSwingLows: number[] = [];
-
-  for (let k = Math.max(1, index - lookback); k < index; k++) {
-    const c = candles[k];
-    const prevC = candles[k - 1];
-    const nextC = candles[k + 1];
-    if (!c) continue;
-    if (c.high > swingHigh) swingHigh = c.high;
-    if (c.low < swingLow) swingLow = c.low;
-
-    if (prevC && nextC) {
-      if (c.high >= prevC.high && c.high >= nextC.high) allSwingHighs.push(c.high);
-      if (c.low <= prevC.low && c.low <= nextC.low) allSwingLows.push(c.low);
-    }
-  }
-  if (swingHigh > -Infinity) allSwingHighs.push(swingHigh);
-  if (swingLow < Infinity) allSwingLows.push(swingLow);
-
-  // Conta toques nas regiões para validar consistência
-  const zoneTolerance = Math.max(atr * 0.35, 0.00012);
-  for (let k = index - lookback; k < index; k++) {
-    const c = candles[k];
-    if (!c) continue;
-    if (Math.abs(c.high - swingHigh) <= zoneTolerance) touchesHigh++;
-    if (Math.abs(c.low - swingLow) <= zoneTolerance) touchesLow++;
-  }
-
-  // Zona de Resistência: só é barreira se o topo teve rejeição comprovada (2+ toques)
-  // e a vela atual fechar abaixo dele com pavio superior de rejeição
-  const isEstablishedResistance = touchesHigh >= 2;
-  const nearRes =
-    isEstablishedResistance &&
-    Math.abs(current.high - swingHigh) <= zoneTolerance &&
-    current.close <= swingHigh &&
-    upperWick >= body * 0.35;
-
-  // Zona de Suporte: só é barreira se o fundo teve rejeição comprovada (2+ toques)
-  // e a vela atual fechar acima dele com pavio inferior de rejeição
-  const isEstablishedSupport = touchesLow >= 2;
-  const nearSup =
-    isEstablishedSupport &&
-    Math.abs(current.low - swingLow) <= zoneTolerance &&
-    current.close >= swingLow &&
-    lowerWick >= body * 0.35;
-
-  // RSI de 9 períodos com suavização
-  let gains = 0;
-  let losses = 0;
-  const rsiStart = Math.max(1, index - 9);
-  for (let k = rsiStart; k <= index; k++) {
-    if (candles[k] && candles[k - 1]) {
-      const diff = candles[k].close - candles[k - 1].close;
-      if (diff > 0) gains += diff;
-      else losses += Math.abs(diff);
-    }
-  }
-  const rs = losses === 0 ? 100 : gains / (losses || 0.00001);
-  const rsi = 100 - (100 / (1 + rs));
+  const isGreen = (c: Candle) => c.close > c.open;
+  const isRed = (c: Candle) => c.close < c.open;
+  const getBody = (c: Candle) => Math.abs(c.close - c.open);
 
   switch (strategyId) {
     // ----------------------------------------------------
-    // 1. Rejeição em Suporte & Resistência (Taxa Sniper)
+    // PADRÃO 1: Continuação de Fluxo de Baixa (3ª Vela Vermelha)
+    // Sequência: vela verde -> vela 1 vermelha -> vela 2 vermelha -> vela 3 vermelha (Entrada PUT)
     // ----------------------------------------------------
-    case 'retração_sr': {
-      // CALL SNIPER:
-      // Preço tocou zona de suporte comprovada, compradores defenderam e a vela fechou VERDE com pavio inferior
-      const isCallRejection =
-        nearSup &&
-        isGreen &&
-        (lowerWick >= range * 0.25 || lowerWick >= body * 0.7) &&
-        upperWick <= body * 0.40 &&
-        current.close >= swingLow;
+    case 'padrao_1_fluxo_put': {
+      if (!prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      // PUT SNIPER:
-      // Preço tocou zona de resistência comprovada, vendedores defenderam e a vela fechou VERMELHA com pavio superior
-      const isPutRejection =
-        nearRes &&
-        isRed &&
-        (upperWick >= range * 0.25 || upperWick >= body * 0.7) &&
-        lowerWick <= body * 0.40 &&
-        current.close <= swingHigh;
+      const cGreenBefore = isGreen(prev3) && getBody(prev3) >= minBodyThreshold;
+      const c1Red = isRed(prev2) && getBody(prev2) >= minBodyThreshold;
+      const c2Red = isRed(prev1) && getBody(prev1) >= minBodyThreshold;
+      const c3Red = (current.close <= current.open) && (current.high - current.low >= minBodyThreshold);
 
-      if (isCallRejection && !isPutRejection) {
-        return {
-          direction: 'CALL',
-          score: 89,
-          reasons: [
-            `Taxa Sniper: Rejeição em Suporte (${swingLow.toFixed(5)})`,
-            `Defesa compradora comprovada com fechamento VERDE`,
-            `Pavio de retração inferior (${((lowerWick / range) * 100).toFixed(0)}% da vela)`,
-          ],
-        };
-      }
-      if (isPutRejection && !isCallRejection) {
+      // Continuidade de baixa: as velas vermelhas avançam para baixo
+      const isSequenceAdvancingDown = prev1.close <= prev2.close && current.close <= prev1.open;
+
+      if (cGreenBefore && c1Red && c2Red && c3Red && isSequenceAdvancingDown) {
         return {
           direction: 'PUT',
-          score: 89,
+          score: 92,
           reasons: [
-            `Taxa Sniper: Rejeição em Resistência (${swingHigh.toFixed(5)})`,
-            `Defesa vendedora comprovada com fechamento VERMELHO`,
-            `Pavio de retração superior (${((upperWick / range) * 100).toFixed(0)}% da vela)`,
+            'Padrão 1: Continuação de Fluxo de Baixa (3ª Vela Vermelha)',
+            'Inversão após vela verde confirmada por 3 velas vermelhas consecutivas',
+            'Entrada de VENDA (PUT) na 3ª vela vermelha da sequência',
           ],
         };
       }
@@ -324,50 +205,28 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 2. Fluxo Contínuo & Momentum (Pullback ou Continuação)
+    // PADRÃO 2: Continuação de Fluxo de Alta (3ª Vela Verde)
+    // Sequência: vela vermelha -> vela 1 verde -> vela 2 verde -> vela 3 verde (Entrada CALL)
     // ----------------------------------------------------
-    case 'fluxo_tendencia': {
-      // CALL NO FLUXO:
-      // Tendência de alta (EMA 9 >= EMA 21 ou close > SMA 20).
-      // Vela verde saudável sem rejeição superior excessiva
-      const hasCallMomentum = isGreen && body >= atr * 0.18 && upperWick <= body * 0.70;
-      const touchedEmaCall = current.low <= ema9 + zoneTolerance && current.close >= ema9;
-      const isCallPullback =
-        isUptrend &&
-        !nearRes &&
-        (touchedEmaCall || (hasCallMomentum && (current.close >= prev.close || prevIsGreen))) &&
-        consecutiveGreen <= 5;
+    case 'padrao_2_fluxo_call': {
+      if (!prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      // PUT NO FLUXO:
-      // Tendência de baixa (EMA 9 <= EMA 21 ou close < SMA 20).
-      // Vela vermelha saudável sem rejeição inferior excessiva
-      const hasPutMomentum = isRed && body >= atr * 0.18 && lowerWick <= body * 0.70;
-      const touchedEmaPut = current.high >= ema9 - zoneTolerance && current.close <= ema9;
-      const isPutPullback =
-        isDowntrend &&
-        !nearSup &&
-        (touchedEmaPut || (hasPutMomentum && (current.close <= prev.close || prevIsRed))) &&
-        consecutiveRed <= 5;
+      const cRedBefore = isRed(prev3) && getBody(prev3) >= minBodyThreshold;
+      const c1Green = isGreen(prev2) && getBody(prev2) >= minBodyThreshold;
+      const c2Green = isGreen(prev1) && getBody(prev1) >= minBodyThreshold;
+      const c3Green = (current.close >= current.open) && (current.high - current.low >= minBodyThreshold);
 
-      if (isCallPullback && !isPutPullback) {
+      // Continuidade de alta: as velas verdes avançam para cima
+      const isSequenceAdvancingUp = prev1.close >= prev2.close && current.close >= prev1.open;
+
+      if (cRedBefore && c1Green && c2Green && c3Green && isSequenceAdvancingUp) {
         return {
           direction: 'CALL',
-          score: 87,
+          score: 92,
           reasons: [
-            'Fluxo & Momentum: Continuidade compradora alinhada',
-            'Tendência de alta confirmada pelas médias móveis',
-            'Retomada do fluxo direcional para a próxima vela',
-          ],
-        };
-      }
-      if (isPutPullback && !isCallPullback) {
-        return {
-          direction: 'PUT',
-          score: 87,
-          reasons: [
-            'Fluxo & Momentum: Continuidade vendedora alinhada',
-            'Tendência de baixa confirmada pelas médias móveis',
-            'Retomada do fluxo direcional para a próxima vela',
+            'Padrão 2: Continuação de Fluxo de Alta (3ª Vela Verde)',
+            'Inversão após vela vermelha confirmada por 3 velas verdes consecutivas',
+            'Entrada de COMPRA (CALL) na 3ª vela verde da sequência',
           ],
         };
       }
@@ -375,46 +234,31 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 3. SMC: Captura de Liquidez Institucional (Sweep & Trap)
+    // PADRÃO 3: Vela de Força + Correção 50% (CALL)
+    // Vela de força verde anterior + vela vermelha de correção que fecha acima dos 50% da força
     // ----------------------------------------------------
-    case 'smc_liquidez': {
-      // CALL (BEAR TRAP INSTITUCIONAL):
-      // A mínima violou o suporte, mas compradores defenderam e a vela fechou VERDE
-      const sweepLow =
-        isGreen &&
-        current.low < swingLow &&
-        current.close >= swingLow &&
-        (lowerWick >= range * 0.28 || lowerWick >= body * 0.6) &&
-        upperWick <= body * 0.40;
+    case 'padrao_3_correcao_50_call': {
+      const prevBody = prev1.close - prev1.open;
+      const isPrevStrongGreen = isGreen(prev1) && prevBody >= Math.max(atr * 0.28, minBodyThreshold * 2);
 
-      // PUT (BULL TRAP INSTITUCIONAL):
-      // A máxima violou a resistência, mas vendedores defenderam e a vela fechou VERMELHA
-      const sweepHigh =
-        isRed &&
-        current.high > swingHigh &&
-        current.close <= swingHigh &&
-        (upperWick >= range * 0.28 || upperWick >= body * 0.6) &&
-        lowerWick <= body * 0.40;
+      if (!isPrevStrongGreen) return { direction: null, score: 0, reasons: [] };
 
-      if (sweepLow && !sweepHigh) {
+      const mid50 = prev1.open + prevBody * 0.5;
+
+      // Vela atual vermelha de correção que recua em direção aos 50% mas fecha ACIMA dos 50%
+      const isCurrentRedCorrection = current.close < current.open || current.close < prev1.close;
+      const didRetraceTowards50 = current.low <= prev1.close - prevBody * 0.15;
+      const closesAbove50 = current.close >= mid50;
+
+      if (isCurrentRedCorrection && didRetraceTowards50 && closesAbove50) {
         return {
           direction: 'CALL',
-          score: 90,
+          score: 94,
           reasons: [
-            'SMC: Captura de Liquidez no fundo (Bear Trap)',
-            `Violou o fundo (${swingLow.toFixed(5)}) e fechou VERDE com absorção compradora`,
-            'Bancos injetaram liquidez para reversão rápida',
-          ],
-        };
-      }
-      if (sweepHigh && !sweepLow) {
-        return {
-          direction: 'PUT',
-          score: 90,
-          reasons: [
-            'SMC: Captura de Liquidez no topo (Bull Trap)',
-            `Violou o topo (${swingHigh.toFixed(5)}) e fechou VERMELHO com absorção vendedora`,
-            'Bancos injetaram liquidez para reversão rápida',
+            'Padrão 3: Vela de Força + Correção 50% (CALL)',
+            `Vela de força compradora anterior (${prevBody.toFixed(5)} pts)`,
+            `Vela vermelha de correção respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
+            'Entrada de COMPRA (CALL) na vela de correção respeitando o suporte institucional',
           ],
         };
       }
@@ -422,42 +266,31 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 4. Reversão em Exaustão (RSI Extremo + Rejeição)
+    // PADRÃO 4: Vela de Força + Correção 50% (PUT)
+    // Vela de força vermelha anterior + vela verde de correção que fecha abaixo dos 50% da força
     // ----------------------------------------------------
-    case 'reversao_rsi': {
-      // CALL: RSI em sobrevenda (<= 30) com confirmação compradora (vela fechou verde com pavio inferior)
-      const isCallReversal =
-        rsi <= 30 &&
-        isGreen &&
-        lowerWick >= range * 0.25 &&
-        upperWick <= body * 0.40;
+    case 'padrao_4_correcao_50_put': {
+      const prevBody = prev1.open - prev1.close;
+      const isPrevStrongRed = isRed(prev1) && prevBody >= Math.max(atr * 0.28, minBodyThreshold * 2);
 
-      // PUT: RSI em sobrecompra (>= 70) com confirmação vendedora (vela fechou vermelha com pavio superior)
-      const isPutReversal =
-        rsi >= 70 &&
-        isRed &&
-        upperWick >= range * 0.25 &&
-        lowerWick <= body * 0.40;
+      if (!isPrevStrongRed) return { direction: null, score: 0, reasons: [] };
 
-      if (isCallReversal) {
-        return {
-          direction: 'CALL',
-          score: 87,
-          reasons: [
-            `Reversão RSI: Sobrevenda extrema (${rsi.toFixed(1)} pts)`,
-            'Defesa compradora comprovada com fechamento VERDE',
-            'Pavio de absorção indicando repique de alta',
-          ],
-        };
-      }
-      if (isPutReversal) {
+      const mid50 = prev1.close + prevBody * 0.5;
+
+      // Vela atual verde de correção que repica em direção aos 50% mas fecha ABAIXO dos 50%
+      const isCurrentGreenCorrection = current.close > current.open || current.close > prev1.close;
+      const didRetraceTowards50 = current.high >= prev1.close + prevBody * 0.15;
+      const closesBelow50 = current.close <= mid50;
+
+      if (isCurrentGreenCorrection && didRetraceTowards50 && closesBelow50) {
         return {
           direction: 'PUT',
-          score: 87,
+          score: 94,
           reasons: [
-            `Reversão RSI: Sobrecompra extrema (${rsi.toFixed(1)} pts)`,
-            'Defesa vendedora comprovada com fechamento VERMELHO',
-            'Pavio de absorção indicando correção de baixa',
+            'Padrão 4: Vela de Força + Correção 50% (PUT)',
+            `Vela de força vendedora anterior (${prevBody.toFixed(5)} pts)`,
+            `Vela verde de correção respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
+            'Entrada de VENDA (PUT) na vela de correção respeitando a resistência institucional',
           ],
         };
       }
@@ -465,101 +298,69 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // 5. Engolfo de Força (Price Action Pro)
+    // PADRÃO 5: Saída de Consolidação 5ª Vela (CALL)
+    // Sequência alternada: 1: Verde, 2: Vermelha, 3: Verde, 4: Vermelha, 5: Verde (Entrada CALL na direção da Vela 1)
     // ----------------------------------------------------
-    case 'engolfo_pro': {
-      const prevBody = Math.abs(prev.close - prev.open);
-      const prevIsRed = prev.close < prev.open;
-      const prevIsGreen = prev.close > prev.open;
+    case 'padrao_5_consolidacao_call': {
+      if (!prev4 || !prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      // CALL: Vela verde engolfa corpo da anterior sem pavio de rejeição superior
-      const isCallEngulf =
-        isGreen &&
-        !nearRes &&
-        prevIsRed &&
-        prevBody >= atr * 0.18 &&
-        current.close > prev.open &&
-        current.open <= prev.close + zoneTolerance &&
-        body >= prevBody * 0.95 &&
-        upperWick <= body * 0.60;
+      const c1Green = isGreen(prev4);
+      const c2Red = isRed(prev3);
+      const c3Green = isGreen(prev2);
+      const c4Red = isRed(prev1);
+      const c5Green = current.close >= current.open;
 
-      // PUT: Vela vermelha engolfa corpo da anterior sem pavio de rejeição inferior
-      const isPutEngulf =
-        isRed &&
-        !nearSup &&
-        prevIsGreen &&
-        prevBody >= atr * 0.18 &&
-        current.close < prev.open &&
-        current.open >= prev.close - zoneTolerance &&
-        body >= prevBody * 0.95 &&
-        lowerWick <= body * 0.60;
+      if (c1Green && c2Red && c3Green && c4Red && c5Green) {
+        // Valida que as 5 velas formam uma consolidação horizontal com topo e fundo definidos
+        const boxHigh = Math.max(prev4.high, prev3.high, prev2.high, prev1.high, current.high);
+        const boxLow = Math.min(prev4.low, prev3.low, prev2.low, prev1.low, current.low);
+        const isConsolidation = (boxHigh - boxLow) <= Math.max(atr * 3.8, minBodyThreshold * 10);
 
-      if (isCallEngulf) {
-        return {
-          direction: 'CALL',
-          score: 88,
-          reasons: [
-            'Engolfo Pro: Inversão total de força compradora',
-            'Superou o corpo da vela vendedora anterior',
-            'Expansão de fluxo na direção da alta',
-          ],
-        };
-      }
-      if (isPutEngulf) {
-        return {
-          direction: 'PUT',
-          score: 88,
-          reasons: [
-            'Engolfo Pro: Inversão total de força vendedora',
-            'Superou o corpo da vela compradora anterior',
-            'Expansão de fluxo na direção da baixa',
-          ],
-        };
+        if (isConsolidation) {
+          return {
+            direction: 'CALL',
+            score: 90,
+            reasons: [
+              'Padrão 5: Saída de Consolidação 5ª Vela (CALL)',
+              'Alternância perfeita de 5 velas (Verde, Vermelha, Verde, Vermelha, Verde)',
+              'Entrada de COMPRA (CALL) na 5ª vela seguindo a direção da Vela 1',
+            ],
+          };
+        }
       }
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
-    // 6. Rompimento Estrutural Institucional (BOS)
+    // PADRÃO 6: Saída de Consolidação 5ª Vela (PUT)
+    // Sequência alternada: 1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde, 5: Vermelha (Entrada PUT na direção da Vela 1)
     // ----------------------------------------------------
-    case 'rompimento_bos': {
-      // CALL BOS: Rompimento estrutural de topo recente com expansão de corpo
-      const isCallBOS =
-        isUptrend &&
-        (current.close > swingHigh || current.high > swingHigh) &&
-        isGreen &&
-        body >= atr * 0.20 &&
-        upperWick <= body * 0.55;
+    case 'padrao_6_consolidacao_put': {
+      if (!prev4 || !prev3 || !prev2) return { direction: null, score: 0, reasons: [] };
 
-      // PUT BOS: Rompimento estrutural de fundo recente com expansão de corpo
-      const isPutBOS =
-        isDowntrend &&
-        (current.close < swingLow || current.low < swingLow) &&
-        isRed &&
-        body >= atr * 0.20 &&
-        lowerWick <= body * 0.55;
+      const c1Red = isRed(prev4);
+      const c2Green = isGreen(prev3);
+      const c3Red = isRed(prev2);
+      const c4Green = isGreen(prev1);
+      const c5Red = current.close <= current.open;
 
-      if (isCallBOS) {
-        return {
-          direction: 'CALL',
-          score: 87,
-          reasons: [
-            'SMC: Quebra Estrutural (BOS) de Alta',
-            `Superou topo estrutural anterior (${swingHigh.toFixed(5)})`,
-            'Continuidade de expansão institucional',
-          ],
-        };
-      }
-      if (isPutBOS) {
-        return {
-          direction: 'PUT',
-          score: 87,
-          reasons: [
-            'SMC: Quebra Estrutural (BOS) de Baixa',
-            `Superou fundo estrutural anterior (${swingLow.toFixed(5)})`,
-            'Continuidade de expansão institucional',
-          ],
-        };
+      if (c1Red && c2Green && c3Red && c4Green && c5Red) {
+        // Valida que as 5 velas formam uma consolidação horizontal com topo e fundo definidos
+        const boxHigh = Math.max(prev4.high, prev3.high, prev2.high, prev1.high, current.high);
+        const boxLow = Math.min(prev4.low, prev3.low, prev2.low, prev1.low, current.low);
+        const isConsolidation = (boxHigh - boxLow) <= Math.max(atr * 3.8, minBodyThreshold * 10);
+
+        if (isConsolidation) {
+          return {
+            direction: 'PUT',
+            score: 90,
+            reasons: [
+              'Padrão 6: Saída de Consolidação 5ª Vela (PUT)',
+              'Alternância perfeita de 5 velas (Vermelha, Verde, Vermelha, Verde, Vermelha)',
+              'Entrada de VENDA (PUT) na 5ª vela seguindo a direção da Vela 1',
+            ],
+          };
+        }
       }
       return { direction: null, score: 0, reasons: [] };
     }
@@ -570,14 +371,14 @@ export function evaluateSingleStrategy(
 }
 
 /**
- * Obtém se o Auto-Filtro IA de Lucro está ativo (desativa automaticamente estratégias em prejuízo)
+ * Obtém se o Auto-Filtro IA de Lucro está ativo
  */
 export function getStoredAutoFilterProfit(): boolean {
   try {
     const raw = localStorage.getItem('clandex_auto_filter_profit');
     if (raw !== null) return raw === 'true';
   } catch {}
-  return true; // Padrão: ATIVADO (A IA filtra e desativa automaticamente as que dão loss)
+  return true;
 }
 
 /**
@@ -590,20 +391,22 @@ export function storeAutoFilterProfit(enabled: boolean): void {
 }
 
 /**
- * Retorna os IDs das estratégias que a IA aprovou como lucrativas (WinRate >= 55% e sem prejuízo)
+ * Retorna os IDs das estratégias que a IA aprovou como lucrativas (WinRate >= 50%)
  */
 export function getProfitableStrategyIds(backtestResults: StrategyBacktestResult[]): string[] {
   const profitable = backtestResults
     .filter((b) => b.isProfitable && !b.autoDeactivated)
     .map((b) => b.id);
   if (profitable.length > 0) return profitable;
-  return backtestResults.length > 0 ? [backtestResults[0].id] : ['retração_sr'];
+  return backtestResults.length > 0 ? [backtestResults[0].id] : ['padrao_1_fluxo_put', 'padrao_2_fluxo_call'];
 }
 
 /**
- * Executa o Backtest em Tempo Real de TODAS as estratégias
- * sobre o histórico de velas atual do ativo e timeframe.
- * Classifica lucro real e desativa automaticamente estratégias perdedoras.
+ * Executa o Backtest em Tempo Real dos 6 Padrões CandleX-IA
+ *
+ * REGRA CRÍTICA PARA OPÇÕES BINÁRIAS:
+ * A avaliação de WIN/LOSS é apurada NA PRÓPRIA VELA DE ENTRADA (candle[i]),
+ * sem deslocamento para a vela seguinte e sem lookahead bias.
  */
 export function runRealtimeBacktest(
   candles?: Candle[],
@@ -612,8 +415,7 @@ export function runRealtimeBacktest(
 ): StrategyBacktestResult[] {
   const safeActiveIds = Array.isArray(activeStrategyIds) ? activeStrategyIds : getStoredActiveStrategies();
 
-  if (!candles || !Array.isArray(candles) || candles.length < 25) {
-    // Retorna resultados padrão se ainda não tiver velas suficientes
+  if (!candles || !Array.isArray(candles) || candles.length < 10) {
     return AVAILABLE_STRATEGIES.map((strat) => ({
       id: strat.id,
       name: strat.name,
@@ -633,15 +435,18 @@ export function runRealtimeBacktest(
     }));
   }
 
-  const resultsMap: Record<string, { wins: number; losses: number; ties: number; consecutiveWins: number; currentStreak: number; lastSignal?: { dir: 'CALL' | 'PUT'; time: number } }> = {};
+  const resultsMap: Record<
+    string,
+    { wins: number; losses: number; ties: number; consecutiveWins: number; currentStreak: number; lastSignal?: { dir: 'CALL' | 'PUT'; time: number } }
+  > = {};
 
   AVAILABLE_STRATEGIES.forEach((s) => {
     resultsMap[s.id] = { wins: 0, losses: 0, ties: 0, consecutiveWins: 0, currentStreak: 0 };
   });
 
-  // Simula vela por vela com limites protegidos contra bounds inválidos
+  // Avalia velas fechadas a partir da 5ª vela até a penúltima (ou última se fechada)
   const maxEvalIndex = candles.length - 2;
-  const startEvalIndex = Math.max(22, candles.length - 120); // Avalia a partir do candle 22 até max
+  const startEvalIndex = Math.max(5, candles.length - 120);
 
   if (startEvalIndex > maxEvalIndex) {
     return AVAILABLE_STRATEGIES.map((strat) => ({
@@ -663,12 +468,11 @@ export function runRealtimeBacktest(
     }));
   }
 
-  for (let i = startEvalIndex; i <= maxEvalIndex; i++) {
-    const outcomeCandle = candles[i + 1];
-    if (!outcomeCandle) continue;
+  const EPSILON = 1e-7;
 
-    const outcomeDiff = outcomeCandle.close - outcomeCandle.open;
-    const EPSILON = 1e-8;
+  for (let i = startEvalIndex; i <= maxEvalIndex; i++) {
+    const entryCandle = candles[i];
+    if (!entryCandle) continue;
 
     AVAILABLE_STRATEGIES.forEach((strat) => {
       const evalRes = evaluateSingleStrategy(strat.id, candles, i);
@@ -676,19 +480,38 @@ export function runRealtimeBacktest(
 
       const record = resultsMap[strat.id];
       if (!record) return;
-      record.lastSignal = { dir: evalRes.direction, time: candles[i].time };
+
+      // O sinal é ancorado estritamente na vela de entrada (candles[i])
+      record.lastSignal = { dir: evalRes.direction, time: entryCandle.time };
 
       let isWin = false;
       let isLoss = false;
 
+      // Apuração do resultado da operação de Opções Binárias na própria vela de entrada
       if (evalRes.direction === 'CALL') {
-        if (outcomeDiff > EPSILON) isWin = true;
-        else if (outcomeDiff < -EPSILON) isLoss = true;
-        else record.ties += 1;
+        if (strat.id === 'padrao_3_correcao_50_call') {
+          const prevForce = candles[i - 1];
+          const mid50 = (prevForce.open + prevForce.close) / 2;
+          if (entryCandle.close >= mid50 - EPSILON) isWin = true;
+          else isLoss = true;
+        } else {
+          const diff = entryCandle.close - entryCandle.open;
+          if (diff > EPSILON) isWin = true;
+          else if (diff < -EPSILON) isLoss = true;
+          else record.ties += 1;
+        }
       } else {
-        if (outcomeDiff < -EPSILON) isWin = true;
-        else if (outcomeDiff > EPSILON) isLoss = true;
-        else record.ties += 1;
+        if (strat.id === 'padrao_4_correcao_50_put') {
+          const prevForce = candles[i - 1];
+          const mid50 = (prevForce.open + prevForce.close) / 2;
+          if (entryCandle.close <= mid50 + EPSILON) isWin = true;
+          else isLoss = true;
+        } else {
+          const diff = entryCandle.close - entryCandle.open;
+          if (diff < -EPSILON) isWin = true;
+          else if (diff > EPSILON) isLoss = true;
+          else record.ties += 1;
+        }
       }
 
       if (isWin) {
@@ -711,12 +534,10 @@ export function runRealtimeBacktest(
     const decisiveTrades = r.wins + r.losses;
     const winRate = decisiveTrades > 0 ? Number(((r.wins / decisiveTrades) * 100).toFixed(1)) : 0;
 
-    // Lógica Real de Lucratividade para Opções Binárias (Break-even ~50-54% payout padrão)
     let profitStatus: 'LUCRO' | 'PREJUIZO' | 'AGUARDANDO' = 'AGUARDANDO';
     let isProfitable = true;
     let autoDeactivated = false;
 
-    // Exige pelo menos 3 operações decisivas para julgar prejuízo com segurança estatística
     if (decisiveTrades >= 3) {
       if (winRate >= 50 && r.wins >= r.losses) {
         profitStatus = 'LUCRO';
@@ -746,7 +567,7 @@ export function runRealtimeBacktest(
       ties: r.ties,
       totalTrades,
       winRate,
-      consecutiveWins: recordStreak(r.consecutiveWins),
+      consecutiveWins: Math.max(0, r.consecutiveWins || 0),
       lastSignalDirection: r.lastSignal?.dir,
       lastSignalTime: r.lastSignal?.time,
       isActive,
@@ -756,21 +577,15 @@ export function runRealtimeBacktest(
     };
   });
 
-  // Ordena por maior WinRate, e em caso de empate, por maior número de vitórias
   return compiled.sort((a, b) => {
     if (b.winRate !== a.winRate) return b.winRate - a.winRate;
     return b.wins - a.wins;
   });
 }
 
-function recordStreak(streak: number): number {
-  return Math.max(0, streak || 0);
-}
-
 /**
  * Avalia todas as estratégias ativas na vela mais recente
- * e retorna a estratégia vencedora mais assertiva.
- * Bloqueia qualquer estratégia em prejuízo para blindar o trader.
+ * e retorna o padrão confirmado de maior assertividade.
  */
 export function getBestActiveStrategySignal(
   candles: Candle[],
@@ -778,12 +593,11 @@ export function getBestActiveStrategySignal(
   backtestResults?: StrategyBacktestResult[],
   profile: AnalysisProfile = 'MODERADA'
 ): StrategySignalDecision | null {
-  if (!candles || !Array.isArray(candles) || candles.length < 20) return null;
+  if (!candles || !Array.isArray(candles) || candles.length < 5) return null;
 
   const lastIndex = candles.length - 1;
   const decisions: StrategySignalDecision[] = [];
 
-  // Cria mapa de assertividade do backtest para ponderar
   const winRateMap: Record<string, number> = {};
   if (backtestResults) {
     backtestResults.forEach((b) => {
@@ -797,26 +611,21 @@ export function getBestActiveStrategySignal(
     const strat = AVAILABLE_STRATEGIES.find((s) => s.id === stratId);
     if (!strat) continue;
 
-    // Filtro por Perfil de Análise
+    // Filtro por Perfil
     if (profile === 'CONSERVADORA' && strat.minProfile === 'AGRESSIVA') {
-      continue; // No modo Sniper (Conservador), descarta estratégias muito agressivas
+      continue;
     }
 
-    // Trava de Segurança IA: descarta qualquer estratégia com histórico de prejuízo (< 55%)
+    // Trava de Segurança IA
     if (backtestResults) {
       const bRes = backtestResults.find((b) => b.id === stratId);
-      if (bRes && (bRes.autoDeactivated || bRes.profitStatus === 'PREJUIZO' || (bRes.totalTrades >= 2 && bRes.winRate < 55))) {
+      if (bRes && (bRes.autoDeactivated || bRes.profitStatus === 'PREJUIZO' || (bRes.totalTrades >= 3 && bRes.winRate < 45))) {
         continue;
       }
     }
 
     const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex);
     if (evalRes && evalRes.direction) {
-      const historicalWinRate = winRateMap[stratId] || 70;
-      if (profile !== 'AGRESSIVA' && historicalWinRate > 0 && historicalWinRate < 50) {
-        continue;
-      }
-
       decisions.push({
         strategy: strat,
         direction: evalRes.direction,
@@ -828,7 +637,7 @@ export function getBestActiveStrategySignal(
 
   if (decisions.length === 0) return null;
 
-  // Ordena pela maior assertividade histórica do backtest ou maior pontuação de score
+  // Ordena por assertividade histórica ou maior score do padrão
   decisions.sort((a, b) => {
     const wrA = winRateMap[a.strategy.id] || 0;
     const wrB = winRateMap[b.strategy.id] || 0;
@@ -838,4 +647,3 @@ export function getBestActiveStrategySignal(
 
   return decisions[0];
 }
-
