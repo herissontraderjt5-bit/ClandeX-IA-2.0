@@ -9,6 +9,7 @@ import {
   TimeFrame,
   ExpirationTime,
   StrategyBacktestResult,
+  SignalDirection,
 } from '../types/trading';
 import { audioAlerts } from './audioAlerts';
 import { isForexMarketOpen, marketDataManager, getTimeframeSeconds } from './marketData';
@@ -462,41 +463,9 @@ export class SignalEngine {
           return;
         }
 
-        // TRAVA ABSOLUTA FINAL: só cancela se o preço estiver em zona de resistência/suporte E demonstrar rejeição (pavio oposto)
-        const isFinalBuyAtResistance = this.activePreAlert.direction === 'CALL' && (
-          marketAnalysis?.nearResistance && upperWick >= body * 0.40
-        );
-        const isFinalSellAtSupport = this.activePreAlert.direction === 'PUT' && (
-          marketAnalysis?.nearSupport && lowerWick >= body * 0.40
-        );
-
-        if (isFinalBuyAtResistance || isFinalSellAtSupport) {
-          const srReason = isFinalBuyAtResistance
-            ? 'CALL bloqueado: preço atingiu zona de Resistência. Operação cancelada para proteção de banca.'
-            : 'PUT bloqueado: preço atingiu zona de Suporte. Operação cancelada para proteção de banca.';
-
-          const cancelled: SignalRecord = {
-            ...this.activePreAlert,
-            stage: 'CANCELLED',
-            cancelledAt: Date.now(),
-            cancelReason: srReason,
-          };
-          this.lastCancelledSignal = cancelled;
-          this.lastCancelledTime = Date.now();
-          this.lastConfirmedCandleTime = currentCandle.time;
-          this.activePreAlert = null;
-
-          audioAlerts.playCancelAlert();
-          if (this.onSignalEventCallback) {
-            this.onSignalEventCallback(cancelled, 'CANCELLED');
-          }
-          this.notify();
-          return;
-        } else {
-          // CONFIRMAÇÃO OFICIAL FALTANDO 10 SEGUNDOS!
-          // Pavio de rejeição não superou o corpo -> A confirmação prossegue com confiança máxima!
-          const refPrice = currentCandle.close;
-          const confirmed: SignalRecord = {
+        // REGRA ESTRITA DO USUÁRIO: Pavio de rejeição não superou o corpo da vela -> CONFIRMAÇÃO PROSSEGUE
+        const refPrice = currentCandle.close;
+        const confirmed: SignalRecord = {
             ...this.activePreAlert,
             id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             stage: 'CONFIRMED',
@@ -546,8 +515,7 @@ export class SignalEngine {
           this.saveHistory(confirmed);
           this.notify();
           return;
-        }
-      } else {
+        } else {
         // Confirmação direta instantânea de alta convicção faltando 10 segundos
         // EXCLUSIVO para os 6 Padrões Oficiais CandleX-IA
         const activeStrategies = (settings.activeStrategies && settings.activeStrategies.length > 0)
@@ -566,8 +534,8 @@ export class SignalEngine {
           const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
           const body = Math.abs(currentCandle.close - currentCandle.open);
 
-          const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body * 0.5;
-          const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body * 0.5;
+          const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
+          const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
             const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
@@ -673,8 +641,8 @@ export class SignalEngine {
       const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
       const body = Math.abs(currentCandle.close - currentCandle.open);
 
-      const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body * 0.5;
-      const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body * 0.5;
+      const isHardResistanceBlock = stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
+      const isHardSupportBlock = stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
 
       if (!isHardResistanceBlock && !isHardSupportBlock) {
         signalDirection = stratDecision.direction;

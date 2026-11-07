@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
     const days = parseInt(body?.days, 10) || 30;
     const notes = body?.notes || `Acesso configurado para ${days} dias`;
 
-    const updated = grantMemberAccess(email, notes);
+    const updated = grantMemberManual(email, notes, days);
     res.status(200).json({ success: true, member: updated, days });
   } catch (err: any) {
     console.error('[API Admin Update Days]', err);
