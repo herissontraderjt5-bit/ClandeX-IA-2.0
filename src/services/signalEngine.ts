@@ -433,20 +433,26 @@ export class SignalEngine {
 
         if (this.activePreAlert.direction === 'CALL') {
           // Para CALL: cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se estiver no Modo Sniper (CONSERVADORA) e a vela estiver vermelha (fechando abaixo da abertura)
+          // OU se a vela do Padrão 2 estiver fechando vermelha contrária à compra
           if (upperWick > body && upperWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 invalidado para proteção de banca.';
           } else if (profile === 'CONSERVADORA' && currentCandle.close < currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
           }
         } else if (this.activePreAlert.direction === 'PUT') {
           // Para PUT: cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se estiver no Modo Sniper (CONSERVADORA) e a vela estiver verde (fechando acima da abertura)
+          // OU se a vela do Padrão 1 estiver fechando verde contrária à venda
           if (lowerWick > body && lowerWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 invalidado para proteção de banca.';
           } else if (profile === 'CONSERVADORA' && currentCandle.close > currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Modo Sniper: Vela verde contrária à venda (PUT). Entrada abortada para proteção cirúrgica.';
@@ -782,24 +788,19 @@ export class SignalEngine {
       const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeElapsedFromEntry >= expirationSec)) || isTimeoutSafety;
 
       if (isExpired) {
-        // ABERTURA OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: Preço travado na entrada (candleOpenPrice ou entryPrice) garantindo consistência com a HUD
-        // Prioridade 2: tradeCandle.open (abertura real da vela da operação no gráfico da corretora)
-        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-          ? trade.candleOpenPrice
-          : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : trade.entryPrice);
-
-        // FECHAMENTO OFICIAL DA VELA DO SINAL:
-        // Prioridade 1: tradeCandle.close se a vela encerrou ou possui cotação válida
-        // Prioridade 2: Última cotação capturada antes/no momento da expiração (candleClosePrice)
-        // Prioridade 3: Preço atual de mercado (currentPrice)
+        // ABERTURA E FECHAMENTO OFICIAIS DA VELA DO SINAL:
+        // O resultado da operação de opções binárias é 100% determinado pela própria vela da operação:
+        // Se a vela fechou verde (close > open) -> CALL = WIN, PUT = LOSS.
+        // Se a vela fechou vermelha (close < open) -> PUT = WIN, CALL = LOSS.
+        let officialOpen: number;
         let officialClose: number;
-        if (tradeCandle && tradeCandle.close > 0) {
+
+        if (tradeCandle && tradeCandle.open > 0 && tradeCandle.close > 0) {
+          officialOpen = tradeCandle.open;
           officialClose = tradeCandle.close;
-        } else if (trade.candleClosePrice && trade.candleClosePrice > 0) {
-          officialClose = trade.candleClosePrice;
         } else {
-          officialClose = currentPrice;
+          officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0) ? trade.candleOpenPrice : trade.entryPrice;
+          officialClose = (trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : currentPrice;
         }
 
         const diff = officialClose - officialOpen;

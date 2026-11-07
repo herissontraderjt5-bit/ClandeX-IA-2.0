@@ -139,17 +139,16 @@ export function evaluateSingleStrategy(
   switch (strategyId) {
     // ----------------------------------------------------
     // PADRÃO 1: Continuação de Fluxo de Baixa (3ª Vela Vermelha -> PUT)
-    // Sequência: Vela Verde -> Vela 1 Vermelha -> Vela 2 Vermelha -> Vela 3 Vermelha
+    // Setup na 2ª vela vermelha: Vela Verde ➔ Vela 1 Vermelha ➔ Vela 2 Vermelha
+    // Entrada oficial de VENDA (PUT) na 3ª vela vermelha
     // ----------------------------------------------------
     case 'padrao_1_fluxo_put': {
-      // Caso A: Estamos na 3ª vela vermelha (Vela de Entrada da imagem)
-      if (prev3 && prev2) {
-        const isGreenBefore = isGreen(prev3);
-        const isRed1 = isRed(prev2);
-        const isRed2 = isRed(prev1);
-        const isRed3 = current.close <= current.open || isRed(current);
+      if (prev2) {
+        const isGreenBefore = isGreen(prev2);
+        const isRed1 = isRed(prev1);
+        const isRed2 = isRed(current);
 
-        if (isGreenBefore && isRed1 && isRed2 && isRed3) {
+        if (isGreenBefore && isRed1 && isRed2) {
           return {
             direction: 'PUT',
             score: 96,
@@ -161,42 +160,21 @@ export function evaluateSingleStrategy(
           };
         }
       }
-
-      // Caso B: Estamos na 2ª vela vermelha (preparação imediata para abrir a 3ª vela)
-      if (prev2) {
-        const isGreenBefore = isGreen(prev2);
-        const isRed1 = isRed(prev1);
-        const isRed2 = current.close <= current.open || isRed(current);
-
-        if (isGreenBefore && isRed1 && isRed2) {
-          return {
-            direction: 'PUT',
-            score: 94,
-            reasons: [
-              'Padrão 1: Fluxo de Baixa em Formação',
-              'Vela Verde ➔ Vela 1 Vermelha ➔ Vela 2 Vermelha',
-              'Entrada de VENDA (PUT) na 3ª vela',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
     // PADRÃO 2: Continuação de Fluxo de Alta (3ª Vela Verde -> CALL)
-    // Sequência: Vela Vermelha -> Vela 1 Verde -> Vela 2 Verde -> Vela 3 Verde
+    // Setup na 2ª vela verde: Vela Vermelha ➔ Vela 1 Verde ➔ Vela 2 Verde
+    // Entrada oficial de COMPRA (CALL) na 3ª vela verde
     // ----------------------------------------------------
     case 'padrao_2_fluxo_call': {
-      // Caso A: Estamos na 3ª vela verde (Vela de Entrada da imagem)
-      if (prev3 && prev2) {
-        const isRedBefore = isRed(prev3);
-        const isGreen1 = isGreen(prev2);
-        const isGreen2 = isGreen(prev1);
-        const isGreen3 = current.close >= current.open || isGreen(current);
+      if (prev2) {
+        const isRedBefore = isRed(prev2);
+        const isGreen1 = isGreen(prev1);
+        const isGreen2 = isGreen(current);
 
-        if (isRedBefore && isGreen1 && isGreen2 && isGreen3) {
+        if (isRedBefore && isGreen1 && isGreen2) {
           return {
             direction: 'CALL',
             score: 96,
@@ -208,196 +186,106 @@ export function evaluateSingleStrategy(
           };
         }
       }
-
-      // Caso B: Estamos na 2ª vela verde (preparação imediata para abrir a 3ª vela)
-      if (prev2) {
-        const isRedBefore = isRed(prev2);
-        const isGreen1 = isGreen(prev1);
-        const isGreen2 = current.close >= current.open || isGreen(current);
-
-        if (isRedBefore && isGreen1 && isGreen2) {
-          return {
-            direction: 'CALL',
-            score: 94,
-            reasons: [
-              'Padrão 2: Fluxo de Alta em Formação',
-              'Vela Vermelha ➔ Vela 1 Verde ➔ Vela 2 Verde',
-              'Entrada de COMPRA (CALL) na 3ª vela',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
     // PADRÃO 3: Vela de Força + Correção 50% (CALL)
-    // Vela de força verde + vela vermelha de correção fechando acima dos 50%
+    // Vela 1 verde de força + Vela 2 vermelha de correção fechando acima dos 50%
+    // Entrada oficial de COMPRA (CALL) na 3ª vela
     // ----------------------------------------------------
     case 'padrao_3_correcao_50_call': {
-      // Caso A: index é a vela após a correção
-      if (prev2) {
-        const forceBody = prev2.close - prev2.open;
-        if (isGreen(prev2) && forceBody > 0.00003) {
-          const mid50 = prev2.open + forceBody * 0.5;
-          const isRedCorr = isRed(prev1);
-          const closedAbove50 = prev1.close >= mid50;
+      if (prev1) {
+        const forceBody = prev1.close - prev1.open;
+        if (isGreen(prev1) && forceBody > 0.00001) {
+          const mid50 = prev1.open + forceBody * 0.5;
+          const isRedCorr = isRed(current);
+          const closedAbove50 = current.close >= mid50;
           if (isRedCorr && closedAbove50) {
             return {
               direction: 'CALL',
               score: 96,
               reasons: [
                 'Padrão 3: Vela de Força + Correção 50% (CALL)',
-                `Vela de força verde anterior respeitada nos 50% (${mid50.toFixed(5)})`,
-                'Entrada de COMPRA (CALL) na retomada do fluxo',
+                `Vela vermelha respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
+                'Entrada de COMPRA (CALL) na retomada do fluxo na 3ª vela',
               ],
             };
           }
         }
       }
-
-      // Caso B: index é a própria vela vermelha de correção
-      const forceBody = prev1.close - prev1.open;
-      if (isGreen(prev1) && forceBody > 0.00003) {
-        const mid50 = prev1.open + forceBody * 0.5;
-        const isRedCorr = current.close <= current.open || current.close < prev1.close;
-        const closesAbove50 = current.close >= mid50;
-        if (isRedCorr && closesAbove50) {
-          return {
-            direction: 'CALL',
-            score: 94,
-            reasons: [
-              'Padrão 3: Correção 50% em Andamento',
-              `Vela vermelha respeitando e fechando acima dos 50% (${mid50.toFixed(5)})`,
-              'Entrada de COMPRA (CALL)',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
     // PADRÃO 4: Vela de Força + Correção 50% (PUT)
-    // Vela de força vermelha + vela verde de correção fechando abaixo dos 50%
+    // Vela 1 vermelha de força + Vela 2 verde de correção fechando abaixo dos 50%
+    // Entrada oficial de VENDA (PUT) na 3ª vela
     // ----------------------------------------------------
     case 'padrao_4_correcao_50_put': {
-      // Caso A: index é a vela após a correção
-      if (prev2) {
-        const forceBody = prev2.open - prev2.close;
-        if (isRed(prev2) && forceBody > 0.00003) {
-          const mid50 = prev2.close + forceBody * 0.5;
-          const isGreenCorr = isGreen(prev1);
-          const closedBelow50 = prev1.close <= mid50;
+      if (prev1) {
+        const forceBody = prev1.open - prev1.close;
+        if (isRed(prev1) && forceBody > 0.00001) {
+          const mid50 = prev1.close + forceBody * 0.5;
+          const isGreenCorr = isGreen(current);
+          const closedBelow50 = current.close <= mid50;
           if (isGreenCorr && closedBelow50) {
             return {
               direction: 'PUT',
               score: 96,
               reasons: [
                 'Padrão 4: Vela de Força + Correção 50% (PUT)',
-                `Vela de força vermelha anterior respeitada nos 50% (${mid50.toFixed(5)})`,
-                'Entrada de VENDA (PUT) na retomada do fluxo',
+                `Vela verde respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
+                'Entrada de VENDA (PUT) na retomada do fluxo na 3ª vela',
               ],
             };
           }
         }
       }
-
-      // Caso B: index é a própria vela verde de correção
-      const forceBody = prev1.open - prev1.close;
-      if (isRed(prev1) && forceBody > 0.00003) {
-        const mid50 = prev1.close + forceBody * 0.5;
-        const isGreenCorr = current.close >= current.open || current.close > prev1.close;
-        const closesBelow50 = current.close <= mid50;
-        if (isGreenCorr && closesBelow50) {
-          return {
-            direction: 'PUT',
-            score: 94,
-            reasons: [
-              'Padrão 4: Correção 50% em Andamento',
-              `Vela verde respeitando e fechando abaixo dos 50% (${mid50.toFixed(5)})`,
-              'Entrada de VENDA (PUT)',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
     // PADRÃO 5: Saída de Consolidação 5ª Vela (CALL)
+    // Setup na 4ª vela: 1 Verde, 2 Vermelha, 3 Verde, 4 Vermelha
+    // Entrada oficial de COMPRA (CALL) na 5ª vela na direção da Vela 1
     // ----------------------------------------------------
     case 'padrao_5_consolidacao_call': {
-      // Caso A: index é a 5ª vela verde
-      if (prev4 && prev3 && prev2) {
-        if (isGreen(prev4) && isRed(prev3) && isGreen(prev2) && isRed(prev1) && (current.close >= current.open || isGreen(current))) {
+      if (prev3 && prev2 && prev1) {
+        if (isGreen(prev3) && isRed(prev2) && isGreen(prev1) && isRed(current)) {
           return {
             direction: 'CALL',
             score: 95,
             reasons: [
               'Padrão 5: Saída de Consolidação 5ª Vela (CALL)',
-              'Alternância de 5 velas confirmada (Verde, Vermelha, Verde, Vermelha, Verde)',
+              'Alternância de 4 velas confirmada (Verde, Vermelha, Verde, Vermelha)',
               'Entrada de COMPRA (CALL) na 5ª vela na direção da Vela 1',
             ],
           };
         }
       }
-
-      // Caso B: index é a 4ª vela vermelha (preparando 5ª)
-      if (prev3 && prev2) {
-        if (isGreen(prev3) && isRed(prev2) && isGreen(prev1) && (current.close <= current.open || isRed(current))) {
-          return {
-            direction: 'CALL',
-            score: 92,
-            reasons: [
-              'Padrão 5: Consolidação em Formação (4 Velas)',
-              'Alternância confirmada: Verde, Vermelha, Verde, Vermelha',
-              'Entrada de COMPRA (CALL) na 5ª vela',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
     // ----------------------------------------------------
     // PADRÃO 6: Saída de Consolidação 5ª Vela (PUT)
+    // Setup na 4ª vela: 1 Vermelha, 2 Verde, 3 Vermelha, 4 Verde
+    // Entrada oficial de VENDA (PUT) na 5ª vela na direção da Vela 1
     // ----------------------------------------------------
     case 'padrao_6_consolidacao_put': {
-      // Caso A: index é a 5ª vela vermelha
-      if (prev4 && prev3 && prev2) {
-        if (isRed(prev4) && isGreen(prev3) && isRed(prev2) && isGreen(prev1) && (current.close <= current.open || isRed(current))) {
+      if (prev3 && prev2 && prev1) {
+        if (isRed(prev3) && isGreen(prev2) && isRed(prev1) && isGreen(current)) {
           return {
             direction: 'PUT',
             score: 95,
             reasons: [
               'Padrão 6: Saída de Consolidação 5ª Vela (PUT)',
-              'Alternância de 5 velas confirmada (Vermelha, Verde, Vermelha, Verde, Vermelha)',
+              'Alternância de 4 velas confirmada (Vermelha, Verde, Vermelha, Verde)',
               'Entrada de VENDA (PUT) na 5ª vela na direção da Vela 1',
             ],
           };
         }
       }
-
-      // Caso B: index é a 4ª vela verde (preparando 5ª)
-      if (prev3 && prev2) {
-        if (isRed(prev3) && isGreen(prev2) && isRed(prev1) && (current.close >= current.open || isGreen(current))) {
-          return {
-            direction: 'PUT',
-            score: 92,
-            reasons: [
-              'Padrão 6: Consolidação em Formação (4 Velas)',
-              'Alternância confirmada: Vermelha, Verde, Vermelha, Verde',
-              'Entrada de VENDA (PUT) na 5ª vela',
-            ],
-          };
-        }
-      }
-
       return { direction: null, score: 0, reasons: [] };
     }
 
