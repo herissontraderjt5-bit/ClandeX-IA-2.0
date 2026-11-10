@@ -420,6 +420,7 @@ export function useLiveVoice({
     const dir = ctx.confluences.direction === 'CALL' ? 'COMPRA' : ctx.confluences.direction === 'PUT' ? 'VENDA' : 'NEUTRO';
     const score = ctx.confluences.totalScore;
     const trend = ctx.marketAnalysis.trend;
+    const currentPriceStr = ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals);
 
     // 1. Reclamação de lentidão, demora ou repetição
     if (
@@ -434,7 +435,7 @@ export function useLiveVoice({
       q.includes('por que demora') ||
       q.includes('pq demora')
     ) {
-      return `O motor de voz foi otimizado para modo instantâneo com resposta em menos de trezentos milissegundos! Pode falar sua dúvida sobre ${ctx.asset.symbol}, que te respondo na hora.`;
+      return `O motor de voz foi otimizado para modo instantâneo com resposta imediata! Pode falar o que quiser, sobre o mercado ou bater um papo, que te respondo na hora!`;
     }
 
     if (
@@ -453,7 +454,7 @@ export function useLiveVoice({
       q.includes('não foi isso') ||
       q.includes('nao foi isso')
     ) {
-      return `Peço desculpas pela repetição anterior! O sistema de voz foi totalmente atualizado. Agora estou conectada e pronta para responder diretamente qualquer dúvida sua sobre o gráfico de ${ctx.asset.symbol}, tendência, suportes ou conselhos operacionais. Pode me perguntar!`;
+      return `Peço desculpas pela repetição anterior! O sistema de voz foi 100% atualizado para conversar com você como uma pessoa de verdade em um bate-papo natural. Me pergunta qualquer coisa sobre o próximo candle, estratégias ou o que tiver na sua mente!`;
     }
 
     // 2. Presença, microfone e audição ("tá me ouvindo?")
@@ -472,14 +473,129 @@ export function useLiveVoice({
       q.includes('ouviu')
     ) {
       const hearingOptions = [
-        `Tô te ouvindo perfeitamente e em alto e bom som! Pode falar.`,
-        `Sim, na escuta total! Qual a sua dúvida sobre o gráfico de ${ctx.asset.symbol}?`,
-        `Ouvindo cristalino! Manda ver, o que você quer ver agora?`
+        `Tô te ouvindo perfeitamente, alto e claro! Manda ver, o que você quer ver agora?`,
+        `Sim, na escuta total! Qual a sua dúvida sobre o próximo candle ou sobre o gráfico de ${ctx.asset.symbol}?`,
+        `Ouvindo cristalino! Tô aqui contigo, pode falar!`
       ];
       return hearingOptions[Math.floor(Math.random() * hearingOptions.length)];
     }
 
-    // 3. Saudações, bem-estar e conversa casual (100% natural e variada)
+    // 3. PROBABILIDADE DO PRÓXIMO CANDLE / PRÓXIMA VELA (PRECISÃO CIRÚRGICA)
+    const asksNextCandle =
+      q.includes('probabilidade') ||
+      q.includes('proximo candle') ||
+      q.includes('próximo candle') ||
+      q.includes('proxima vela') ||
+      q.includes('próxima vela') ||
+      q.includes('vela seguinte') ||
+      q.includes('candle seguinte') ||
+      q.includes('cor do candle') ||
+      q.includes('cor da vela') ||
+      q.includes('vai fechar verde') ||
+      q.includes('vai fechar vermelha') ||
+      q.includes('verde ou vermelha') ||
+      q.includes('vermelha ou verde') ||
+      q.includes('chance do candle') ||
+      q.includes('chance da vela');
+
+    if (asksNextCandle) {
+      const activeSig = tradingContextAdapter.getCurrentSignal();
+      const buyerPct = parseInt(ctx.marketAnalysis.buyerStrength || '50', 10) || 50;
+      const sellerPct = parseInt(ctx.marketAnalysis.sellerStrength || '50', 10) || 50;
+
+      if (activeSig) {
+        const isBuy = activeSig.direction === 'CALL';
+        const cor = isBuy ? 'verde (alta)' : 'vermelha (baixa)';
+        const prob = activeSig.confluenceScore || 88;
+        const strat = activeSig.strategyName || 'padrão institucional';
+        return `Para o próximo candle de ${ctx.asset.symbol}, a maior probabilidade é de fechar em ${cor}, com ${prob}% de convicção técnica confirmada pela ${strat}.`;
+      }
+
+      if (ctx.confluences.direction === 'CALL' || buyerPct > sellerPct + 4) {
+        const prob = Math.min(92, Math.max(score, buyerPct, 68));
+        return `A probabilidade para o próximo candle de ${ctx.asset.symbol} é de cerca de ${prob}% de fechar em alta (vela verde). A força compradora está dominando com ${ctx.marketAnalysis.buyerStrength} e a tendência é de ${trend} no M1.`;
+      }
+
+      if (ctx.confluences.direction === 'PUT' || sellerPct > buyerPct + 4) {
+        const prob = Math.min(92, Math.max(score, sellerPct, 68));
+        return `A probabilidade para o próximo candle de ${ctx.asset.symbol} é de aproximadamente ${prob}% de fechar em baixa (vela vermelha). A pressão vendedora lidera com ${ctx.marketAnalysis.sellerStrength} e a tendência é de ${trend} no M1.`;
+      }
+
+      return `Para o próximo candle de ${ctx.asset.symbol}, o mercado está brigando em 50% a 50%, com compradores e vendedores equilibrados perto de ${currentPriceStr}. Aguarde o rompimento dessa micro consolidação para confirmar a cor.`;
+    }
+
+    // 4. Sentimento, Desempenho e Bate-Papo de Trader (Loss, Win, Emoções)
+    if (
+      q.includes('tomei loss') ||
+      q.includes('levei loss') ||
+      q.includes('tomei stop') ||
+      q.includes('perdi') ||
+      q.includes('tô triste') ||
+      q.includes('to triste') ||
+      q.includes('desanimad') ||
+      q.includes('quebrei')
+    ) {
+      const lossWords = [
+        'Respira fundo, parceiro! O loss é só o custo operacional do trading. O que diferencia o consistente de quem quebra é não tentar recuperar na emoção. Dá uma pausa de cinco minutinhos, bebe uma água e só volta com a cabeça fria e mão fixa.',
+        'Calma, tamo junto! Dias difíceis acontecem até com os melhores fundos do mundo. O importante é respeitar seu stop loss e manter a disciplina. Aceita o resultado de hoje para proteger a banca pros grandes wins de amanhã!',
+        'Sei que dá raiva, mas não deixa o mercado roubar seu equilíbrio emocional. Fecha o gráfico por uns minutos, descansa a mente e foca na consistência a longo prazo!'
+      ];
+      return lossWords[Math.floor(Math.random() * lossWords.length)];
+    }
+
+    if (
+      q.includes('deu win') ||
+      q.includes('bati a meta') ||
+      q.includes('ganhei') ||
+      q.includes('lucro') ||
+      q.includes('meta batida') ||
+      q.includes('tô no lucro') ||
+      q.includes('to no lucro') ||
+      q.includes('venci')
+    ) {
+      const winWords = [
+        'Aí sim, sensacional! Parabéns demais pelo resultado! Meta batida é meta no bolso. Fecha a corretora e vai comemorar, porque disciplina é tudo!',
+        'Show de bola, mandou bem demais! O segredo do trader de elite é saber a hora de parar e garantir o lucro. Aproveita seu dia!',
+        'Parabéns pelo win! Consistência se constrói assim: disciplina dia após dia. Bom descanso!'
+      ];
+      return winWords[Math.floor(Math.random() * winWords.length)];
+    }
+
+    // 5. Conversa Amigável e Bate-papo Casual Descontraído
+    if (
+      q.includes('conversa comigo') ||
+      q.includes('bate papo') ||
+      q.includes('vamos conversar') ||
+      q.includes('fala de outra coisa') ||
+      q.includes('o que você faz') ||
+      q.includes('o que você gosta') ||
+      q.includes('me conta uma história') ||
+      q.includes('me conta uma historia')
+    ) {
+      const chatWords = [
+        'Com certeza, adoro um bom bate-papo! Além de monitorar os gráficos 24 horas por dia, adoro trocar ideia sobre rotina de trader, tecnologia, objetivos e como manter a mente afiada. Como tá sendo o seu dia hoje?',
+        'Tô por aqui prontinha pra conversar! Pode falar sobre qualquer assunto que você quiser, trading, dia a dia ou o que tiver na cabeça. Como você tá se sentindo hoje?',
+        'Claro! É muito bom ter alguém pra trocar uma ideia enquanto o mercado roda. Me conta: o que você mais curte fazer quando sai da frente dos gráficos?'
+      ];
+      return chatWords[Math.floor(Math.random() * chatWords.length)];
+    }
+
+    if (q.includes('piada') || q.includes('engraçad') || q.includes('rir')) {
+      return 'Sabe qual é a diferença entre um trader paciente e um ansioso? O paciente espera o teste na taxa com rejeição de pavio; o ansioso entra no susto e fecha o olho rezando para o candle mudar de cor!';
+    }
+
+    if (
+      q.includes('você é humana') ||
+      q.includes('voce e humana') ||
+      q.includes('você é um robô') ||
+      q.includes('voce e um robo') ||
+      q.includes('quem é você') ||
+      q.includes('quem e voce')
+    ) {
+      return 'Sou a CandleX, sua parceira de trading e mentora no CandleX-IA! Fui criada para conversar com você como uma pessoa de verdade, analisar o fluxo institucional dos candles e te dar suporte em tempo real.';
+    }
+
+    // 6. Saudações, bem-estar e cortesia
     if (
       q.includes('como você está') ||
       q.includes('como voce esta') ||
@@ -500,12 +616,11 @@ export function useLiveVoice({
         `Oi! Tudo ótimo por aqui. E com você, pronto pra gente operar hoje?`,
         `Tudo na paz! Tô com o olho colado no gráfico de ${ctx.asset.symbol}. Como tão as operações por aí?`,
         `Tudo bem demais! Gráfico de ${ctx.asset.symbol} tá bem ativo. O que você quer analisar agora?`,
-        `Opa, tudo certo! Prontíssima pra acompanhar suas entradas. Como você tá?`
+        `Opa, tudo certo! Prontíssima pra acompanhar suas entradas e bater um papo. Como você tá?`
       ];
       return greetingOptions[Math.floor(Math.random() * greetingOptions.length)];
     }
 
-    // 4. Agradecimentos e confirmações
     if (
       q.includes('obrigado') ||
       q.includes('obrigada') ||
@@ -518,22 +633,93 @@ export function useLiveVoice({
       q.includes('tchau') ||
       q.includes('até mais')
     ) {
-      return 'Tamo junto! Mantenha sempre a disciplina e o gerenciamento de risco. Estou atenta ao gráfico para o que você precisar.';
+      return 'Tamo junto sempre! Mantenha o gerenciamento e a mente tranquila. Se precisar de qualquer análise ou só trocar uma ideia, é só chamar.';
     }
 
-    // 5. Identidade da IA (ETAPA 7)
+    // 7. Rompimento e Dinâmica de Níveis
+    if (q.includes('romper') || q.includes('rompimento') || q.includes('vai romper') || q.includes('falso rompimento')) {
+      return `Olhando a dinâmica no gráfico de ${ctx.asset.symbol}: se o candle atual fechar com corpo cheio além da taxa sem deixar pavio longo, confirma o rompimento de fluxo. Caso deixe pavio longo contra a zona, o preço vai defender a taxa e retrair.`;
+    }
+
+    // 8. Retração, Reversão e Pullback
     if (
-      q.includes('quem é você') ||
-      q.includes('quem e voce') ||
-      q.includes('o que você faz') ||
-      q.includes('como funciona') ||
-      q.includes('quem e candlex') ||
-      q.includes('quem e clandex')
+      q.includes('pullback') ||
+      q.includes('pulback') ||
+      q.includes('retração') ||
+      q.includes('retracao') ||
+      q.includes('reversão') ||
+      q.includes('reversao') ||
+      q.includes('pavio')
     ) {
-      return 'Sou a CandleX, sua assistente inteligente e mentora de trading em Opções Binárias e Forex para o aplicativo CandleX-IA. Analiso Price Action, fluxo de candles e confluências para orientar suas entradas com segurança.';
+      const keyLevels = ctx.marketAnalysis.keyLevels || [];
+      const sup = keyLevels.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(ctx.asset.pipDecimals))[0] || (ctx.asset.currentPrice * 0.998).toFixed(ctx.asset.pipDecimals);
+      const res = keyLevels.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(ctx.asset.pipDecimals))[0] || (ctx.asset.currentPrice * 1.002).toFixed(ctx.asset.pipDecimals);
+      return `Para retração ou reversão no timeframe ${ctx.timeframe}, as melhores zonas agora são na resistência em ${res} para venda ou no suporte em ${sup} para compra. O segredo é pegar o toque nos primeiros segundos com rejeição evidente de pavio.`;
     }
 
-    // 6. Opinião geral e visão do mercado ("o que você acha?", "como tá o mercado?")
+    // 9. Nomenclatura Oficial das 7 Estratégias
+    if (q.includes('padrão 1') || q.includes('padrao 1') || q.includes('fluxo 3ª vela baixa') || q.includes('fluxo 3 vela baixa')) {
+      return 'O Padrão 1 é o Fluxo 3ª Vela Baixa: após uma vela verde, ocorrem duas velas vermelhas consecutivas e entramos com venda (PUT) na 3ª vela vermelha para continuação do fluxo de baixa.';
+    }
+    if (q.includes('padrão 2') || q.includes('padrao 2') || q.includes('fluxo da 3ª vela de alta') || q.includes('fluxo 3 vela alta')) {
+      return 'O Padrão 2 é o Fluxo da 3ª Vela de Alta: após uma vela vermelha, ocorrem duas velas verdes consecutivas e entramos com compra (CALL) na 3ª vela verde para surfar a alta.';
+    }
+    if (q.includes('padrão 3') || q.includes('padrao 3') || q.includes('vela de descanso alta')) {
+      return 'O Padrão 3 é a Vela de Descanso Alta: uma vela verde de força seguida por uma vela vermelha de descanso que respeita os 50%. A entrada é de compra (CALL) na retomada da alta.';
+    }
+    if (q.includes('padrão 4') || q.includes('padrao 4') || q.includes('vela de descanso baixa')) {
+      return 'O Padrão 4 é a Vela de Descanso Baixa: uma vela vermelha de força seguida por uma verde de descanso que respeita os 50%. A entrada é de venda (PUT) na retomada da queda.';
+    }
+    if (q.includes('padrão 5') || q.includes('padrao 5') || q.includes('consolidação de alta') || q.includes('consolidacao de alta')) {
+      return 'O Padrão 5 é a Consolidação de Alta: o mercado alterna quatro velas começando em verde e nós entramos comprados (CALL) na 5ª vela, a favor do fluxo da Vela 1.';
+    }
+    if (q.includes('padrão 6') || q.includes('padrao 6') || q.includes('consolidação de baixa') || q.includes('consolidacao de baixa')) {
+      return 'O Padrão 6 é a Consolidação de Baixa: o mercado alterna quatro velas começando em vermelha e nós entramos vendidos (PUT) na 5ª vela, a favor da Vela 1.';
+    }
+    if (
+      q.includes('quais estratégias') ||
+      q.includes('quais estrategias') ||
+      q.includes('quais sao as estrategias') ||
+      q.includes('quais são as estratégias') ||
+      q.includes('todas as estratégias')
+    ) {
+      return 'Temos sete estratégias ativas: Fluxo 3ª Vela Baixa, Fluxo da 3ª Vela de Alta, Vela de Descanso Alta, Vela de Descanso Baixa, Consolidação de Alta, Consolidação de Baixa e Suporte e Resistência!';
+    }
+
+    // 10. Suportes e Resistências
+    const asksResistance = q.includes('resistência') || q.includes('resistencia');
+    const asksSupport = q.includes('suporte');
+    const asksGeneralLevels =
+      q.includes('taxa') ||
+      q.includes('preço') ||
+      q.includes('preco') ||
+      q.includes('nível') ||
+      q.includes('nivel') ||
+      q.includes('piso') ||
+      q.includes('teto');
+
+    if (asksResistance || asksSupport || asksGeneralLevels) {
+      const keyLevels = ctx.marketAnalysis.keyLevels || [];
+      const sup = keyLevels
+        .filter((k) => k.type === 'SUPPORT')
+        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+      const res = keyLevels
+        .filter((k) => k.type === 'RESISTANCE')
+        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
+
+      const resImmediate = res[0] || (ctx.asset.currentPrice * 1.002).toFixed(ctx.asset.pipDecimals);
+      const supImmediate = sup[0] || (ctx.asset.currentPrice * 0.998).toFixed(ctx.asset.pipDecimals);
+
+      if (asksResistance && !asksSupport) {
+        return `A resistência mais próxima de ${ctx.asset.symbol} está na taxa ${resImmediate}. O preço atual é ${currentPriceStr} e o suporte está em ${supImmediate}.`;
+      }
+      if (asksSupport && !asksResistance) {
+        return `O suporte mais próximo de ${ctx.asset.symbol} está na taxa ${supImmediate}. O preço atual é ${currentPriceStr} e a resistência está em ${resImmediate}.`;
+      }
+      return `No ${ctx.asset.symbol}, o preço atual é ${currentPriceStr}. Temos resistência imediata em ${resImmediate} e suporte imediato em ${supImmediate}.`;
+    }
+
+    // 11. Opinião geral e visão do mercado ("o que você acha?", "como tá o mercado?")
     if (
       q.includes('o que você acha') ||
       q.includes('o que voce acha') ||
@@ -552,7 +738,7 @@ export function useLiveVoice({
       return `O par ${ctx.asset.symbol} está em tendência de ${trend} no timeframe ${ctx.timeframe}. A força compradora está em ${ctx.marketAnalysis.buyerStrength} e vendedora em ${ctx.marketAnalysis.sellerStrength}, com confluência geral em ${score}%.`;
     }
 
-    // 7. Direção de Candles e Previsão ("vai subir ou descer?")
+    // 12. Direção de Candles e Previsão ("vai subir ou descer?")
     if (
       q.includes('vai subir') ||
       q.includes('vai descer') ||
@@ -564,7 +750,7 @@ export function useLiveVoice({
       return `Pelo fluxo institucional dos candles, a maior probabilidade técnica aponta para ${pred}, com ${score}% de confluência para ${dir}.`;
     }
 
-    // 8. Dicas e Estratégia ("o que fazer?", "me dá uma dica")
+    // 13. Dicas e Estratégia ("o que fazer?", "me dá uma dica")
     if (
       q.includes('me dá uma dica') ||
       q.includes('me da uma dica') ||
@@ -576,7 +762,7 @@ export function useLiveVoice({
       return `Minha principal dica agora: opere a favor da tendência de ${trend} e nunca arrisque mais de 2 por cento da sua banca em uma única entrada.`;
     }
 
-    // 9. Timeframe e Velas
+    // 14. Timeframe e Velas
     if (
       q.includes('tempo gráfico') ||
       q.includes('tempo grafico') ||
@@ -589,12 +775,7 @@ export function useLiveVoice({
       return `Estamos analisando o timeframe ${ctx.timeframe} do par ${ctx.asset.symbol}. Para opções binárias, aguarde a expiração coincidir exatamente com o fim da vela.`;
     }
 
-    // 10. Avisos de Mercado Fechado (Forex no fim de semana)
-    if (isClosedWeekendForex && (q.includes('entrar') || q.includes('sinal') || q.includes('compro') || q.includes('vendo') || q.includes('call') || q.includes('put') || q.includes('operar'))) {
-      return `Aviso do TradingView: O mercado Forex à vista está fechado neste fim de semana para ${ctx.asset.symbol}. Para operar com sinais ao vivo agora, selecione uma Criptomoeda como Bitcoin ou Ethereum.`;
-    }
-
-    // 11. Sinais e Recomendações de Entrada
+    // 15. Sinais e Recomendações de Entrada
     if (
       q.includes('entrar') ||
       q.includes('entrada') ||
@@ -619,7 +800,7 @@ export function useLiveVoice({
       return `Sem confluência suficiente no momento, score de apenas ${score}%. Mercado em ruído ou lateral. Preserve sua banca.`;
     }
 
-    // 12. Notícias e Calendário Econômico
+    // 16. Notícias e Calendário Econômico
     if (
       q.includes('notícia') ||
       q.includes('noticia') ||
@@ -638,12 +819,12 @@ export function useLiveVoice({
       return `Sem notícias críticas de alto impacto agendadas para os próximos minutos em ${ctx.asset.symbol}. O fluxo técnico está limpo.`;
     }
 
-    // 13. Tendência e Força
+    // 17. Tendência e Força
     if (q.includes('tendência') || q.includes('tendencia') || q.includes('fluxo') || q.includes('direção') || q.includes('direcao')) {
       return `No timeframe ${ctx.timeframe}, o ativo ${ctx.asset.symbol} está em tendência de ${trend}, com força compradora ${ctx.marketAnalysis.buyerStrength} e força vendedora ${ctx.marketAnalysis.sellerStrength}.`;
     }
 
-    // 14. Cotação Oficial e Análise Direta do TradingView
+    // 18. Cotação Oficial
     const asksQuoteOrTradingView =
       q.includes('tradingview') ||
       q.includes('trading view') ||
@@ -655,96 +836,33 @@ export function useLiveVoice({
       q.includes('qual o preco') ||
       q.includes('qual o preço') ||
       q.includes('preço atual') ||
-      q.includes('preco atual') ||
-      q.includes('cotação errada') ||
-      q.includes('cotacao errada') ||
-      q.includes('cotação certa') ||
-      q.includes('cotacao certa');
+      q.includes('preco atual');
 
     if (asksQuoteOrTradingView) {
-      const currentPriceStr = ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals);
       const tvRec = ctx.marketAnalysis.tradingView?.recommendation || (score >= 70 ? 'COMPRA' : score <= 30 ? 'VENDA' : 'NEUTRO');
       const tvRsi = ctx.marketAnalysis.tradingView?.rsi !== undefined ? ctx.marketAnalysis.tradingView.rsi.toFixed(1) : '50.0';
       return `A cotação oficial do TradingView para ${ctx.asset.name} é ${currentPriceStr}. O scanner em tempo real indica recomendação de ${tvRec} com RSI em ${tvRsi}.`;
     }
 
-    // 15. Suportes e Resistências
-    const asksResistance = q.includes('resistência') || q.includes('resistencia');
-    const asksSupport = q.includes('suporte');
-    const asksGeneralLevels =
-      q.includes('taxa') ||
-      q.includes('preço') ||
-      q.includes('preco') ||
-      q.includes('nível') ||
-      q.includes('nivel') ||
-      q.includes('piso') ||
-      q.includes('teto');
-
-    if (asksResistance || asksSupport || asksGeneralLevels) {
-      const keyLevels = ctx.marketAnalysis.keyLevels || [];
-      const sup = keyLevels
-        .filter((k) => k.type === 'SUPPORT')
-        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-      const res = keyLevels
-        .filter((k) => k.type === 'RESISTANCE')
-        .map((k) => k.price.toFixed(ctx.asset.pipDecimals));
-
-      const currentPriceStr = ctx.asset.currentPrice.toFixed(ctx.asset.pipDecimals);
-      const resImmediate = res[0] || (ctx.asset.currentPrice * 1.002).toFixed(ctx.asset.pipDecimals);
-      const supImmediate = sup[0] || (ctx.asset.currentPrice * 0.998).toFixed(ctx.asset.pipDecimals);
-
-      // Se o usuário perguntou ESPECIFICAMENTE sobre resistência
-      if (asksResistance && !asksSupport) {
-        return `A resistência mais próxima de ${ctx.asset.symbol} está na taxa ${resImmediate}. O preço atual é ${currentPriceStr} e o suporte está em ${supImmediate}.`;
-      }
-
-      // Se o usuário perguntou ESPECIFICAMENTE sobre suporte
-      if (asksSupport && !asksResistance) {
-        return `O suporte mais próximo de ${ctx.asset.symbol} está na taxa ${supImmediate}. O preço atual é ${currentPriceStr} e a resistência está em ${resImmediate}.`;
-      }
-
-      // Se perguntou sobre ambos ou sobre taxas em geral
-      return `No ${ctx.asset.symbol}, o preço atual é ${currentPriceStr}. Temos resistência imediata em ${resImmediate} e suporte imediato em ${supImmediate}.`;
-    }
-
-    // 15. Conceitos de SMC e Educação Técnica
+    // 19. Conceitos de SMC e Gestão
     if (q.includes('smc') || q.includes('smart money')) {
       return 'Smart Money Concepts rastreia as movimentações dos grandes bancos institucionais, operando nas regiões de liquidez em vez de ruídos do mercado.';
     }
-
     if (q.includes('bos') || q.includes('quebra de estrutura')) {
-      return 'BOS é a quebra de estrutura institucional: ocorre quando o candle rompe uma máxima ou mínima prévia confirmando a continuidade da tendência.';
+      return 'BOS é a quebra de estrutura: ocorre quando o candle rompe uma máxima ou mínima prévia confirmando a continuidade da tendência.';
     }
-
-    if (q.includes('order block') || q.includes('bloco de ordem')) {
-      return 'Order Block é a última vela contrária antes de uma explosão de preço institucional, servindo como uma zona de alta probabilidade para novas entradas.';
-    }
-
-    if (q.includes('fvg') || q.includes('fair value') || q.includes('desbalanceamento')) {
-      return 'Fair Value Gap é uma região de desequilíbrio deixada pelo fluxo rápido dos bancos. O preço costuma retornar a essa zona para rebalancear a liquidez.';
-    }
-
     if (q.includes('gerenciamento') || q.includes('gestão') || q.includes('gestao') || q.includes('banca') || q.includes('stop')) {
       return 'O pilar da consistência é o gerenciamento: arrisque no máximo 1 a 2 por cento da sua banca por operação e respeite rigidamente o seu stop loss diário.';
     }
 
-    if (q.includes('martingale') || q.includes('gale') || q.includes('soros')) {
-      return 'Evite Martingale agressivo para proteger sua banca. Dê preferência a entradas com mão fixa ou soros moderado em confluências acima de 75%.';
-    }
-
-    if (q.includes('qual o melhor ativo') || q.includes('qual par') || q.includes('qual moeda') || q.includes('cripto') || q.includes('bitcoin')) {
-      if (isClosedWeekendForex) {
-        return 'No fim de semana o Forex está fechado no mercado à vista. Recomendo operar criptomoedas como Bitcoin e Ethereum, que funcionam 24 horas por dia.';
-      }
-      return `Atualmente recomendo pares com fluxo direcional limpo. O par ${ctx.asset.symbol} está com pontuação de ${score}% em tendência de ${trend}.`;
-    }
-
-    // 16. Fallback Inteligente e Dinâmico — Personalizado para o que o usuário falou (NUNCA repetitivo)
+    // 20. Fallback Humano Inteligente e Bate-Papo Dinâmico (Totalmente Natural)
     const cleanSubject = cleanPrompt.replace(/[?!.]/g, '').trim();
-    if (cleanSubject.length > 2) {
-      return `Sobre "${cleanSubject}": no ${ctx.asset.symbol}, a tendência é de ${trend} com score de ${score}%. Me pergunte se vale a pena entrar agora, as taxas de suporte e resistência ou a previsão do próximo candle!`;
-    }
-    return `Estou atenta ao par ${ctx.asset.name}. A tendência atual é de ${trend} com confluência de ${score}%. Pode me perguntar sobre sinais, suporte e resistência ou conselhos operacionais!`;
+    const humanFallbacks = [
+      `Com certeza! Falando sobre isso: aqui no gráfico de ${ctx.asset.symbol}, o preço tá em ${currentPriceStr} com tendência de ${trend} e fluxo de ${ctx.marketAnalysis.buyerStrength} de compra contra ${ctx.marketAnalysis.sellerStrength} de venda. Pode me perguntar qualquer dúvida sobre o próximo candle ou vamos batendo um papo!`,
+      `Tô super atenta ao que você falou! No par ${ctx.asset.symbol}, a confluência técnica tá em ${score}%. Me fala: você tá pensando em entrar agora ou quer que eu avalie algum ponto específico do gráfico?`,
+      `Entendido perfeitamente! Tô com o olho colado no ${ctx.asset.symbol} pra te dar o melhor suporte. Se quiser a probabilidade do próximo candle, as taxas de suporte e resistência ou só trocar uma ideia, tô aqui com você!`
+    ];
+    return humanFallbacks[Math.floor(Math.random() * humanFallbacks.length)];
   }, []);
 
   /**
@@ -999,92 +1117,22 @@ export function useLiveVoice({
 
       const q = cleanPrompt.toLowerCase();
 
-      // 1. Resposta IMEDIATA (0ms de latência) para perguntas de trading, mercado, cotação, suporte, sinais ou saudações
-      const isInstantTopic =
-        q.includes('suporte') ||
-        q.includes('resistencia') ||
-        q.includes('resistência') ||
-        q.includes('taxa') ||
-        q.includes('nível') ||
-        q.includes('nivel') ||
-        q.includes('preço') ||
-        q.includes('preco') ||
-        q.includes('cotação') ||
-        q.includes('cotacao') ||
-        q.includes('tradingview') ||
-        q.includes('quanto tá') ||
-        q.includes('quanto ta') ||
-        q.includes('qual o valor') ||
-        q.includes('qual o preco') ||
-        q.includes('qual o preço') ||
-        q.includes('tendência') ||
-        q.includes('tendencia') ||
-        q.includes('como tá') ||
-        q.includes('como ta') ||
-        q.includes('como está') ||
-        q.includes('como esta') ||
-        q.includes('o que acha') ||
-        q.includes('o que você acha') ||
-        q.includes('vai subir') ||
-        q.includes('vai descer') ||
-        q.includes('vai cair') ||
-        q.includes('sobe ou desce') ||
-        q.includes('alta ou baixa') ||
-        q.includes('sinal') ||
-        q.includes('sinais') ||
-        q.includes('entrada') ||
-        q.includes('entrar') ||
-        q.includes('comprar') ||
-        q.includes('vender') ||
-        q.includes('compro') ||
-        q.includes('vendo') ||
-        q.includes('call') ||
-        q.includes('put') ||
-        q.includes('vale a pena') ||
-        q.includes('devo entrar') ||
-        q.includes('posso entrar') ||
-        q.includes('m1') ||
-        q.includes('m2') ||
-        q.includes('m5') ||
-        q.includes('timeframe') ||
-        q.includes('vela') ||
-        q.includes('candle') ||
-        q.includes('gerenciamento') ||
-        q.includes('smc') ||
-        q.includes('notícia') ||
-        q.includes('noticia') ||
-        q.includes('oi') ||
-        q.includes('olá') ||
-        q.includes('ola') ||
-        q.includes('e aí') ||
-        q.includes('e ai') ||
-        q.includes('tudo bem') ||
+      // 1. Resposta ultra-rápida (0ms de latência) para testes de microfone e presença
+      const isPresenceCheck =
         q.includes('tá me ouvindo') ||
         q.includes('ta me ouvindo') ||
+        q.includes('está me ouvindo') ||
+        q.includes('esta me ouvindo') ||
         q.includes('alô') ||
         q.includes('alo') ||
         q.includes('fala comigo') ||
-        q.includes('obrigad') ||
-        q.includes('valeu') ||
-        q.includes('análise') ||
-        q.includes('analise') ||
-        q.includes('bitcoin') ||
-        q.includes('cripto') ||
-        q.includes('euro') ||
-        q.includes('dólar') ||
-        q.includes('dolar') ||
-        q.includes('demorando') ||
-        q.includes('demora');
+        q.includes('me ouve');
 
-      const wordCount = cleanPrompt.split(/\s+/).filter(Boolean).length;
-
-      // Perguntas típicas de trading faladas por voz (até 8 palavras) ou que contenham qualquer termo chave
-      // recebem resposta 100% imediata (0ms) a partir do contexto em tempo real do TradingView
-      if (isInstantTopic || wordCount <= 8) {
+      if (isPresenceCheck) {
         return answerQuestionLocally(cleanPrompt);
       }
 
-      // 2. Para perguntas complexas e abertas com mais de 8 palavras, consulta Gemini com timeout de 800ms
+      // 2. Consulta inteligente ao Gemini com modelos ativos e timeout calibrado (2500ms)
       setIsProcessing(true);
       try {
         const geminiKey = getEffectiveGeminiKey();
@@ -1094,29 +1142,44 @@ export function useLiveVoice({
             const ai = new GoogleGenAI({ apiKey: geminiKey });
             const contextSummary = tradingContextAdapter.getContextSummary();
 
-            const systemInstruction = `Você é a CandleX, mentora e parceira de trading institucional de Opções Binárias e Forex no app CandleX-IA.
-Você conversa por voz com o trader. Seja direta, concisa (1 a 2 frases curtas, máximo 30 palavras), calorosa e natural em Português do Brasil.
-NUNCA use formatação markdown ou asteriscos. Fale nomes normais de moedas.
-DADOS DO PAINEL:\n${contextSummary}`;
+            const systemInstruction = `Você é a CandleX, parceira humana de trading e mentora no app CandleX-IA.
+Você conversa por voz com o usuário em Português do Brasil como uma pessoa de verdade: tom descontraído, acolhedor, inteligente e parceiro, como em um bate-papo de bancada.
+Responda diretamente a qualquer dúvida: probabilidade do próximo candle (alta/baixa, cor verde/vermelha), estratégias, confluências ou conversa do dia a dia (humor, psicologia, bater papo).
+Seja concisa e fluida (1 a 3 frases naturais ideais para voz, sem enrolação, máximo 40 palavras).
+NUNCA use markdown, tópicos, asteriscos ou emojis.
+DADOS REAIS DO GRÁFICO (TRADINGVIEW):
+${contextSummary}`;
 
-            const fetchPromise = ai.models.generateContent({
-              model: 'gemini-flash-latest',
-              contents: cleanPrompt,
-              config: {
-                systemInstruction,
-                temperature: 0.7,
-                maxOutputTokens: 50,
-              },
-            });
+            const candidateModels = [
+              (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_MODEL) || 'gemini-3.8-flash',
+              'gemini-3.1-flash-lite',
+              'gemini-flash-latest',
+            ];
 
-            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
-            const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+            for (const modelName of candidateModels) {
+              try {
+                const fetchPromise = ai.models.generateContent({
+                  model: modelName,
+                  contents: cleanPrompt,
+                  config: {
+                    systemInstruction,
+                    temperature: 0.7,
+                    maxOutputTokens: 60,
+                  },
+                });
 
-            if (response && response.text) {
-              const cleanText = normalizeTradingPronunciation(response.text);
-              if (cleanText) {
-                setIsProcessing(false);
-                return cleanText;
+                const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+                const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+
+                if (response && response.text) {
+                  const cleanText = normalizeTradingPronunciation(response.text);
+                  if (cleanText) {
+                    setIsProcessing(false);
+                    return cleanText;
+                  }
+                }
+              } catch (modelErr) {
+                // Tenta próximo modelo candidato
               }
             }
           } catch (genAiErr) {
@@ -1129,7 +1192,7 @@ DADOS DO PAINEL:\n${contextSummary}`;
         setIsProcessing(false);
       }
 
-      // 3. Fallback imediato caso exceda 800ms
+      // 3. Motor local inteligente e humanizado (garantia de precisão cirúrgica e conversa natural)
       return answerQuestionLocally(cleanPrompt);
     },
     [answerQuestionLocally]

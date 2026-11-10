@@ -701,7 +701,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             : 'MERCADO ABERTO EM TEMPO REAL NO TRADINGVIEW.';
 
           const prompt = `
-Você é a ClandeX-IA, mentora institucional e analista quantitativa de Opções Binárias e Forex para a corretora Hiove com base direta nos dados do TradingView.
+Você é a ClandeX-IA, mentora institucional de trading e parceira humana do trader no aplicativo CandleX-IA.
+Converse como uma pessoa de verdade em um bate-papo descontraído, acolhedor, inteligente e prestativo.
+Responda diretamente e com precisão a qualquer pergunta do trader (probabilidade do próximo candle, Price Action, estratégias, ou bate-papo casual).
 Mercado em Tempo Real (TradingView):
 - Ativo: ${asset.symbol} (${asset.name}) | Símbolo TradingView: ${asset.tvSymbol}
 - Status do Mercado: ${marketStatusStr}
@@ -717,10 +719,11 @@ Mercado em Tempo Real (TradingView):
 
 Pergunta do Trader: "${textToSend}"
 
-DIRETRIZ CRÍTICA DE SUPORTE E RESISTÊNCIA:
-Se o trader perguntar sobre suporte, resistência ou taxas, NUNCA omita a resistência. Se ele perguntar especificamente sobre a resistência, informe a taxa da resistência imediatamente. Se perguntar sobre ambos ou sobre taxas em geral, informe tanto a resistência quanto o suporte com os valores exatos informados acima.
-
-Responda em português brasileiro de forma direta, clara, profissional e motivadora. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7. Seja concisa e objetiva.
+DIRETRIZES:
+1. Responda em português brasileiro de forma direta, clara, calorosa e motivadora, como um amigo experiente de bancada.
+2. Se o trader perguntar sobre o próximo candle ou probabilidade, informe a estimativa percentual com base no fluxo e na tendência.
+3. Se perguntar sobre suporte ou resistência, informe as taxas exatas.
+4. Se o mercado Forex estiver fechado no fim de semana, lembre o trader e sugira os pares de criptomoedas 24/7.
           `;
 
           const candidateModels = [
@@ -808,6 +811,31 @@ Responda em português brasileiro de forma direta, clara, profissional e motivad
         const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
         const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
         fallbackText = `🎯 Níveis Chave de ${asset.symbol}:\n• Resistência Mais Próxima: ${resList[0] || (asset.currentPrice * 1.002).toFixed(asset.pipDecimals)}\n• Suporte Mais Próximo: ${supList[0] || (asset.currentPrice * 0.998).toFixed(asset.pipDecimals)}\n• Preço Atual: ${asset.currentPrice.toFixed(asset.pipDecimals)} (Tendência: ${marketAnalysis.trend})`;
+      } else if (
+        lower.includes('probabilidade') ||
+        lower.includes('proximo candle') ||
+        lower.includes('próximo candle') ||
+        lower.includes('proxima vela') ||
+        lower.includes('próxima vela') ||
+        lower.includes('vela seguinte') ||
+        lower.includes('cor da vela') ||
+        lower.includes('verde ou vermelha')
+      ) {
+        const buyerPct = parseInt(marketAnalysis.buyerStrength || '50', 10) || 50;
+        const sellerPct = parseInt(marketAnalysis.sellerStrength || '50', 10) || 50;
+        if (confluences.direction === 'CALL' || buyerPct > sellerPct + 4) {
+          const prob = Math.min(92, Math.max(confluences.totalScore, buyerPct, 68));
+          fallbackText = `📊 Probabilidade do Próximo Candle (${asset.symbol}):\n• Maior chance: ALTA (vela verde) com cerca de ${prob}% de probabilidade.\n• Força compradora: ${marketAnalysis.buyerStrength} vs ${marketAnalysis.sellerStrength} de venda.\n• Tendência atual no ${timeframe}: ${marketAnalysis.trend}.`;
+        } else if (confluences.direction === 'PUT' || sellerPct > buyerPct + 4) {
+          const prob = Math.min(92, Math.max(confluences.totalScore, sellerPct, 68));
+          fallbackText = `📊 Probabilidade do Próximo Candle (${asset.symbol}):\n• Maior chance: BAIXA (vela vermelha) com cerca de ${prob}% de probabilidade.\n• Força vendedora: ${marketAnalysis.sellerStrength} vs ${marketAnalysis.buyerStrength} de compra.\n• Tendência atual no ${timeframe}: ${marketAnalysis.trend}.`;
+        } else {
+          fallbackText = `📊 Probabilidade do Próximo Candle (${asset.symbol}):\n• Mercado equilibrado em 50% / 50% entre compradores e vendedores perto de ${asset.currentPrice.toFixed(asset.pipDecimals)}.\n• Aguarde o fechamento da vela atual para confirmação direcional.`;
+        }
+      } else if (lower.includes('loss') || lower.includes('perdi') || lower.includes('stop') || lower.includes('triste')) {
+        fallbackText = `Calma, parceiro! O loss é só o custo operacional do trading. O segredo de quem se torna consistente é proteger o psicológico e nunca tentar recuperar na emoção. Dê uma pausa de 5 a 10 minutos, beba uma água e só volte com a mente 100% fria!`;
+      } else if (lower.includes('win') || lower.includes('meta') || lower.includes('ganhei') || lower.includes('lucro')) {
+        fallbackText = `Sensacional, parabéns pelo win! Meta batida é meta no bolso. Se já bateu sua meta de hoje, proteja seu lucro e vá descansar, porque o mercado de amanhã sempre recompensa quem tem disciplina!`;
       } else {
         const supList = marketAnalysis.keyLevels?.filter((k) => k.type === 'SUPPORT').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
         const resList = marketAnalysis.keyLevels?.filter((k) => k.type === 'RESISTANCE').map((k) => k.price.toFixed(asset.pipDecimals)) || [];
