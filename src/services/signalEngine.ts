@@ -439,7 +439,7 @@ export class SignalEngine {
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
           } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
             hasOpposingRejectionWick = true;
-            cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 invalidado para proteção de banca.';
+            cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 (Fluxo da 3ª Vela de Alta) invalidado para proteção de banca.';
           } else if (profile === 'CONSERVADORA' && currentCandle.close < currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
@@ -452,7 +452,7 @@ export class SignalEngine {
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
           } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
             hasOpposingRejectionWick = true;
-            cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 invalidado para proteção de banca.';
+            cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 (Fluxo 3ª Vela Baixa) invalidado para proteção de banca.';
           } else if (profile === 'CONSERVADORA' && currentCandle.close > currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Modo Sniper: Vela verde contrária à venda (PUT). Entrada abortada para proteção cirúrgica.';

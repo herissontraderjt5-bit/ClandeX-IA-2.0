@@ -7,68 +7,69 @@ import {
 } from '../types/trading';
 
 /**
- * Catálogo Oficial dos 6 Padrões CandleX-IA para Opções Binárias
+ * Catálogo Oficial das Estratégias CandleX-IA para Opções Binárias
  *
- * Padrão 1: Continuação de Fluxo de Baixa -> Entrada de VENDA (PUT) na 3ª vela vermelha
- * Padrão 2: Continuação de Fluxo de Alta -> Entrada de COMPRA (CALL) na 3ª vela verde
- * Padrão 3: Vela de Força + Correção 50% -> Entrada de COMPRA (CALL) após vela vermelha fechar acima dos 50%
- * Padrão 4: Vela de Força + Correção 50% -> Entrada de VENDA (PUT) após vela verde fechar abaixo dos 50%
- * Padrão 5: Saída de Consolidação 5ª Vela -> Entrada de COMPRA (CALL) na 5ª vela verde (mesma direção da Vela 1)
- * Padrão 6: Saída de Consolidação 5ª Vela -> Entrada de VENDA (PUT) na 5ª vela vermelha (mesma direção da Vela 1)
+ * Padrão 1: Fluxo 3ª Vela Baixa -> Entrada de VENDA (PUT) na 3ª vela vermelha
+ * Padrão 2: Fluxo da 3ª Vela de Alta -> Entrada de COMPRA (CALL) na 3ª vela verde
+ * Padrão 3: Vela de Descanso Alta -> Entrada de COMPRA (CALL) após vela de descanso fechar acima dos 50%
+ * Padrão 4: Vela de Descanso Baixa -> Entrada de VENDA (PUT) após vela de descanso fechar abaixo dos 50%
+ * Padrão 5: Consolidação de Alta -> Entrada de COMPRA (CALL) na 5ª vela verde (mesma direção da Vela 1)
+ * Padrão 6: Consolidação de Baixa -> Entrada de VENDA (PUT) na 5ª vela vermelha (mesma direção da Vela 1)
+ * Suporte e Resistência: Price Action -> CALL no Suporte / PUT na Resistência
  */
 export const AVAILABLE_STRATEGIES: StrategyDefinition[] = [
   {
     id: 'padrao_1_fluxo_put',
-    name: 'Padrão 1: Fluxo de Baixa (3ª Vela Vermelha)',
-    badge: '🔴 PADRÃO 1 (PUT)',
-    tag: 'FLUXO DE BAIXA',
+    name: 'Padrão 1: Fluxo 3ª Vela Baixa',
+    badge: '🔴 FLUXO 3ª VELA BAIXA',
+    tag: 'FLUXO 3ª VELA BAIXA',
     category: 'MOMENTUM',
     description: 'Continuação de Fluxo de Baixa: após vela verde, ocorrem velas vermelhas consecutivas. Entrada de VENDA (PUT) na 3ª vela vermelha.',
     minProfile: 'MODERADA',
   },
   {
     id: 'padrao_2_fluxo_call',
-    name: 'Padrão 2: Fluxo de Alta (3ª Vela Verde)',
-    badge: '🟢 PADRÃO 2 (CALL)',
-    tag: 'FLUXO DE ALTA',
+    name: 'Padrão 2: Fluxo da 3ª Vela de Alta',
+    badge: '🟢 FLUXO 3ª VELA ALTA',
+    tag: 'FLUXO 3ª VELA ALTA',
     category: 'MOMENTUM',
     description: 'Continuação de Fluxo de Alta: após vela vermelha, ocorrem velas verdes consecutivas. Entrada de COMPRA (CALL) na 3ª vela verde.',
     minProfile: 'MODERADA',
   },
   {
     id: 'padrao_3_correcao_50_call',
-    name: 'Padrão 3: Correção 50% (CALL)',
-    badge: '🟢 PADRÃO 3 (CALL)',
-    tag: 'CORREÇÃO 50%',
+    name: 'Padrão 3: Vela de Descanso Alta',
+    badge: '🟢 VELA DE DESCANSO ALTA',
+    tag: 'VELA DE DESCANSO ALTA',
     category: 'PRICE_ACTION',
-    description: 'Vela de Força de Alta (verde) + Correção de Baixa (vermelha) fechando acima dos 50%. Entrada de COMPRA (CALL).',
+    description: 'Vela de Força de Alta (verde) + Vela de Descanso (vermelha) fechando acima dos 50%. Entrada de COMPRA (CALL).',
     minProfile: 'CONSERVADORA',
   },
   {
     id: 'padrao_4_correcao_50_put',
-    name: 'Padrão 4: Correção 50% (PUT)',
-    badge: '🔴 PADRÃO 4 (PUT)',
-    tag: 'CORREÇÃO 50%',
+    name: 'Padrão 4: Vela de Descanso Baixa',
+    badge: '🔴 VELA DE DESCANSO BAIXA',
+    tag: 'VELA DE DESCANSO BAIXA',
     category: 'PRICE_ACTION',
-    description: 'Vela de Força de Baixa (vermelha) + Correção de Alta (verde) fechando abaixo dos 50%. Entrada de VENDA (PUT).',
+    description: 'Vela de Força de Baixa (vermelha) + Vela de Descanso (verde) fechando abaixo dos 50%. Entrada de VENDA (PUT).',
     minProfile: 'CONSERVADORA',
   },
   {
     id: 'padrao_5_consolidacao_call',
-    name: 'Padrão 5: Consolidação 5ª Vela (CALL)',
-    badge: '🟢 PADRÃO 5 (CALL)',
-    tag: 'CONSOLIDAÇÃO',
+    name: 'Padrão 5: Consolidação de Alta',
+    badge: '🟢 CONSOLIDAÇÃO DE ALTA',
+    tag: 'CONSOLIDAÇÃO DE ALTA',
     category: 'REVERSAL',
-    description: 'Consolidação alternada de velas (1: Verde, 2: Vermelha, 3: Verde, 4: Vermelha). Entrada de COMPRA (CALL) na 5ª vela verde.',
+    description: 'Consolidação de Alta: alternância de velas (1: Verde, 2: Vermelha, 3: Verde, 4: Vermelha). Entrada de COMPRA (CALL) na 5ª vela verde.',
     minProfile: 'MODERADA',
   },
   {
     id: 'padrao_6_consolidacao_put',
-    name: 'Padrão 6: Consolidação 5ª Vela (PUT)',
-    badge: '🔴 PADRÃO 6 (PUT)',
-    tag: 'CONSOLIDAÇÃO',
+    name: 'Padrão 6: Consolidação de Baixa',
+    badge: '🔴 CONSOLIDAÇÃO DE BAIXA',
+    tag: 'CONSOLIDAÇÃO DE BAIXA',
     category: 'REVERSAL',
-    description: 'Consolidação alternada de velas (1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde). Entrada de VENDA (PUT) na 5ª vela vermelha.',
+    description: 'Consolidação de Baixa: alternância de velas (1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde). Entrada de VENDA (PUT) na 5ª vela vermelha.',
     minProfile: 'MODERADA',
   },
   {
@@ -153,7 +154,7 @@ export function evaluateSingleStrategy(
 
   switch (strategyId) {
     // ----------------------------------------------------
-    // PADRÃO 1: Continuação de Fluxo de Baixa (3ª Vela Vermelha -> PUT)
+    // PADRÃO 1: Fluxo 3ª Vela Baixa (3ª Vela Vermelha -> PUT)
     // Setup na 2ª vela vermelha: Vela Verde ➔ Vela 1 Vermelha ➔ Vela 2 Vermelha
     // Entrada oficial de VENDA (PUT) na 3ª vela vermelha
     // ----------------------------------------------------
@@ -168,7 +169,7 @@ export function evaluateSingleStrategy(
             direction: 'PUT',
             score: 96,
             reasons: [
-              'Padrão 1: Continuação de Fluxo de Baixa',
+              'Padrão 1: Fluxo 3ª Vela Baixa',
               'Vela Verde ➔ Vela 1 Vermelha ➔ Vela 2 Vermelha confirmadas',
               'Entrada de VENDA (PUT) na 3ª vela vermelha',
             ],
@@ -179,7 +180,7 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // PADRÃO 2: Continuação de Fluxo de Alta (3ª Vela Verde -> CALL)
+    // PADRÃO 2: Fluxo da 3ª Vela de Alta (3ª Vela Verde -> CALL)
     // Setup na 2ª vela verde: Vela Vermelha ➔ Vela 1 Verde ➔ Vela 2 Verde
     // Entrada oficial de COMPRA (CALL) na 3ª vela verde
     // ----------------------------------------------------
@@ -194,7 +195,7 @@ export function evaluateSingleStrategy(
             direction: 'CALL',
             score: 96,
             reasons: [
-              'Padrão 2: Continuação de Fluxo de Alta',
+              'Padrão 2: Fluxo da 3ª Vela de Alta',
               'Vela Vermelha ➔ Vela 1 Verde ➔ Vela 2 Verde confirmadas',
               'Entrada de COMPRA (CALL) na 3ª vela verde',
             ],
@@ -205,8 +206,8 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // PADRÃO 3: Vela de Força + Correção 50% (CALL)
-    // Vela 1 verde de força + Vela 2 vermelha de correção fechando acima dos 50%
+    // PADRÃO 3: Vela de Descanso Alta (CALL)
+    // Vela 1 verde de força + Vela 2 vermelha de descanso fechando acima dos 50%
     // Entrada oficial de COMPRA (CALL) na 3ª vela
     // ----------------------------------------------------
     case 'padrao_3_correcao_50_call': {
@@ -221,9 +222,9 @@ export function evaluateSingleStrategy(
               direction: 'CALL',
               score: 96,
               reasons: [
-                'Padrão 3: Vela de Força + Correção 50% (CALL)',
-                `Vela vermelha respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
-                'Entrada de COMPRA (CALL) na retomada do fluxo na 3ª vela',
+                'Padrão 3: Vela de Descanso Alta',
+                `Vela de descanso vermelha respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
+                'Entrada de COMPRA (CALL) na retomada do fluxo de alta',
               ],
             };
           }
@@ -233,8 +234,8 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // PADRÃO 4: Vela de Força + Correção 50% (PUT)
-    // Vela 1 vermelha de força + Vela 2 verde de correção fechando abaixo dos 50%
+    // PADRÃO 4: Vela de Descanso Baixa (PUT)
+    // Vela 1 vermelha de força + Vela 2 verde de descanso fechando abaixo dos 50%
     // Entrada oficial de VENDA (PUT) na 3ª vela
     // ----------------------------------------------------
     case 'padrao_4_correcao_50_put': {
@@ -249,9 +250,9 @@ export function evaluateSingleStrategy(
               direction: 'PUT',
               score: 96,
               reasons: [
-                'Padrão 4: Vela de Força + Correção 50% (PUT)',
-                `Vela verde respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
-                'Entrada de VENDA (PUT) na retomada do fluxo na 3ª vela',
+                'Padrão 4: Vela de Descanso Baixa',
+                `Vela de descanso verde respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
+                'Entrada de VENDA (PUT) na retomada do fluxo de baixa',
               ],
             };
           }
@@ -261,7 +262,7 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // PADRÃO 5: Saída de Consolidação 5ª Vela (CALL)
+    // PADRÃO 5: Consolidação de Alta (CALL)
     // Setup na 4ª vela: 1 Verde, 2 Vermelha, 3 Verde, 4 Vermelha
     // Entrada oficial de COMPRA (CALL) na 5ª vela na direção da Vela 1
     // ----------------------------------------------------
@@ -272,7 +273,7 @@ export function evaluateSingleStrategy(
             direction: 'CALL',
             score: 95,
             reasons: [
-              'Padrão 5: Saída de Consolidação 5ª Vela (CALL)',
+              'Padrão 5: Consolidação de Alta',
               'Alternância de 4 velas confirmada (Verde, Vermelha, Verde, Vermelha)',
               'Entrada de COMPRA (CALL) na 5ª vela na direção da Vela 1',
             ],
@@ -283,7 +284,7 @@ export function evaluateSingleStrategy(
     }
 
     // ----------------------------------------------------
-    // PADRÃO 6: Saída de Consolidação 5ª Vela (PUT)
+    // PADRÃO 6: Consolidação de Baixa (PUT)
     // Setup na 4ª vela: 1 Vermelha, 2 Verde, 3 Vermelha, 4 Verde
     // Entrada oficial de VENDA (PUT) na 5ª vela na direção da Vela 1
     // ----------------------------------------------------
@@ -294,7 +295,7 @@ export function evaluateSingleStrategy(
             direction: 'PUT',
             score: 95,
             reasons: [
-              'Padrão 6: Saída de Consolidação 5ª Vela (PUT)',
+              'Padrão 6: Consolidação de Baixa',
               'Alternância de 4 velas confirmada (Vermelha, Verde, Vermelha, Verde)',
               'Entrada de VENDA (PUT) na 5ª vela na direção da Vela 1',
             ],
