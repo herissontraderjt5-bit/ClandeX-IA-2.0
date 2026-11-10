@@ -470,12 +470,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       const results = runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
       setBacktestList(results);
 
-      // A IA SELECIONA E DESATIVA AUTOMATICAMENTE AS ESTRATÉGIAS EM PREJUÍZO
-      if (autoFilterProfitOnly && results.length > 0) {
-        const profitableIds = results
-          .filter((r) => r.isProfitable && !r.autoDeactivated)
+      // A IA SELECIONA E SÓ MANTÉM ATIVAS AS ESTRATÉGIAS ACIMA DOS 65% DE ASSERTIVIDADE
+      if (results.length > 0) {
+        const qualified65Ids = results
+          .filter((r) => !r.autoDeactivated && (r.winRate >= 65 || (r.profitStatus === 'AGUARDANDO' && (activeStrategyIds || []).includes(r.id))))
           .map((r) => r.id);
-        const safeTargetIds = profitableIds.length > 0 ? profitableIds : [results[0].id];
+        const safeTargetIds = qualified65Ids.length > 0 ? qualified65Ids : [results[0].id];
 
         // Se houver discrepância com as ativas atuais, sincroniza
         const needsSync =
@@ -500,10 +500,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     settings.autoFilterProfitOnly = nextVal;
 
     if (nextVal && backtestList.length > 0) {
-      const profitableIds = backtestList
-        .filter((r) => r.isProfitable && !r.autoDeactivated)
+      const qualified65Ids = backtestList
+        .filter((r) => !r.autoDeactivated && (r.winRate >= 65 || r.profitStatus === 'AGUARDANDO'))
         .map((r) => r.id);
-      const safeTargetIds = profitableIds.length > 0 ? profitableIds : [backtestList[0].id];
+      const safeTargetIds = qualified65Ids.length > 0 ? qualified65Ids : [backtestList[0].id];
       setActiveStrategyIds(safeTargetIds);
       storeActiveStrategies(safeTargetIds);
       settings.activeStrategies = safeTargetIds;
@@ -2239,7 +2239,7 @@ DIRETRIZES:
                           </span>
                         </div>
                         <div className="text-[9px] text-neutral-400 truncate">
-                          A IA desativa automaticamente estratégias em prejuízo (&lt;55% de acerto).
+                          Filtro 65%: A IA só mantém ativas as estratégias acima de 65% de assertividade.
                         </div>
                       </div>
                     </div>

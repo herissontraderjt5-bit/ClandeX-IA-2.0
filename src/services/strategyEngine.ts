@@ -456,10 +456,18 @@ export function storeAutoFilterProfit(enabled: boolean): void {
 }
 
 export function getProfitableStrategyIds(backtestResults: StrategyBacktestResult[]): string[] {
+  // Regra Estrita: A IA só mantém ativas as estratégias acima de 65% de assertividade
   const profitable = backtestResults
-    .filter((b) => b.isProfitable && !b.autoDeactivated)
+    .filter((b) => b.winRate >= 65 && !b.autoDeactivated)
     .map((b) => b.id);
   if (profitable.length > 0) return profitable;
+
+  // Se nenhuma atingiu o histórico de 65% ainda (início da sessão), mantém as que estão aguardando avaliação
+  const awaiting = backtestResults
+    .filter((b) => !b.autoDeactivated && (b.winRate >= 65 || b.profitStatus === 'AGUARDANDO'))
+    .map((b) => b.id);
+  if (awaiting.length > 0) return awaiting;
+
   return backtestResults.length > 0 ? [backtestResults[0].id] : ['padrao_1_fluxo_put', 'padrao_2_fluxo_call'];
 }
 
@@ -574,20 +582,22 @@ export function runRealtimeBacktest(
     let isProfitable = true;
     let autoDeactivated = false;
 
-    if (decisiveTrades >= 3) {
-      if (winRate >= 50 && r.wins >= r.losses) {
+    // REGRA DE OURO: A IA só mantém as estratégias ativas com assertividade acima dos 65%
+    if (decisiveTrades >= 2) {
+      if (winRate >= 65) {
         profitStatus = 'LUCRO';
         isProfitable = true;
+        autoDeactivated = false;
       } else {
         profitStatus = 'PREJUIZO';
         isProfitable = false;
-        if (autoFilterProfitOnly) {
-          autoDeactivated = true;
-        }
+        // Qualquer estratégia com assertividade abaixo de 65% é pausada automaticamente
+        autoDeactivated = true;
       }
     } else {
       profitStatus = 'AGUARDANDO';
       isProfitable = true;
+      autoDeactivated = false;
     }
 
     const isActive = safeActiveIds.includes(strat.id) && !autoDeactivated;
@@ -645,6 +655,17 @@ export function getBestActiveStrategySignal(
 
     if (profile === 'CONSERVADORA' && strat.minProfile === 'AGRESSIVA') {
       continue;
+    }
+
+    // TRAVA RESTRITIVA 65%: A IA só emite sinal para estratégias com assertividade >= 65%
+    if (backtestResults && backtestResults.length > 0) {
+      const bRes = backtestResults.find((b) => b.id === stratId);
+      if (bRes) {
+        if (bRes.autoDeactivated) continue;
+        if (bRes.totalTrades >= 2 && bRes.winRate < 65) {
+          continue; // Bloqueado: abaixo de 65% não emite sinal
+        }
+      }
     }
 
     const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex);
