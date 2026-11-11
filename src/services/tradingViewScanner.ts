@@ -155,19 +155,21 @@ class TradingViewScannerService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: bodyPayload,
+        signal: AbortSignal.timeout(3000),
       });
       if (resp.ok) {
         rawData = await resp.json();
       }
     } catch {}
 
-    // 2. Se falhar, chama o endpoint oficial da TradingView diretamente (suporta CORS no navegador)
+    // 2. Se falhar, chama o endpoint oficial da TradingView diretamente com text/plain (Bypassa preflight CORS no navegador!)
     if (!rawData || !rawData.data || rawData.data.length === 0) {
       try {
         const resp = await fetch(scannerEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: bodyPayload,
+          signal: AbortSignal.timeout(4000),
         });
         if (resp.ok) {
           rawData = await resp.json();
@@ -272,6 +274,7 @@ class TradingViewScannerService {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: payload,
+          signal: AbortSignal.timeout(3000),
         });
         if (resp.ok) rawData = await resp.json();
       } catch {}
@@ -280,8 +283,9 @@ class TradingViewScannerService {
         try {
           const resp = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
             body: payload,
+            signal: AbortSignal.timeout(4000),
           });
           if (resp.ok) rawData = await resp.json();
         } catch {}
@@ -396,7 +400,7 @@ class TradingViewScannerService {
 
     // Executa imediatamente o primeiro ciclo
     runCycle();
-    this.pollInterval = window.setInterval(runCycle, 2500);
+    this.pollInterval = window.setInterval(runCycle, 1500);
   }
 
   public stopBackgroundPolling() {

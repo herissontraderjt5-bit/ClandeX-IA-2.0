@@ -82,6 +82,7 @@ import {
 } from '../services/economicCalendar';
 import { computeTechnicalOverview, TechnicalOverviewData } from '../services/technicalIndicators';
 import { marketDataManager, isForexMarketOpen } from '../services/marketData';
+import { tradingViewScanner, LiveTradingViewData } from '../services/tradingViewScanner';
 import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
 import { formatBrasiliaTime } from '../utils/timeFormat';
@@ -554,12 +555,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     return economicEvents;
   }, [economicEvents, newsImpactFilter]);
 
+  // Sincronização em tempo real dos dados do TradingView Scanner para o ativo em foco
+  const [liveTvData, setLiveTvData] = useState<LiveTradingViewData | null>(() =>
+    marketDataManager.getLiveTradingViewData(timeframe)
+  );
+
+  useEffect(() => {
+    setLiveTvData(marketDataManager.getLiveTradingViewData(timeframe));
+    const unsubscribe = tradingViewScanner.subscribe((data) => {
+      if (data.symbol === asset.symbol) {
+        setLiveTvData({ ...data });
+      }
+    });
+    return unsubscribe;
+  }, [asset.symbol, timeframe]);
+
   // Real-time Technical Overview calculated from current candles, timeframe & asset + live TradingView scanner
   const activeCandles = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
-  const liveTvData = marketDataManager.getLiveTradingViewData(timeframe);
   const technicalData = useMemo(() => {
     return computeTechnicalOverview(activeCandles, timeframe, asset, liveTvData);
-  }, [activeCandles, timeframe, asset, liveTvData, currentCandle?.close]);
+  }, [activeCandles, timeframe, asset, liveTvData, currentCandle?.close, asset.currentPrice]);
 
   // Consenso Institucional Geral dos 10 Indicadores Técnicos
   const indicatorConsensus = useMemo(() => {

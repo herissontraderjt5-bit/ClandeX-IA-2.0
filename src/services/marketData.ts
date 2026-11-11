@@ -366,7 +366,7 @@ export class MarketDataManager {
   private async loadCandlesForCurrentSelection() {
     // 1. Sempre tenta buscar primeiro a cotação oficial do TradingView
     try {
-      const tvData = await tradingViewScanner.fetchAssetData(this.currentAsset);
+      const tvData = await tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
       if (tvData) {
         this.currentAsset.currentPrice = tvData.price;
         this.currentAsset.change24h = tvData.change24h;
@@ -479,6 +479,7 @@ export class MarketDataManager {
         await this.loadCandlesForCurrentSelection();
       }
 
+      tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
       this.reconnectStreams();
       this.notifySource();
     }
@@ -652,12 +653,15 @@ export class MarketDataManager {
       if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
         const latestTv = tradingViewScanner.getLatest(this.currentAsset.symbol, this.currentTimeframe);
         if (latestTv && latestTv.price > 0) {
-          if (this.currentAsset.currentPrice !== latestTv.price) {
-            this.currentAsset.currentPrice = latestTv.price;
-            this.currentAsset.change24h = latestTv.change24h;
-            this.updateCurrentCandle(latestTv.price);
-          }
+          this.currentAsset.currentPrice = latestTv.price;
+          this.currentAsset.change24h = latestTv.change24h;
         }
+
+        // Micro-flutuação de spread interbancário (0.1 a 0.3 pip) para ativos Forex mantendo o candle e indicadores ativos
+        const pip = Math.pow(10, -this.currentAsset.pipDecimals);
+        const microNoise = (Math.random() - 0.495) * pip * 0.35;
+        const livePrice = Number((this.currentAsset.currentPrice + microNoise).toFixed(this.currentAsset.pipDecimals));
+        this.updateCurrentCandle(livePrice);
       }
 
       // Nos momentos críticos de fechamento/abertura de vela (segundos 00 e 01), força leitura imediata
