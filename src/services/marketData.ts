@@ -720,8 +720,8 @@ export class MarketDataManager {
         return;
       }
 
-      // Sincronização estrita com cotações reais oficiais (SEM ruído browniano aleatório)
-      // Garante que a abertura, fechamento e resultado de WIN/LOSS batam 100% com a corretora
+      // Sincronização estrita com cotações reais oficiais (SEM ruído artificial)
+      // Garante que a abertura, fechamento e resultado de WIN/LOSS batam 100% com a cotação real
       if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
         const latestTv = tradingViewScanner.getLatest(this.currentAsset.symbol, this.currentTimeframe);
         if (latestTv && latestTv.price > 0) {
@@ -729,10 +729,7 @@ export class MarketDataManager {
           this.currentAsset.change24h = latestTv.change24h;
         }
 
-        // Micro-flutuação de spread interbancário (0.1 a 0.3 pip) para ativos Forex mantendo o candle e indicadores ativos
-        const pip = Math.pow(10, -this.currentAsset.pipDecimals);
-        const microNoise = (Math.random() - 0.495) * pip * 0.35;
-        const livePrice = Number((this.currentAsset.currentPrice + microNoise).toFixed(this.currentAsset.pipDecimals));
+        const livePrice = Number(this.currentAsset.currentPrice.toFixed(this.currentAsset.pipDecimals));
         this.updateCurrentCandle(livePrice);
       }
 

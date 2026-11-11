@@ -108,10 +108,10 @@ class TradingViewScannerService {
     const s = getTimeframeTvSuffix(timeframe);
     return [
       'close',
-      'open',
-      'high',
-      'low',
-      'change',
+      `open${s}`,
+      `high${s}`,
+      `low${s}`,
+      `change${s}`,
       `Recommend.All${s}`,
       `Recommend.MA${s}`,
       `Recommend.Other${s}`,

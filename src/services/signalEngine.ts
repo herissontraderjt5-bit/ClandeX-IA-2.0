@@ -152,7 +152,9 @@ export class SignalEngine {
 
     // Notificações Push nativas no Celular e PC
     try {
-      if (event === 'CONFIRMED') {
+      if (event === 'PRE_ALERT') {
+        notificationService.notifyPreAlert(signal);
+      } else if (event === 'CONFIRMED') {
         notificationService.notifySignalConfirmed(signal);
       } else if (event === 'RESULT') {
         notificationService.notifySignalResult(signal);
@@ -807,19 +809,26 @@ export class SignalEngine {
 
       if (isExpired) {
         // ABERTURA E FECHAMENTO OFICIAIS DA VELA DO SINAL:
-        // Prioriza as taxas reais capturadas na abertura e no término da operação:
-        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-          ? trade.candleOpenPrice
-          : (trade.entryPrice > 0 ? trade.entryPrice : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : currentPrice));
+        // Ambos DEVEM provir rigorosamente da mesma vela executada (tradeCandle) para garantir
+        // que vela positiva (verde) seja sempre WIN para COMPRA (CALL) e vela negativa (vermelha) seja sempre WIN para VENDA (PUT).
+        let officialOpen: number;
+        let officialClose: number;
 
-        // Fechamento: taxa real no momento do término (candleClosePrice continuamente atualizado até a expiração, ou tradeCandle.close se candle já fechada)
-        let officialClose = (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0)
-          ? tradeCandle.close
-          : ((trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : currentPrice);
+        if (tradeCandle && tradeCandle.open > 0 && tradeCandle.close > 0) {
+          officialOpen = tradeCandle.open;
+          officialClose = tradeCandle.close;
+        } else {
+          officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+            ? trade.candleOpenPrice
+            : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
 
-        if (!officialClose || officialClose <= 0) {
-          officialClose = currentPrice;
+          officialClose = (trade.candleClosePrice && trade.candleClosePrice > 0)
+            ? trade.candleClosePrice
+            : (trade.exitPrice > 0 ? trade.exitPrice : currentPrice);
         }
+
+        if (!officialOpen || officialOpen <= 0) officialOpen = currentPrice;
+        if (!officialClose || officialClose <= 0) officialClose = currentPrice;
 
         const diff = officialClose - officialOpen;
         const EPSILON = 1e-8;

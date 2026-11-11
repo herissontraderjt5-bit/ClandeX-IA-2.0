@@ -160,6 +160,24 @@ class NotificationService {
   }
 
   /**
+   * Notificação de Pré-Alerta (Atenção para a próxima vela)
+   */
+  public notifyPreAlert(signal: SignalRecord) {
+    const isCall = signal.direction === 'CALL';
+    const dirText = isCall ? 'CALL (COMPRA) 🟢' : 'PUT (VENDA) 🔴';
+    const entryTime = signal.entryTimeFormatted || signal.formattedTime;
+
+    this.sendNotification(
+      `⚠️ PRÉ-ALERTA: ${signal.asset} ${dirText}`,
+      `Fique atento! Confluência de ${signal.confluenceScore}%. Prepare sua ordem na corretora para a vela das ${entryTime} (${signal.timeframe}).`,
+      {
+        tag: `prealert-${signal.id}`,
+        vibrate: [200, 100, 200],
+      }
+    );
+  }
+
+  /**
    * Notificação de Entrada Confirmada
    */
   public notifySignalConfirmed(signal: SignalRecord) {
