@@ -18,6 +18,7 @@ import {
   runRealtimeBacktest,
   getBestActiveStrategySignal,
   getStoredActiveStrategies,
+  getStoredAutoFilterProfit,
   AVAILABLE_STRATEGIES,
 } from './strategyEngine';
 import {
@@ -355,7 +356,8 @@ export class SignalEngine {
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
     if (allCandles && allCandles.length >= 20) {
-      this.backtestResults = runRealtimeBacktest(allCandles, settings.activeStrategies || getStoredActiveStrategies());
+      const autoFilter = settings.autoFilterProfitOnly !== undefined ? settings.autoFilterProfitOnly : getStoredAutoFilterProfit();
+      this.backtestResults = runRealtimeBacktest(allCandles, settings.activeStrategies || getStoredActiveStrategies(), autoFilter);
       if (this.onBacktestUpdatedCallback) {
         this.onBacktestUpdatedCallback(this.backtestResults);
       }

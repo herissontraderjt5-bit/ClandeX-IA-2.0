@@ -464,26 +464,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }
   });
 
-  // Atualização em tempo real do backtest conforme as velas chegam
+  // Atualização em tempo real do backtest conforme as velas, ativo e timeframe mudam
   useEffect(() => {
     try {
       const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
       const results = runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
       setBacktestList(results);
 
-      // A IA SELECIONA E SÓ MANTÉM ATIVAS AS ESTRATÉGIAS ACIMA DOS 65% DE ASSERTIVIDADE
-      if (results.length > 0) {
+      // A IA SÓ MANTÉM ATIVAS AS ESTRATÉGIAS ACIMA DOS 65% QUANDO O AUTO-FILTRO ESTIVER HABILITADO
+      if (autoFilterProfitOnly && results.length > 0) {
         const qualified65Ids = results
           .filter((r) => !r.autoDeactivated && (r.winRate >= 65 || (r.profitStatus === 'AGUARDANDO' && (activeStrategyIds || []).includes(r.id))))
           .map((r) => r.id);
         const safeTargetIds = qualified65Ids.length > 0 ? qualified65Ids : [results[0].id];
 
-        // Se houver discrepância com as ativas atuais, sincroniza
-        const needsSync =
-          safeTargetIds.length !== activeStrategyIds.length ||
-          !safeTargetIds.every((id) => activeStrategyIds.includes(id));
+        // Sincroniza apenas se houver diferença real com a seleção atual
+        const isDifferent =
+          safeTargetIds.length !== (activeStrategyIds || []).length ||
+          !safeTargetIds.every((id) => (activeStrategyIds || []).includes(id));
 
-        if (needsSync) {
+        if (isDifferent) {
           setActiveStrategyIds(safeTargetIds);
           storeActiveStrategies(safeTargetIds);
           settings.activeStrategies = safeTargetIds;
@@ -492,7 +492,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     } catch (e) {
       console.error('[FloatingHud] Error updating backtestList:', e);
     }
-  }, [candles, activeStrategyIds, autoFilterProfitOnly]);
+  }, [candles, asset.symbol, timeframe, autoFilterProfitOnly]);
 
   const handleToggleAutoFilterProfit = () => {
     const nextVal = !autoFilterProfitOnly;
@@ -500,42 +500,77 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     storeAutoFilterProfit(nextVal);
     settings.autoFilterProfitOnly = nextVal;
 
-    if (nextVal && backtestList.length > 0) {
-      const qualified65Ids = backtestList
-        .filter((r) => !r.autoDeactivated && (r.winRate >= 65 || r.profitStatus === 'AGUARDANDO'))
-        .map((r) => r.id);
-      const safeTargetIds = qualified65Ids.length > 0 ? qualified65Ids : [backtestList[0].id];
-      setActiveStrategyIds(safeTargetIds);
-      storeActiveStrategies(safeTargetIds);
-      settings.activeStrategies = safeTargetIds;
-    }
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const results = runRealtimeBacktest(list, activeStrategyIds || [], nextVal);
+      setBacktestList(results);
+
+      if (nextVal && results.length > 0) {
+        const qualified65Ids = results
+          .filter((r) => !r.autoDeactivated && (r.winRate >= 65 || r.profitStatus === 'AGUARDANDO'))
+          .map((r) => r.id);
+        const safeTargetIds = qualified65Ids.length > 0 ? qualified65Ids : [results[0].id];
+        setActiveStrategyIds(safeTargetIds);
+        storeActiveStrategies(safeTargetIds);
+        settings.activeStrategies = safeTargetIds;
+      }
+    } catch {}
   };
 
   const handleToggleStrategy = (stratId: string) => {
-    const updated = activeStrategyIds.includes(stratId)
-      ? activeStrategyIds.filter((id) => id !== stratId)
-      : [...activeStrategyIds, stratId];
+    const current = activeStrategyIds || [];
+    const updated = current.includes(stratId)
+      ? current.filter((id) => id !== stratId)
+      : [...current, stratId];
     if (updated.length === 0) return; // Mantém pelo menos 1 ativa
     setActiveStrategyIds(updated);
     storeActiveStrategies(updated);
     settings.activeStrategies = updated;
+
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const results = runRealtimeBacktest(list, updated, autoFilterProfitOnly);
+      setBacktestList(results);
+    } catch {}
   };
 
   const handleActivateAllStrategies = () => {
     const allIds = AVAILABLE_STRATEGIES.map((s) => s.id);
+    // Ao ativar todas manualmente, desliga o auto-filtro de lucro para respeitar a decisão do usuário
+    setAutoFilterProfitOnly(false);
+    storeAutoFilterProfit(false);
+    settings.autoFilterProfitOnly = false;
+
     setActiveStrategyIds(allIds);
     storeActiveStrategies(allIds);
     settings.activeStrategies = allIds;
+
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const results = runRealtimeBacktest(list, allIds, false);
+      setBacktestList(results);
+    } catch {}
   };
 
   const handleActivateTopStrategies = () => {
-    const topIds = backtestList
-      .filter((b) => b.winRate >= 65 && b.isProfitable)
-      .map((b) => b.id);
-    const finalIds = topIds.length > 0 ? topIds : AVAILABLE_STRATEGIES.slice(0, 3).map((s) => s.id);
-    setActiveStrategyIds(finalIds);
-    storeActiveStrategies(finalIds);
-    settings.activeStrategies = finalIds;
+    setAutoFilterProfitOnly(true);
+    storeAutoFilterProfit(true);
+    settings.autoFilterProfitOnly = true;
+
+    try {
+      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const results = runRealtimeBacktest(list, AVAILABLE_STRATEGIES.map((s) => s.id), true);
+      setBacktestList(results);
+
+      const topIds = results
+        .filter((b) => !b.autoDeactivated && (b.winRate >= 65 || b.profitStatus === 'AGUARDANDO'))
+        .map((b) => b.id);
+      const finalIds = topIds.length > 0 ? topIds : [results[0]?.id || AVAILABLE_STRATEGIES[0].id];
+
+      setActiveStrategyIds(finalIds);
+      storeActiveStrategies(finalIds);
+      settings.activeStrategies = finalIds;
+    } catch {}
   };
 
   // Market status & Economic News

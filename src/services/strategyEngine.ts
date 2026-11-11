@@ -309,9 +309,9 @@ export function evaluateSingleStrategy(
     // ESTRATÉGIA: Suporte e Resistência (Price Action / Retração / Reversão)
     // ----------------------------------------------------
     case 'estrategia_suporte_resistencia': {
-      if (index < 5) return { direction: null, score: 0, reasons: [] };
+      if (index < 6) return { direction: null, score: 0, reasons: [] };
 
-      // Lookback de 20 a 40 velas para mapear topos e fundos prévios
+      // Lookback de 20 a 35 velas para mapear topos e fundos prévios
       const lookback = Math.min(index, 35);
       const startIdx = index - lookback;
 
@@ -324,7 +324,15 @@ export function evaluateSingleStrategy(
         trCount++;
       }
       const atr = trCount > 0 ? (trSum / trCount) : 0.0004;
-      const zoneTolerance = Math.max(atr * 0.25, 0.0001);
+      const zoneTolerance = Math.max(atr * 0.22, 0.0001);
+
+      // Topo mais alto e fundo mais baixo do período (Zonas Extremas)
+      let highestHigh = -Infinity;
+      let lowestLow = Infinity;
+      for (let k = startIdx; k < index; k++) {
+        if (candles[k].high > highestHigh) highestHigh = candles[k].high;
+        if (candles[k].low < lowestLow) lowestLow = candles[k].low;
+      }
 
       // Mapear topos (Resistências) e fundos (Suportes) anteriores
       const resistances: { price: number; touches: number }[] = [];
@@ -358,35 +366,40 @@ export function evaluateSingleStrategy(
         }
       }
 
+      // Níveis consolidados: 2+ toques confirmados ou extremidade absoluta do período
+      const validResistances = resistances.filter((r) => r.touches >= 2 || Math.abs(r.price - highestHigh) <= zoneTolerance);
+      const validSupports = supports.filter((s) => s.touches >= 2 || Math.abs(s.price - lowestLow) <= zoneTolerance);
+
       const body = Math.abs(current.close - current.open);
+      const candleRange = current.high - current.low;
       const upperWick = current.high - Math.max(current.open, current.close);
       const lowerWick = Math.min(current.open, current.close) - current.low;
 
       // 1. TESTE DE RESISTÊNCIA ➔ SINAL DE VENDA (PUT)
-      // O preço testou o teto da resistência e demonstrou rejeição vendedora com pavio superior
-      const testedResistance = resistances.find(
+      // O preço testou o teto com pavio superior e fechou contido abaixo do nível
+      const testedResistance = validResistances.find(
         (r) =>
           (current.high >= r.price - zoneTolerance) &&
-          (current.close <= r.price + zoneTolerance * 0.6)
+          (current.close <= r.price + zoneTolerance * 0.3)
       );
 
-      const hasBearishRejection = upperWick >= body * 0.35 && upperWick > 0.00003;
-      const isRedOrInvertedHammer = current.close <= current.open || upperWick >= body;
+      const hasBearishRejection = upperWick >= body * 0.4 && upperWick >= candleRange * 0.28 && upperWick > 0.00003;
+      const isBearishClose = current.close <= current.open + body * 0.25 || upperWick >= body;
 
       // 2. TESTE DE SUPORTE ➔ SINAL DE COMPRA (CALL)
-      // O preço testou o piso do suporte e demonstrou rejeição compradora com pavio inferior
-      const testedSupport = supports.find(
+      // O preço testou o piso com pavio inferior e fechou contido acima do nível
+      const testedSupport = validSupports.find(
         (s) =>
           (current.low <= s.price + zoneTolerance) &&
-          (current.close >= s.price - zoneTolerance * 0.6)
+          (current.close >= s.price - zoneTolerance * 0.3)
       );
 
-      const hasBullishRejection = lowerWick >= body * 0.35 && lowerWick > 0.00003;
-      const isGreenOrHammer = current.close >= current.open || lowerWick >= body;
+      const hasBullishRejection = lowerWick >= body * 0.4 && lowerWick >= candleRange * 0.28 && lowerWick > 0.00003;
+      const isBullishClose = current.close >= current.open - body * 0.25 || lowerWick >= body;
 
       // Conflito de pavios em vela de alta volatilidade: vence o lado com maior pavio de rejeição
       if (testedResistance && testedSupport) {
-        if (upperWick > lowerWick && hasBearishRejection) {
+        if (upperWick > lowerWick && hasBearishRejection && isBearishClose) {
           return {
             direction: 'PUT',
             score: 95,
@@ -396,7 +409,7 @@ export function evaluateSingleStrategy(
               'Entrada de VENDA (PUT) na próxima vela para retração/reversão',
             ],
           };
-        } else if (lowerWick > upperWick && hasBullishRejection) {
+        } else if (lowerWick > upperWick && hasBullishRejection && isBullishClose) {
           return {
             direction: 'CALL',
             score: 95,
@@ -409,7 +422,7 @@ export function evaluateSingleStrategy(
         }
       }
 
-      if (testedResistance && hasBearishRejection && isRedOrInvertedHammer) {
+      if (testedResistance && hasBearishRejection && isBearishClose) {
         return {
           direction: 'PUT',
           score: 95,
@@ -421,7 +434,7 @@ export function evaluateSingleStrategy(
         };
       }
 
-      if (testedSupport && hasBullishRejection && isGreenOrHammer) {
+      if (testedSupport && hasBullishRejection && isBullishClose) {
         return {
           direction: 'CALL',
           score: 95,
@@ -582,7 +595,7 @@ export function runRealtimeBacktest(
     let isProfitable = true;
     let autoDeactivated = false;
 
-    // REGRA DE OURO: A IA só mantém as estratégias ativas com assertividade acima dos 65%
+    // REGRA DE OURO: A IA só mantém as estratégias ativas com assertividade acima dos 65% quando o auto-filtro estiver ativado
     if (decisiveTrades >= 2) {
       if (winRate >= 65) {
         profitStatus = 'LUCRO';
@@ -591,8 +604,8 @@ export function runRealtimeBacktest(
       } else {
         profitStatus = 'PREJUIZO';
         isProfitable = false;
-        // Qualquer estratégia com assertividade abaixo de 65% é pausada automaticamente
-        autoDeactivated = true;
+        // Só desativa automaticamente se o Auto-Filtro IA de Lucro estiver habilitado
+        autoDeactivated = autoFilterProfitOnly ? true : false;
       }
     } else {
       profitStatus = 'AGUARDANDO';
@@ -600,7 +613,7 @@ export function runRealtimeBacktest(
       autoDeactivated = false;
     }
 
-    const isActive = safeActiveIds.includes(strat.id) && !autoDeactivated;
+    const isActive = safeActiveIds.includes(strat.id) && (!autoFilterProfitOnly || !autoDeactivated);
 
     return {
       id: strat.id,
@@ -657,14 +670,11 @@ export function getBestActiveStrategySignal(
       continue;
     }
 
-    // TRAVA RESTRITIVA 65%: A IA só emite sinal para estratégias com assertividade >= 65%
+    // TRAVA RESTRITIVA: Se o auto-filtro de lucro da IA estiver ativo, bloqueia estratégias com assertividade abaixo de 65%
     if (backtestResults && backtestResults.length > 0) {
       const bRes = backtestResults.find((b) => b.id === stratId);
-      if (bRes) {
-        if (bRes.autoDeactivated) continue;
-        if (bRes.totalTrades >= 2 && bRes.winRate < 65) {
-          continue; // Bloqueado: abaixo de 65% não emite sinal
-        }
+      if (bRes && bRes.autoDeactivated) {
+        continue; // Bloqueado pela IA: assertividade abaixo de 65% com auto-filtro ativado
       }
     }
 

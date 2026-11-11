@@ -371,7 +371,7 @@ export class MarketDataManager {
         this.currentAsset.currentPrice = tvData.price;
         this.currentAsset.change24h = tvData.change24h;
       }
-    } catch {}
+    } catch { }
 
     const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
     if (this.candleCache.has(key)) {
@@ -533,7 +533,7 @@ export class MarketDataManager {
         this.serverOffsetMs = estimatedServerMs - Date.now();
         console.log(`[MarketData] Relógio atômico sincronizado. Offset: ${this.serverOffsetMs}ms`);
       }
-    } catch {}
+    } catch { }
   }
 
   public getCandles(): Candle[] {
@@ -614,7 +614,7 @@ export class MarketDataManager {
               this.currentAsset.currentPrice = closePrice;
               this.updateCurrentCandle(closePrice, k);
             }
-          } catch {}
+          } catch { }
         };
 
         this.cryptoWs.onerror = () => {
