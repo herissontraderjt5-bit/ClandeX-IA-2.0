@@ -259,6 +259,7 @@ export interface UserSession {
   status: 'ACTIVE' | 'PENDING_DEPOSIT' | 'REVOKED' | 'EXPIRED';
   source?: 'HIOVE_API' | 'ADMIN_MANUAL' | 'CACHE' | 'ADMIN_BYPASS' | 'LOGIN_ATTEMPT' | 'HIOVE_LOGIN';
   accessDays?: number; // Dias de acesso concedidos (ex: 1 [24h], 7, 15, 30, 90, 365, 9999 [Vitalício])
+  accessHours?: number; // Horas de acesso concedidas (ex: 1h, 2h, 4h, 12h, 24h)
   expiresAt?: number; // Timestamp em que o acesso expira
 }
 
@@ -275,6 +276,7 @@ export interface MemberRecord {
   lastActiveAt?: number;
   isOnline?: boolean;
   accessDays?: number; // Dias de acesso contratados/concedidos
+  accessHours?: number; // Horas de acesso concedidas
   expiresAt?: number; // Timestamp de expiração do acesso
   notes?: string;
 }

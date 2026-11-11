@@ -59,7 +59,8 @@ export async function recordUserLoginAttempt(
   const now = Date.now();
   const isAdmin = email === ADMIN_MASTER_EMAIL;
 
-  let registry: Record<string, MemberRecord> = getLocalMembers();
+  let localRegistry: Record<string, MemberRecord> = getLocalMembers();
+  let cloudWeights: Record<string, MemberRecord> = {};
   const sb = getSupabase();
 
   if (sb) {
@@ -71,25 +72,39 @@ export async function recordUserLoginAttempt(
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        cloudWeights = data.weights as Record<string, MemberRecord>;
       }
     } catch (e) {
       console.warn('[MemberService] Aviso ao ler registro no login attempt:', e);
     }
   }
 
+  // Nuvem tem precedência absoluta sobre o localStorage
+  const registry: Record<string, MemberRecord> = { ...localRegistry, ...cloudWeights };
   const existing = registry[email];
+
+  // IMPORTANTE: Nunca rebaixar um usuário já liberado pelo administrador no painel
+  const alreadyHasAccess = Boolean(existing?.hasAccess);
+  const alreadyActive = existing?.status === 'ACTIVE';
+
   const accessDays = existing?.accessDays ?? (isAdmin ? 9999 : 0);
+  const accessHours = existing?.accessHours;
   const expiresAt = existing?.expiresAt ?? (isAdmin ? now + 9999 * 86400 * 1000 : 0);
   const isExpired = !isAdmin && expiresAt > 0 && now > expiresAt;
-  const hasAccess = isAdmin ? true : (existing?.hasAccess ?? false) && !isExpired;
-  const status = isAdmin ? 'ACTIVE' : (isExpired ? 'EXPIRED' : (existing?.status || 'PENDING_DEPOSIT'));
+  const hasAccess = isAdmin ? true : (alreadyHasAccess && !isExpired);
+  const status = isAdmin
+    ? 'ACTIVE'
+    : (isExpired
+      ? 'EXPIRED'
+      : (existing?.status === 'REVOKED'
+        ? 'REVOKED'
+        : (hasAccess && alreadyActive ? 'ACTIVE' : (existing?.status || 'PENDING_DEPOSIT'))));
 
   const record: MemberRecord = {
     email,
     name: existing?.name || email.split('@')[0],
     hasAccess,
-    hasDeposit: existing?.hasDeposit ?? isAdmin,
+    hasDeposit: existing?.hasDeposit ?? (hasAccess || isAdmin),
     isAdmin,
     status,
     source: existing?.source || source,
@@ -98,21 +113,23 @@ export async function recordUserLoginAttempt(
     lastActiveAt: now,
     isOnline: true,
     accessDays,
+    accessHours,
     expiresAt,
-    notes: existing?.notes || (hasAccess ? 'Usuário ativo na plataforma' : 'Login realizado na tela inicial (Aguardando liberação de acesso/dias)'),
+    notes: existing?.notes || (hasAccess ? 'Usuário ativo na plataforma' : 'Login realizado na tela inicial (Aguardando liberação de teste pelo adm)'),
   };
 
   registry[email] = record;
   saveLocalMembers(registry);
 
-  // Grava imediatamente na nuvem Supabase
+  // Grava imediatamente na nuvem Supabase atualizando a lista na nuvem
   if (sb) {
     try {
+      cloudWeights[email] = record;
       await sb.from('app_settings').upsert({
         id: 'members_registry',
-        weights: registry,
+        weights: cloudWeights,
         thresholds: {
-          totalUsers: Object.keys(registry).length,
+          totalUsers: Object.keys(cloudWeights).length,
           lastUpdated: now,
         },
         updated_at: new Date().toISOString(),
@@ -140,11 +157,11 @@ export async function recordUserLoginAttempt(
 export async function checkMemberAccessStatus(emailInput: string): Promise<{
   allowed: boolean;
   member?: MemberRecord;
-  reason?: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'NOT_FOUND';
+  reason?: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'NOT_FOUND' | 'PENDING';
   message?: string;
 }> {
   const email = normalizeEmail(emailInput);
-  if (!email) return { allowed: false, reason: 'NOT_FOUND' };
+  if (!email) return { allowed: false, reason: 'NOT_FOUND', message: 'E-mail não informado.' };
 
   if (email === ADMIN_MASTER_EMAIL) {
     return { allowed: true, reason: 'ACTIVE' };
@@ -161,7 +178,8 @@ export async function checkMemberAccessStatus(emailInput: string): Promise<{
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        // Nuvem é a autoridade máxima
+        registry = { ...registry, ...(data.weights as Record<string, MemberRecord>) };
         saveLocalMembers(registry);
       }
     } catch { }
@@ -169,10 +187,11 @@ export async function checkMemberAccessStatus(emailInput: string): Promise<{
 
   const member = registry[email];
   if (!member) {
-    return { allowed: false, reason: 'NOT_FOUND' };
+    return { allowed: false, reason: 'NOT_FOUND', message: 'E-mail não encontrado.' };
   }
 
-  if (member.status === 'REVOKED' || member.hasAccess === false) {
+  // Apenas se o administrador marcou como REVOKED explicitamente
+  if (member.status === 'REVOKED') {
     return {
       allowed: false,
       member,
@@ -186,21 +205,28 @@ export async function checkMemberAccessStatus(emailInput: string): Promise<{
       allowed: false,
       member,
       reason: 'EXPIRED',
-      message: `Seu período de ${member.accessDays === 1 ? '24 horas (1 dia)' : `${member.accessDays || 30} dias`} de acesso encerrou. Entre em contato com o administrador Herisson para renovar.`,
+      message: `Seu período de teste encerrou. Entre em contato com o administrador Herisson para renovar seu acesso.`,
     };
   }
 
-  // Se o membro foi liberado manualmente pelo Admin no painel, garante hasDeposit: true (isento de depósito ou link Hiove)
-  if (member.source === 'ADMIN_MANUAL' || member.source === 'ADMIN_BYPASS' || (member.hasAccess && member.status === 'ACTIVE')) {
+  // Membro liberado pelo Admin no painel
+  if (member.hasAccess && member.status === 'ACTIVE') {
     member.hasDeposit = true;
+    return { allowed: true, member, reason: 'ACTIVE' };
   }
 
-  return { allowed: true, member, reason: 'ACTIVE' };
+  // Usuário pendente de liberação de teste
+  return {
+    allowed: false,
+    member,
+    reason: 'PENDING',
+    message: 'Acesso em análise. Aguarde a liberação do teste pelo administrador Herisson.',
+  };
 }
 
 /**
  * Registra o usuário logado e atualiza seu heartbeat (presença ativa na ferramenta)
- * Executado automaticamente após validação Hiove ou login na IA
+ * Executado periodicamente enquanto o usuário estiver conectado
  */
 export async function recordUserHeartbeat(session: UserSession): Promise<void> {
   const email = normalizeEmail(session.email);
@@ -209,9 +235,8 @@ export async function recordUserHeartbeat(session: UserSession): Promise<void> {
   const now = Date.now();
   const isAdmin = email === ADMIN_MASTER_EMAIL || session.isAdmin === true;
 
-  // Carrega lista atual do Supabase ou localStorage
   const sb = getSupabase();
-  let registry: Record<string, MemberRecord> = getLocalMembers();
+  let cloudWeights: Record<string, MemberRecord> = {};
 
   if (sb) {
     try {
@@ -222,40 +247,61 @@ export async function recordUserHeartbeat(session: UserSession): Promise<void> {
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        cloudWeights = data.weights as Record<string, MemberRecord>;
       }
     } catch (e) {
       console.warn('[MemberService] Aviso ao ler registro do Supabase:', e);
     }
   }
 
-  // Prepara o registro do membro
-  const existing = registry[email];
+  const localRegistry = getLocalMembers();
+  const existing = cloudWeights[email] || localRegistry[email];
   const accessDays = existing?.accessDays ?? (isAdmin ? 9999 : (session.accessDays ?? 30));
-  const expiresAt = existing?.expiresAt ?? (isAdmin ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000);
+  const accessHours = existing?.accessHours ?? session.accessHours;
+  const expiresAt = existing?.expiresAt ?? (isAdmin ? now + 9999 * 86400 * 1000 : (session.expiresAt || (now + accessDays * 86400 * 1000)));
 
   const isExpired = !isAdmin && Date.now() > expiresAt;
-  const status = isExpired ? 'EXPIRED' : (existing?.status === 'REVOKED' ? 'REVOKED' : (session.status || 'ACTIVE'));
+  const status = isExpired ? 'EXPIRED' : (existing?.status === 'REVOKED' ? 'REVOKED' : (existing?.status || session.status || 'ACTIVE'));
 
   const member: MemberRecord = {
+    ...existing,
     email,
     name: session.name || existing?.name || email.split('@')[0],
     hasAccess: !isExpired && status === 'ACTIVE',
     hasDeposit: session.hasDeposit ?? existing?.hasDeposit ?? true,
     isAdmin,
     status,
-    source: session.source || existing?.source || 'HIOVE_API',
+    source: existing?.source || session.source || 'HIOVE_API',
     firstValidatedAt: existing?.firstValidatedAt || now,
     lastCheckedAt: now,
     lastActiveAt: now,
     isOnline: true,
     accessDays,
+    accessHours,
     expiresAt,
-    notes: existing?.notes || (isAdmin ? 'Administrador Master' : 'Usuário Hiove ativo'),
+    notes: existing?.notes || (isAdmin ? 'Administrador Master' : 'Usuário ativo na plataforma'),
   };
 
-  registry[email] = member;
-  saveLocalMembers(registry);
+  localRegistry[email] = member;
+  saveLocalMembers(localRegistry);
+
+  // Atualiza APENAS este usuário na nuvem Supabase sem apagar o timestamp dos outros
+  if (sb) {
+    try {
+      cloudWeights[email] = member;
+      await sb.from('app_settings').upsert({
+        id: 'members_registry',
+        weights: cloudWeights,
+        thresholds: {
+          totalUsers: Object.keys(cloudWeights).length,
+          lastUpdated: now,
+        },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('[MemberService] Falha ao persistir heartbeat no Supabase:', err);
+    }
+  }
 
   // Notifica o backend local imediatamente sobre o heartbeat
   try {
@@ -265,23 +311,6 @@ export async function recordUserHeartbeat(session: UserSession): Promise<void> {
       body: JSON.stringify({ email, name: member.name }),
     }).catch(() => { });
   } catch { }
-
-  // Persiste no Supabase na tabela app_settings
-  if (sb) {
-    try {
-      await sb.from('app_settings').upsert({
-        id: 'members_registry',
-        weights: registry,
-        thresholds: {
-          totalUsers: Object.keys(registry).length,
-          lastUpdated: now,
-        },
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('[MemberService] Falha ao persistir heartbeat no Supabase:', err);
-    }
-  }
 }
 
 /**
@@ -300,7 +329,7 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
 
   if (sb) {
     try {
-      // 1. Tabela principal members_registry
+      // 1. Tabela principal members_registry (nuvem é soberana)
       const { data } = await sb
         .from('app_settings')
         .select('*')
@@ -308,7 +337,7 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        registry = { ...registry, ...(data.weights as Record<string, MemberRecord>) };
       }
 
       // 2. Tabela secundária hiove_access_registry (recupera qualquer membro histórico)
@@ -322,10 +351,11 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
         const hWeights = hioveData.weights as any;
         if (Array.isArray(hWeights.membersList)) {
           hWeights.membersList.forEach((hm: any) => {
-            if (hm.email && !registry[normalizeEmail(hm.email)]) {
-              registry[normalizeEmail(hm.email)] = {
-                email: normalizeEmail(hm.email),
-                name: hm.name || hm.email.split('@')[0],
+            const norm = normalizeEmail(hm.email);
+            if (norm && !registry[norm]) {
+              registry[norm] = {
+                email: norm,
+                name: hm.name || norm.split('@')[0],
                 hasAccess: Boolean(hm.hasAccess),
                 hasDeposit: true,
                 isAdmin: Boolean(hm.isAdmin),
@@ -395,8 +425,9 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
   }
 
   const now = Date.now();
+  // Janela online expandida para 8 minutos para não derrubar usuários em oscilações
   const membersList: MemberRecord[] = Object.values(registry).map((m) => {
-    const isOnline = m.lastActiveAt ? (now - m.lastActiveAt < 5 * 60 * 1000) : false;
+    const isOnline = m.lastActiveAt ? (now - m.lastActiveAt < 8 * 60 * 1000) : false;
     const isExpired = !m.isAdmin && m.expiresAt ? (now > m.expiresAt) : false;
     const status = isExpired ? 'EXPIRED' : (m.status || 'ACTIVE');
 
@@ -433,6 +464,90 @@ export async function fetchMembersRegistry(adminEmail?: string): Promise<{
 }
 
 /**
+ * Atualiza as HORAS de acesso de um aluno/cliente (ex: 1h, 2h, 4h, 12h, 24h, 48h ou personalizadas)
+ */
+export async function updateMemberAccessHours(
+  adminEmail: string,
+  targetEmail: string,
+  hours: number,
+  notes?: string
+): Promise<{ success: boolean; member?: MemberRecord; error?: string }> {
+  const email = normalizeEmail(targetEmail);
+  if (!email || !email.includes('@')) {
+    return { success: false, error: 'E-mail inválido.' };
+  }
+
+  const now = Date.now();
+  let registry = getLocalMembers();
+  const sb = getSupabase();
+
+  if (sb) {
+    try {
+      const { data } = await sb
+        .from('app_settings')
+        .select('*')
+        .eq('id', 'members_registry')
+        .maybeSingle();
+
+      if (data && data.weights && typeof data.weights === 'object') {
+        registry = { ...registry, ...(data.weights as Record<string, MemberRecord>) };
+      }
+    } catch { }
+  }
+
+  const existing = registry[email];
+  const accessHours = Math.max(1, hours);
+  const expiresAt = now + accessHours * 3600 * 1000;
+  const accessDays = Math.max(1, Math.ceil(accessHours / 24));
+
+  const updated: MemberRecord = {
+    email,
+    name: existing?.name || email.split('@')[0],
+    hasAccess: true,
+    hasDeposit: true,
+    isAdmin: email === ADMIN_MASTER_EMAIL || existing?.isAdmin === true,
+    status: 'ACTIVE',
+    source: 'ADMIN_MANUAL',
+    firstValidatedAt: existing?.firstValidatedAt || now,
+    lastCheckedAt: now,
+    lastActiveAt: existing?.lastActiveAt || now,
+    accessHours,
+    accessDays,
+    expiresAt,
+    notes: notes || `Teste liberado por ${accessHours}h pelo administrador Herisson em ${new Date().toLocaleTimeString('pt-BR')}`,
+  };
+
+  registry[email] = updated;
+  saveLocalMembers(registry);
+
+  if (sb) {
+    try {
+      await sb.from('app_settings').upsert({
+        id: 'members_registry',
+        weights: registry,
+        thresholds: {
+          totalUsers: Object.keys(registry).length,
+          lastUpdated: now,
+        },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('[MemberService] Falha ao persistir horas de acesso no Supabase:', e);
+    }
+  }
+
+  try {
+    await fetch('/api/admin/update-days', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
+      body: JSON.stringify({ adminEmail, email, hours: accessHours, days: accessDays }),
+    });
+  } catch { }
+
+  return { success: true, member: updated };
+}
+
+/**
  * Atualiza os dias de acesso de um cliente (ex: 1 [24 horas], 7, 15, 30, 90 dias ou vitalício)
  */
 export async function updateMemberAccessDays(
@@ -458,15 +573,15 @@ export async function updateMemberAccessDays(
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        registry = { ...registry, ...(data.weights as Record<string, MemberRecord>) };
       }
     } catch { }
   }
 
   const existing = registry[email];
   const accessDays = Math.max(1, days);
-  // Se for 1 dia, calcula 24 horas exatas (86400 segundos = 86.400.000 ms)
   const expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
+  const accessHours = accessDays * 24;
 
   const updated: MemberRecord = {
     email,
@@ -480,6 +595,7 @@ export async function updateMemberAccessDays(
     lastCheckedAt: now,
     lastActiveAt: existing?.lastActiveAt || now,
     accessDays,
+    accessHours,
     expiresAt,
     notes: accessDays === 1
       ? `Acesso liberado por 24 horas (1 dia) em ${new Date().toLocaleString('pt-BR')}`
@@ -519,12 +635,13 @@ export async function updateMemberAccessDays(
 }
 
 /**
- * Concede acesso manual para um novo cliente com quantidade de dias definida (ex: 1 dia [24h], 7, 15, 30, etc.)
+ * Concede acesso manual para um novo cliente com quantidade de dias ou horas definida
  */
 export async function grantMemberManual(
   adminEmail: string,
   targetEmail: string,
-  days: number = 1,
+  amount: number = 1,
+  unit: 'days' | 'hours' = 'hours',
   notes?: string
 ): Promise<{ success: boolean; member?: MemberRecord; error?: string }> {
   const email = normalizeEmail(targetEmail);
@@ -545,13 +662,23 @@ export async function grantMemberManual(
         .maybeSingle();
 
       if (data && data.weights && typeof data.weights === 'object') {
-        registry = { ...(data.weights as Record<string, MemberRecord>), ...registry };
+        registry = { ...registry, ...(data.weights as Record<string, MemberRecord>) };
       }
     } catch { }
   }
 
-  const accessDays = Math.max(1, days);
-  const expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
+  const isHours = unit === 'hours';
+  const accessHours = isHours ? Math.max(1, amount) : amount * 24;
+  const accessDays = isHours ? Math.max(1, Math.ceil(amount / 24)) : Math.max(1, amount);
+
+  let expiresAt: number;
+  if (!isHours && amount >= 9999) {
+    expiresAt = now + 9999 * 86400 * 1000;
+  } else if (isHours) {
+    expiresAt = now + accessHours * 3600 * 1000;
+  } else {
+    expiresAt = now + accessDays * 86400 * 1000;
+  }
 
   const record: MemberRecord = {
     email,
@@ -565,10 +692,13 @@ export async function grantMemberManual(
     lastCheckedAt: now,
     lastActiveAt: now,
     accessDays,
+    accessHours,
     expiresAt,
-    notes: notes || (accessDays === 1
-      ? `Liberado por 24 horas (1 dia) por ${adminEmail}`
-      : `Liberado manualmente por ${adminEmail} (${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias de acesso`})`),
+    notes: notes || (isHours
+      ? `Teste liberado por ${accessHours} horas por Herisson`
+      : amount >= 9999
+        ? 'Acesso Vitalício liberado por Herisson'
+        : `Acesso liberado por ${accessDays} dias por Herisson`),
   };
 
   registry[email] = record;
@@ -585,14 +715,16 @@ export async function grantMemberManual(
         },
         updated_at: new Date().toISOString(),
       }, { onConflict: 'id' });
-    } catch { }
+    } catch (e) {
+      console.warn('[MemberService] Falha ao persistir no Supabase:', e);
+    }
   }
 
   try {
     await fetch('/api/admin/manual-grant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-email': adminEmail },
-      body: JSON.stringify({ adminEmail, email, days: accessDays, notes: record.notes }),
+      body: JSON.stringify({ adminEmail, email, days: accessDays, hours: accessHours, notes: record.notes }),
     });
   } catch { }
 

@@ -44,11 +44,6 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // 0. Grava IMEDIATAMENTE a tentativa de login no Supabase Cloud
-    // Garante que todo e qualquer e-mail digitado fica registrado no banco de dados
-    // e aparece instantaneamente no Painel ADM do Herisson para liberação de dias
-    await recordUserLoginAttempt(cleanEmail).catch(() => { });
-
     // 1. Bypass Imediato para o Administrador Master (Herisson)
     const MASTER_ADMIN_EMAIL = 'herisson.trader.jt5@gmail.com';
     if (cleanEmail === MASTER_ADMIN_EMAIL) {
@@ -77,20 +72,36 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
       return;
     }
 
-    // 2. Consulta prévia de status no registro do Administrador (Supabase Cloud)
+    // 2. Consulta IMEDIATA de status no Supabase Cloud (Autoridade Máxima)
     try {
       const statusCheck = await checkMemberAccessStatus(cleanEmail);
-      if (statusCheck.reason === 'REVOKED' || statusCheck.reason === 'EXPIRED') {
-        setErrorMessage(statusCheck.message || 'Acesso não autorizado.');
+
+      // Usuário explicitamente bloqueado pelo Administrador
+      if (statusCheck.reason === 'REVOKED') {
+        setErrorMessage(statusCheck.message || 'Acesso suspenso pelo administrador.');
         setLoading(false);
         return;
       }
 
+      // Período de teste ou acesso expirado
+      if (statusCheck.reason === 'EXPIRED') {
+        setErrorMessage(statusCheck.message || 'Seu período de teste encerrou. Entre em contato com o administrador Herisson para renovar.');
+        setLoading(false);
+        return;
+      }
+
+      // Aluno/Cliente liberado pelo Administrador no Painel ADM
       if (statusCheck.allowed && statusCheck.member) {
-        // Membro pré-autorizado ou já registrado
         const mem = statusCheck.member;
-        const daysLabel = mem.accessDays === 1 ? '24 horas (1 dia)' : mem.accessDays && mem.accessDays >= 9999 ? 'Vitalício' : `${mem.accessDays || 30} dias`;
-        setSuccessMessage(`Acesso liberado! Licença de ${daysLabel} ativa.`);
+        const durationLabel = mem.accessHours
+          ? `${mem.accessHours}h`
+          : mem.accessDays === 1
+            ? '24 horas (1 dia)'
+            : mem.accessDays && mem.accessDays >= 9999
+              ? 'Vitalício'
+              : `${mem.accessDays || 30} dias`;
+
+        setSuccessMessage(`Acesso liberado! Licença de teste (${durationLabel}) ativa.`);
         const session: UserSession = {
           email: cleanEmail,
           name: mem.name || cleanEmail.split('@')[0],
@@ -100,6 +111,7 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
           validatedAt: mem.firstValidatedAt || Date.now(),
           lastActiveAt: Date.now(),
           accessDays: mem.accessDays || 1,
+          accessHours: mem.accessHours,
           expiresAt: mem.expiresAt,
           status: 'ACTIVE',
           source: mem.source || 'ADMIN_MANUAL',
@@ -117,10 +129,13 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         return;
       }
     } catch (e) {
-      console.warn('[AccessGate] Verificação de registro falhou, tentando API Hiove:', e);
+      console.warn('[AccessGate] Verificação inicial de registro falhou:', e);
     }
 
-    // 3. Validação Direta com a Corretora Hiove
+    // 3. Registra a tentativa de login no Supabase para que o Administrador veja o e-mail no painel
+    await recordUserLoginAttempt(cleanEmail).catch(() => { });
+
+    // 4. Validação Direta com a Corretora Hiove (caso tenha depositado via link de afiliado)
     try {
       const response = await fetch('/api/auth/validate-access', {
         method: 'POST',
@@ -159,13 +174,12 @@ export const AccessGateModal: React.FC<AccessGateModalProps> = ({ isOpen, onSucc
         }, 600);
       } else {
         setErrorMessage(
-          data.message ||
-          'Não conseguimos validar agora, tente em alguns minutos.'
+          'Acesso em análise. Aguarde a liberação do teste pelo administrador Herisson.'
         );
       }
     } catch {
       setErrorMessage(
-        'Não conseguimos validar agora, tente em alguns minutos.'
+        'Acesso em análise. Aguarde a liberação do teste pelo administrador Herisson.'
       );
     } finally {
       setLoading(false);

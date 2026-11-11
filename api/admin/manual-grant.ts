@@ -32,9 +32,11 @@ export default async function handler(req: any, res: any) {
     }
 
     const email = (body?.email || '').toLowerCase().trim();
-    const notes = body?.notes || 'Liberado manualmente pelo administrador';
+    const days = parseInt(body?.days, 10) || 1;
+    const hours = body?.hours ? parseInt(body?.hours, 10) : undefined;
+    const notes = body?.notes || (hours ? `Liberado para teste por ${hours} horas pelo administrador` : 'Liberado manualmente pelo administrador');
 
-    const updated = grantMemberManual(email, notes);
+    const updated = grantMemberManual(email, notes, days, hours);
     res.status(200).json({ success: true, member: updated });
   } catch (err: any) {
     console.error('[API Admin Manual Grant]', err);

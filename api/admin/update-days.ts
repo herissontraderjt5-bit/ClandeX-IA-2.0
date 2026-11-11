@@ -32,11 +32,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const email = (body?.email || '').toLowerCase().trim();
-    const days = parseInt(body?.days, 10) || 30;
-    const notes = body?.notes || `Acesso configurado para ${days} dias`;
+    const days = parseInt(body?.days, 10) || 1;
+    const hours = body?.hours ? parseInt(body?.hours, 10) : undefined;
+    const notes = body?.notes || (hours ? `Acesso configurado para ${hours} horas` : `Acesso configurado para ${days} dias`);
 
-    const updated = grantMemberManual(email, notes, days);
-    res.status(200).json({ success: true, member: updated, days });
+    const updated = grantMemberManual(email, notes, days, hours);
+    res.status(200).json({ success: true, member: updated, days, hours });
   } catch (err: any) {
     console.error('[API Admin Update Days]', err);
     res.status(500).json({ success: false, error: err.message });

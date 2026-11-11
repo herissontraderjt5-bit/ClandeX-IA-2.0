@@ -310,13 +310,23 @@ export function updateMemberDays(emailInput: string, days: number): MemberRecord
   return record;
 }
 
-export function grantMemberManual(email: string, notes?: string, days: number = 1): MemberRecord {
+export function grantMemberManual(email: string, notes?: string, days: number = 1, hours?: number): MemberRecord {
   const clean = email.toLowerCase().trim();
   const isAdmin = clean === ADMIN_EMAIL;
   const name = clean === ADMIN_EMAIL ? 'Herisson' : clean.split('@')[0];
   const now = Date.now();
-  const accessDays = Math.max(1, days);
-  const expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
+
+  let accessDays = Math.max(1, days);
+  let accessHours: number | undefined = hours;
+  let expiresAt: number;
+
+  if (hours && hours > 0) {
+    accessHours = hours;
+    accessDays = Math.max(1, Math.ceil(hours / 24));
+    expiresAt = now + hours * 3600 * 1000;
+  } else {
+    expiresAt = accessDays >= 9999 ? now + 9999 * 86400 * 1000 : now + accessDays * 86400 * 1000;
+  }
 
   const record: MemberRecord = {
     email: clean,
@@ -329,11 +339,14 @@ export function grantMemberManual(email: string, notes?: string, days: number = 
     lastCheckedAt: now,
     lastActiveAt: now,
     accessDays,
+    accessHours,
     expiresAt,
     source: 'ADMIN_MANUAL',
-    notes: notes || (accessDays === 1
-      ? `Liberado por 24 horas (1 dia) pelo administrador`
-      : `Liberado manualmente pelo administrador (${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias`})`),
+    notes: notes || (hours
+      ? `Liberado para teste por ${hours} horas pelo administrador Herisson`
+      : accessDays === 1
+        ? `Liberado por 24 horas (1 dia) pelo administrador`
+        : `Liberado manualmente pelo administrador (${accessDays >= 9999 ? 'Vitalício' : `${accessDays} dias`})`),
   };
 
   membersMap[clean] = record;

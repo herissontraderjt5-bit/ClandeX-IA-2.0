@@ -24,6 +24,7 @@ import { MemberRecord } from '../types/trading';
 import {
   fetchMembersRegistry,
   updateMemberAccessDays,
+  updateMemberAccessHours,
   grantMemberManual,
   revokeMember,
   deleteMember,
@@ -63,7 +64,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Novo membro manual
   const [newEmail, setNewEmail] = useState('');
   const [newNotes, setNewNotes] = useState('');
+  const [accessMode, setAccessMode] = useState<'hours' | 'days'>('hours');
+  const [newHours, setNewHours] = useState<number>(2);
   const [newDays, setNewDays] = useState<number>(1);
+  const [customHoursInput, setCustomHoursInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -110,7 +114,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Liberação manual
+  // Liberação manual (Suporta Horas ou Dias)
   const handleAddManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail || !newEmail.includes('@')) {
@@ -122,14 +126,30 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setActionMessage(null);
 
     try {
-      const res = await grantMemberManual(adminEmail, newEmail.trim().toLowerCase(), newDays, newNotes.trim());
+      const amount = accessMode === 'hours'
+        ? (customHoursInput ? Math.max(1, parseInt(customHoursInput, 10) || newHours) : newHours)
+        : newDays;
+
+      const res = await grantMemberManual(
+        adminEmail,
+        newEmail.trim().toLowerCase(),
+        amount,
+        accessMode,
+        newNotes.trim()
+      );
+
       if (res.success) {
+        const durText = accessMode === 'hours'
+          ? `${amount} horas de teste`
+          : (newDays >= 9999 ? 'Vitalício' : `${newDays} dias`);
+
         setActionMessage({
           type: 'success',
-          text: `Acesso liberado com sucesso para ${newEmail} (${newDays >= 9999 ? 'Vitalício' : `${newDays} dias`})!`,
+          text: `Acesso liberado com sucesso para ${newEmail} (${durText})!`,
         });
         setNewEmail('');
         setNewNotes('');
+        setCustomHoursInput('');
         await fetchMembers();
       } else {
         setActionMessage({ type: 'error', text: res.error || 'Falha ao liberar membro.' });
@@ -138,6 +158,25 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       setActionMessage({ type: 'error', text: 'Erro de conexão com o banco de dados.' });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Atualizar horas de acesso (Teste do Aluno)
+  const handleUpdateHours = async (targetEmail: string, hours: number) => {
+    setActionMessage(null);
+    try {
+      const res = await updateMemberAccessHours(adminEmail, targetEmail, hours);
+      if (res.success) {
+        setActionMessage({
+          type: 'success',
+          text: `Teste de ${targetEmail} liberado por ${hours} horas com sucesso!`,
+        });
+        await fetchMembers();
+      } else {
+        setActionMessage({ type: 'error', text: res.error || 'Falha ao atualizar horas de acesso.' });
+      }
+    } catch {
+      setActionMessage({ type: 'error', text: 'Erro ao atualizar horas de acesso.' });
     }
   };
 
@@ -338,14 +377,42 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
           {/* 2. Grid: Cadastro Manual de Cliente com Dias + Consulta Hiove */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Box 1: Liberar Membro com Dias de Acesso */}
+            {/* Box 1: Liberar Membro com Horas ou Dias de Acesso */}
             <div className="p-4 bg-gradient-to-b from-neutral-900/90 to-black border border-emerald-500/40 rounded-2xl space-y-3">
-              <div className="flex items-center gap-2 text-emerald-300 font-bold">
-                <UserPlus className="w-4 h-4 text-emerald-400" />
-                <span>Cadastrar / Liberar Cliente com Dias</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                  <UserPlus className="w-4 h-4 text-emerald-400" />
+                  <span>Cadastrar / Liberar Teste do Aluno</span>
+                </div>
+                {/* Seletor de Modo: Horas vs Dias */}
+                <div className="flex items-center bg-black/80 p-0.5 rounded-lg border border-neutral-700">
+                  <button
+                    type="button"
+                    onClick={() => { setAccessMode('hours'); setCustomHoursInput(''); }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${accessMode === 'hours'
+                      ? 'bg-emerald-500 text-black shadow'
+                      : 'text-neutral-400 hover:text-white'
+                      }`}
+                  >
+                    Por Horas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAccessMode('days'); setCustomHoursInput(''); }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${accessMode === 'days'
+                      ? 'bg-emerald-500 text-black shadow'
+                      : 'text-neutral-400 hover:text-white'
+                      }`}
+                  >
+                    Por Dias
+                  </button>
+                </div>
               </div>
+
               <p className="text-[11px] text-neutral-400 leading-relaxed">
-                Libere um aluno ou cliente definindo quantos dias de acesso ele terá. Salva instantaneamente na nuvem.
+                {accessMode === 'hours'
+                  ? 'Defina a quantidade de HORAS para o teste do aluno (ex: 1h, 2h, 4h, 12h ou digite o valor).'
+                  : 'Defina a quantidade de DIAS de acesso da licença do cliente.'}
               </p>
 
               <form onSubmit={handleAddManual} className="space-y-2.5">
@@ -357,28 +424,64 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   className="w-full bg-black/70 border border-neutral-700 rounded-xl px-3 py-2 text-white placeholder:text-neutral-600 outline-none focus:border-emerald-400"
                 />
 
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] text-neutral-400 font-bold">Dias de Acesso:</span>
-                  {[1, 7, 15, 30, 90, 365, 9999].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setNewDays(d)}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${newDays === d
-                        ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                        : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
-                        }`}
-                    >
-                      {d === 1 ? '24h (1d)' : d === 9999 ? 'Vitalício' : `${d}d`}
-                    </button>
-                  ))}
-                </div>
+                {accessMode === 'hours' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-neutral-400 font-bold">Horas de Teste:</span>
+                      {[1, 2, 4, 6, 12, 24, 48].map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => { setNewHours(h); setCustomHoursInput(''); }}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${newHours === h && !customHoursInput
+                            ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                            : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
+                            }`}
+                        >
+                          {h}h
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="720"
+                        value={customHoursInput}
+                        onChange={(e) => setCustomHoursInput(e.target.value)}
+                        placeholder="Outra qtd de horas (ex: 3, 5, 8...)"
+                        className="flex-1 bg-black/70 border border-neutral-700 rounded-xl px-3 py-1.5 text-white placeholder:text-neutral-600 outline-none focus:border-emerald-400 text-[11px]"
+                      />
+                      <span className="text-[11px] text-emerald-400 font-semibold whitespace-nowrap">
+                        {customHoursInput ? `${customHoursInput} horas` : `${newHours} horas selecionadas`}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-neutral-400 font-bold">Dias de Acesso:</span>
+                    {[1, 7, 15, 30, 90, 365, 9999].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setNewDays(d)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${newDays === d
+                          ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                          : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:text-white'
+                          }`}
+                      >
+                        {d === 1 ? '24h (1d)' : d === 9999 ? 'Vitalício' : `${d}d`}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <input
                   type="text"
                   value={newNotes}
                   onChange={(e) => setNewNotes(e.target.value)}
-                  placeholder="Observação (ex: Aluno VIP, Grupo Telegram)"
+                  placeholder="Observação (ex: Aluno Teste, Grupo VIP)"
                   className="w-full bg-black/70 border border-neutral-700 rounded-xl px-3 py-1.5 text-white placeholder:text-neutral-600 outline-none focus:border-emerald-400 text-[11px]"
                 />
 
@@ -388,7 +491,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-neutral-950 font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <Check className="w-4 h-4" />
-                  <span>{isSubmitting ? 'Salvando...' : `Liberar Acesso (${newDays === 1 ? '24 Horas / 1 Dia' : newDays === 9999 ? 'Vitalício' : `${newDays} Dias`})`}</span>
+                  <span>
+                    {isSubmitting
+                      ? 'Salvando no banco...'
+                      : accessMode === 'hours'
+                        ? `Liberar Teste (${customHoursInput ? `${customHoursInput} Horas` : `${newHours} Horas`})`
+                        : `Liberar Acesso (${newDays === 1 ? '24 Horas' : newDays === 9999 ? 'Vitalício' : `${newDays} Dias`})`}
+                  </span>
                 </button>
               </form>
             </div>
@@ -605,7 +714,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             )}
                           </td>
 
-                          {/* Coluna 4: Dias de Acesso (Controle Total) */}
+                          {/* Coluna 4: Horas / Dias de Acesso (Controle Total) */}
                           <td className="py-3 px-3">
                             {isMaster ? (
                               <span className="text-amber-400 font-bold text-xs">Acesso Vitalício (∞)</span>
@@ -625,29 +734,53 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                       : m.expiresAt && m.expiresAt > Date.now()
                                         ? (() => {
                                           const diffMs = m.expiresAt - Date.now();
-                                          const diffHours = Math.ceil(diffMs / (3600 * 1000));
-                                          if (diffHours <= 24) {
-                                            return `${diffHours}h restantes (1 dia)`;
+                                          const diffHours = Math.floor(diffMs / (3600 * 1000));
+                                          const diffMins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
+                                          if (diffHours < 24) {
+                                            return diffHours > 0
+                                              ? `${diffHours}h ${diffMins}min de teste`
+                                              : `${diffMins} minutos restantes`;
                                           }
                                           return `${Math.ceil(diffMs / (86400 * 1000))} dias restantes`;
                                         })()
                                         : remainingDays > 0
                                           ? `${remainingDays} dias restantes`
-                                          : '0 dias (Expirado)'}
+                                          : '0h (Expirado)'}
                                   </span>
                                 </div>
 
-                                {/* Botões Rápidos de Configuração de Dias (com 24h / 1d) */}
+                                {/* Botões Rápidos de Configuração de Horas e Dias */}
                                 <div className="flex items-center gap-1 flex-wrap text-[9px]">
+                                  {[1, 2, 4, 12, 24].map((h) => (
+                                    <button
+                                      key={h}
+                                      type="button"
+                                      onClick={() => handleUpdateHours(m.email, h)}
+                                      title={`Definir teste de ${h} horas`}
+                                      className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/50 hover:bg-emerald-500 hover:text-black text-emerald-300 rounded font-bold transition-colors cursor-pointer"
+                                    >
+                                      +{h}h
+                                    </button>
+                                  ))}
                                   <button
                                     type="button"
-                                    onClick={() => handleUpdateDays(m.email, 1)}
-                                    title="Definir 24 horas (1 dia) de acesso"
-                                    className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/50 hover:bg-emerald-500 hover:text-black text-emerald-300 rounded font-bold transition-colors cursor-pointer"
+                                    onClick={() => {
+                                      const input = window.prompt(`Quantas horas de teste deseja liberar para ${m.email}?`, '2');
+                                      if (input) {
+                                        const parsed = parseInt(input.trim(), 10);
+                                        if (!isNaN(parsed) && parsed > 0) {
+                                          handleUpdateHours(m.email, parsed);
+                                        } else {
+                                          alert('Informe um número válido de horas.');
+                                        }
+                                      }
+                                    }}
+                                    title="Definir outra quantidade de horas personalizada"
+                                    className="px-1.5 py-0.5 bg-neutral-900 border border-neutral-700 hover:border-emerald-400 text-neutral-300 hover:text-white rounded transition-colors cursor-pointer"
                                   >
-                                    +24h (1d)
+                                    +Horas
                                   </button>
-                                  {[7, 15, 30, 90, 365].map((d) => (
+                                  {[7, 30].map((d) => (
                                     <button
                                       key={d}
                                       type="button"
