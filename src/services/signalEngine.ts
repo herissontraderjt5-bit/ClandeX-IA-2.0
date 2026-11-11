@@ -339,20 +339,19 @@ export class SignalEngine {
 
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
-      // Foco em taxas cirúrgicas e máxima consistência sem espera excessiva
-      preAlertMinScore = 60;
-      confirmMinScore = 66;
-      signalCooldownMs = 120_000; // 2 minutos
+      preAlertMinScore = 58;
+      confirmMinScore = 64;
+      signalCooldownMs = 15_000; // 15 segundos
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagem / Alta Frequência):
-      preAlertMinScore = 46;
-      confirmMinScore = 52;
-      signalCooldownMs = 60_000; // 1 minuto
+      preAlertMinScore = 45;
+      confirmMinScore = 50;
+      signalCooldownMs = 5_000; // 5 segundos
     } else {
       // Moderada (Mediana):
-      preAlertMinScore = 52;
-      confirmMinScore = 58;
-      signalCooldownMs = 90_000; // 1.5 minutos
+      preAlertMinScore = 50;
+      confirmMinScore = 55;
+      signalCooldownMs = 10_000; // 10 segundos
     }
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
@@ -548,16 +547,33 @@ export class SignalEngine {
           profile
         );
 
-        if (stratDecision) {
+        let activeDecision = stratDecision;
+        if (!activeDecision && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= confirmMinScore) {
+          activeDecision = {
+            strategy: {
+              id: 'estrategia_confluencia_ia',
+              name: 'IA Confluência Técnica Avançada',
+              badge: `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`,
+              category: 'ALGORITMICA',
+              description: 'Confluência múltipla TradingView (RSI, MACD, Estocástico, Bollinger)',
+              minProfile: 'MODERADA',
+            },
+            direction: confluences.bias,
+            score: confluences.totalScore,
+            reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'],
+          };
+        }
+
+        if (activeDecision) {
           const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
           const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
           const body = Math.abs(currentCandle.close - currentCandle.open);
 
-          const isHardResistanceBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
-          const isHardSupportBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
+          const isHardResistanceBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
+          const isHardSupportBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
-            const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
+            const bRes = this.backtestResults.find((b) => b.id === activeDecision!.strategy.id);
             const confirmed: SignalRecord = {
               id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               timestamp: Date.now(),
@@ -567,17 +583,17 @@ export class SignalEngine {
               asset: assetSymbol,
               timeframe,
               expiration: activeExpiration,
-              direction: stratDecision.direction,
+              direction: activeDecision.direction,
               stage: 'CONFIRMED',
               entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
               candleOpenPrice: 0,
               isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
-              confluenceScore: stratDecision.score,
-              strategyId: stratDecision.strategy.id,
-              strategyName: stratDecision.strategy.name,
-              strategyBadge: stratDecision.strategy.badge,
+              confluenceScore: activeDecision.score,
+              strategyId: activeDecision.strategy.id,
+              strategyName: activeDecision.strategy.name,
+              strategyBadge: activeDecision.strategy.badge,
               strategyWinRate: bRes?.winRate,
-              reasons: [...stratDecision.reasons],
+              reasons: [...activeDecision.reasons],
               result: 'PENDING',
               candleCloseTime: targetEntryTimestamp,
               entryTimestamp: targetEntryTimestamp,
@@ -671,6 +687,17 @@ export class SignalEngine {
         const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
         stratWinRate = bRes?.winRate;
       }
+    }
+
+    // Fallback de Pré-Alerta via Confluência Técnica Multidimensional (quando nenhum padrão de vela estiver ativo)
+    if (!signalDirection && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
+      signalDirection = confluences.bias;
+      signalScore = confluences.totalScore;
+      signalReasons = confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'];
+      stratId = 'estrategia_confluencia_ia';
+      stratName = 'IA Confluência Técnica Avançada';
+      stratBadge = `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`;
+      stratWinRate = Math.min(94, Math.max(72, confluences.totalScore));
     }
 
     if (

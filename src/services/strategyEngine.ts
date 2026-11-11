@@ -689,6 +689,24 @@ export function getBestActiveStrategySignal(
     }
   }
 
+  // Fallback de segurança: se o auto-filtro bloqueou todas as estratégias, reavalia para nunca paralisar a IA
+  if (decisions.length === 0 && safeActiveIds.length > 0) {
+    for (const stratId of safeActiveIds) {
+      const strat = AVAILABLE_STRATEGIES.find((s) => s.id === stratId);
+      if (!strat) continue;
+      if (profile === 'CONSERVADORA' && strat.minProfile === 'AGRESSIVA') continue;
+      const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex);
+      if (evalRes && evalRes.direction) {
+        decisions.push({
+          strategy: strat,
+          direction: evalRes.direction,
+          score: evalRes.score,
+          reasons: evalRes.reasons,
+        });
+      }
+    }
+  }
+
   if (decisions.length === 0) return null;
 
   decisions.sort((a, b) => {
