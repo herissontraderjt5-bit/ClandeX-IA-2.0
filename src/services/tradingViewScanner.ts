@@ -160,7 +160,7 @@ class TradingViewScannerService {
       if (resp.ok) {
         rawData = await resp.json();
       }
-    } catch {}
+    } catch { }
 
     // 2. Se falhar, chama o endpoint oficial da TradingView diretamente com text/plain (Bypassa preflight CORS no navegador!)
     if (!rawData || !rawData.data || rawData.data.length === 0) {
@@ -277,7 +277,7 @@ class TradingViewScannerService {
           signal: AbortSignal.timeout(3000),
         });
         if (resp.ok) rawData = await resp.json();
-      } catch {}
+      } catch { }
 
       if (!rawData || !rawData.data) {
         try {
@@ -288,7 +288,7 @@ class TradingViewScannerService {
             signal: AbortSignal.timeout(4000),
           });
           if (resp.ok) rawData = await resp.json();
-        } catch {}
+        } catch { }
       }
 
       if (rawData && Array.isArray(rawData.data)) {

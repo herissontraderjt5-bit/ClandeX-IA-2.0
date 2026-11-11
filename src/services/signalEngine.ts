@@ -28,6 +28,7 @@ import {
   getSupabase,
   mapRowToSignal,
 } from './supabaseClient';
+import { notificationService } from './notificationService';
 
 export function getExpirationForTimeframe(tf: TimeFrame): ExpirationTime {
   switch (tf) {
@@ -148,6 +149,17 @@ export class SignalEngine {
     this.signalEventListeners.forEach((listener) => {
       try { listener(signal, event); } catch {}
     });
+
+    // Notificações Push nativas no Celular e PC
+    try {
+      if (event === 'CONFIRMED') {
+        notificationService.notifySignalConfirmed(signal);
+      } else if (event === 'RESULT') {
+        notificationService.notifySignalResult(signal);
+      } else if (event === 'CANCELLED') {
+        notificationService.notifySignalCancelled(signal);
+      }
+    } catch {}
   }
 
   public getHistory(): SignalRecord[] {
@@ -861,9 +873,7 @@ export class SignalEngine {
         if (outcome === 'WIN') audioAlerts.playWin();
         if (outcome === 'LOSS') audioAlerts.playLoss();
 
-        if (this.onSignalEventCallback) {
-          this.onSignalEventCallback(trade, 'RESULT');
-        }
+        this.dispatchSignalEvent(trade, 'RESULT');
 
         updated = true;
         return false; // Remove da lista de pendentes

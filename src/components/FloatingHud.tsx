@@ -48,7 +48,11 @@ import {
   LogOut,
   Newspaper,
   Globe,
+  Smartphone,
+  BellRing,
+  Download,
 } from 'lucide-react';
+import { notificationService } from '../services/notificationService';
 import {
   Asset,
   Candle,
@@ -439,6 +443,35 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // PWA (Baixar App no Celular/PC) & Notificações Push de Sinais e Resultados
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => notificationService.getPermission());
+  const [canInstallPwa, setCanInstallPwa] = useState<boolean>(() => notificationService.canInstallPwa());
+
+  useEffect(() => {
+    return notificationService.subscribe(() => {
+      setNotifPermission(notificationService.getPermission());
+      setCanInstallPwa(notificationService.canInstallPwa());
+    });
+  }, []);
+
+  const handleRequestNotif = async () => {
+    await notificationService.requestPermission();
+    setNotifPermission(notificationService.getPermission());
+  };
+
+  const handleInstallApp = async () => {
+    if (canInstallPwa) {
+      await notificationService.promptInstallPwa();
+    } else {
+      alert(
+        '📱 Para instalar o aplicativo ClandeX-IA no seu aparelho:\n\n' +
+        '• No Celular Android (Chrome): Toque no menu (3 pontinhos) e escolha "Instalar aplicativo" ou "Adicionar à tela inicial".\n\n' +
+        '• No iPhone/iPad (Safari): Toque no botão de Compartilhar (ícone com seta para cima) e escolha "Adicionar à Tela de Início".\n\n' +
+        '• No Computador (Chrome/Edge): Clique no ícone de instalar no canto direito da barra de endereços.'
+      );
+    }
+  };
 
   // Estratégias Separadas e Backtest em Tempo Real com Auto-Filtro IA de Lucro
   const [autoFilterProfitOnly, setAutoFilterProfitOnly] = useState<boolean>(() => {
@@ -1129,6 +1162,19 @@ DIRETRIZES:
             </button>
           )}
 
+          {/* Botão Notificações Push Celular/PC */}
+          <button
+            onClick={handleRequestNotif}
+            title={notifPermission === 'granted' ? 'Notificações Ativas (Celular/PC)' : 'Ativar Notificações no Celular/PC'}
+            className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
+          >
+            {notifPermission === 'granted' ? (
+              <BellRing className="w-3.5 h-3.5 text-cyan-400" />
+            ) : (
+              <Bell className="w-3.5 h-3.5 text-neutral-400 hover:text-cyan-300" />
+            )}
+          </button>
+
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             title={isMinimized ? 'Expandir' : 'Minimizar'}
@@ -1469,6 +1515,38 @@ DIRETRIZES:
                     </button>
                   </div>
                 )}
+
+                {/* BARRA PWA: BAIXAR APP NO CELULAR/PC & NOTIFICAÇÕES PUSH (WIN/LOSS) */}
+                <div className="grid grid-cols-2 gap-1.5 p-1.5 bg-black/70 border border-cyan-500/30 rounded-xl font-mono text-[10px] shadow-lg shadow-cyan-950/20">
+                  <button
+                    onClick={handleRequestNotif}
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      notifPermission === 'granted'
+                        ? 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-300'
+                        : 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-400 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/50 animate-pulse'
+                    }`}
+                  >
+                    {notifPermission === 'granted' ? (
+                      <>
+                        <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Notificações Ativas</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bell className="w-3.5 h-3.5 text-cyan-300 animate-bounce" />
+                        <span>Ativar Notificações</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleInstallApp}
+                    className="py-1.5 px-2 rounded-lg font-bold bg-neutral-900 border border-neutral-700 hover:border-cyan-400 text-white hover:text-cyan-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.98]"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{canInstallPwa ? 'Baixar / Instalar App' : 'Instalar no Aparelho'}</span>
+                  </button>
+                </div>
 
                 {/* 1. PLACAR DO DIA COM A DATA DE HOJE E QUANTIDADE DE WIN E LOSS */}
                 <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl shadow-xl space-y-2">
