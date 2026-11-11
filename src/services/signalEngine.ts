@@ -795,26 +795,28 @@ export class SignalEngine {
 
       if (isExpired) {
         // ABERTURA E FECHAMENTO OFICIAIS DA VELA DO SINAL:
-        // O resultado da operação de opções binárias é 100% determinado pela própria vela da operação:
-        // Se a vela fechou verde (close > open) -> CALL = WIN, PUT = LOSS.
-        // Se a vela fechou vermelha (close < open) -> PUT = WIN, CALL = LOSS.
-        let officialOpen: number;
-        let officialClose: number;
+        // Prioriza as taxas reais capturadas na abertura e no término da operação:
+        const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+          ? trade.candleOpenPrice
+          : (trade.entryPrice > 0 ? trade.entryPrice : ((tradeCandle && tradeCandle.open > 0) ? tradeCandle.open : currentPrice));
 
-        if (tradeCandle && tradeCandle.open > 0 && tradeCandle.close > 0) {
-          officialOpen = tradeCandle.open;
-          officialClose = tradeCandle.close;
-        } else {
-          officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0) ? trade.candleOpenPrice : trade.entryPrice;
-          officialClose = (trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : currentPrice;
+        // Fechamento: taxa real no momento do término (candleClosePrice continuamente atualizado até a expiração, ou tradeCandle.close se candle já fechada)
+        let officialClose = (tradeCandle && tradeCandle.isClosed && tradeCandle.close > 0)
+          ? tradeCandle.close
+          : ((trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : currentPrice);
+
+        if (!officialClose || officialClose <= 0) {
+          officialClose = currentPrice;
         }
 
         const diff = officialClose - officialOpen;
         const EPSILON = 1e-8;
 
-        // REGRA ESTRITA DE OPÇÕES BINÁRIAS (SEM distorções):
-        // CALL = WIN se fechou acima da abertura da vela de entrada (diff > 0)
-        // PUT  = WIN se fechou abaixo da abertura da vela de entrada (diff < 0)
+        // REGRA ESTRITA DE OPÇÕES BINÁRIAS:
+        // CALL = WIN se a taxa final fechou ACIMA da taxa de entrada (officialClose > officialOpen, diff > 0)
+        // CALL = LOSS se a taxa final fechou ABAIXO da taxa de entrada (officialClose < officialOpen, diff < 0)
+        // PUT  = WIN se a taxa final fechou ABAIXO da taxa de entrada (officialClose < officialOpen, diff < 0)
+        // PUT  = LOSS se a taxa final fechou ACIMA da taxa de entrada (officialClose > officialOpen, diff > 0)
         let outcome: TradeResult = 'EMPATE';
         if (trade.direction === 'CALL') {
           if (diff > EPSILON) {
@@ -1129,7 +1131,27 @@ export class SignalEngine {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
             // Filtrar apenas sinais legítimos executados (eliminando sinais fictícios gerados por seeds anteriores)
-            this.signalHistory = parsed.filter((s) => !s.id.startsWith('seed-'));
+            let cleaned = parsed.filter((s) => !s.id.startsWith('seed-'));
+            // Recalibra e assegura precisão absoluta caso algum trade antigo tenha sido gravado com resultado invertido
+            cleaned = cleaned.map((s) => {
+              const entry = s.candleOpenPrice || s.entryPrice || 0;
+              const exit = s.candleClosePrice || s.exitPrice || 0;
+              if (entry > 0 && exit > 0 && (s.result === 'WIN' || s.result === 'LOSS')) {
+                const diff = exit - entry;
+                const EPSILON = 1e-8;
+                let correctResult = s.result;
+                if (s.direction === 'CALL') {
+                  correctResult = diff > EPSILON ? 'WIN' : (diff < -EPSILON ? 'LOSS' : 'EMPATE');
+                } else if (s.direction === 'PUT') {
+                  correctResult = diff < -EPSILON ? 'WIN' : (diff > EPSILON ? 'LOSS' : 'EMPATE');
+                }
+                if (correctResult !== s.result) {
+                  return { ...s, result: correctResult };
+                }
+              }
+              return s;
+            });
+            this.signalHistory = cleaned;
             const nowSec = this.getNowSec();
             this.pendingTrades = this.signalHistory.filter(
               (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec

@@ -265,9 +265,9 @@ export function generateDeterministicCandles(asset: Asset, timeframe: TimeFrame,
 
   for (let i = count - 1; i >= 0; i--) {
     const candleTime = currentBoundary - (i * tfSeconds);
-    const prevTime = candleTime - tfSeconds;
-    const open = Number(getPriceAtTime(prevTime).toFixed(asset.pipDecimals));
-    const close = Number(getPriceAtTime(candleTime).toFixed(asset.pipDecimals));
+    const nextTime = candleTime + tfSeconds;
+    const open = Number(getPriceAtTime(candleTime).toFixed(asset.pipDecimals));
+    const close = i === 0 ? asset.currentPrice : Number(getPriceAtTime(nextTime).toFixed(asset.pipDecimals));
 
     const seed = assetHash ^ candleTime;
     const r1 = seededRandom(seed + 1);
