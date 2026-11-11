@@ -280,9 +280,9 @@ export class SignalEngine {
             updatedEntry = true;
           }
         } else {
-          // Nos primeiros 3 segundos após a abertura, refina com a abertura exata da vela caso o candle chegue com leve atraso do feed
-          if (trade.entryTimestamp && (nowSec - trade.entryTimestamp) <= 3) {
-            if (targetCandle && targetCandle.open > 0 && targetCandle.open !== trade.candleOpenPrice) {
+          // Nos primeiros 15 segundos após a abertura, refina com a abertura exata da vela caso o candle chegue com leve atraso do feed
+          if (trade.entryTimestamp && (nowSec - trade.entryTimestamp) <= 15) {
+            if (targetCandle && targetCandle.open > 0 && Math.abs(targetCandle.open - trade.candleOpenPrice) > 1e-8) {
               trade.entryPrice = targetCandle.open;
               trade.candleOpenPrice = targetCandle.open;
               updatedEntry = true;
@@ -501,7 +501,6 @@ export class SignalEngine {
         }
 
         // REGRA ESTRITA DO USUÁRIO: Pavio de rejeição não superou o corpo da vela -> CONFIRMAÇÃO PROSSEGUE
-        const refPrice = currentCandle.close;
         const confirmed: SignalRecord = {
             ...this.activePreAlert,
             id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -512,8 +511,8 @@ export class SignalEngine {
             expirationTimeFormatted,
             timeframe,
             expiration: activeExpiration,
-            entryPrice: refPrice,
-            candleOpenPrice: currentCandle.close,
+            entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
+            candleOpenPrice: 0,
             isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
             confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
             strategyId: this.activePreAlert.strategyId,
@@ -576,8 +575,6 @@ export class SignalEngine {
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
             const bRes = this.backtestResults.find((b) => b.id === stratDecision.strategy.id);
-            const refPrice = currentCandle.close;
-
             const confirmed: SignalRecord = {
               id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               timestamp: Date.now(),
@@ -589,8 +586,8 @@ export class SignalEngine {
               expiration: activeExpiration,
               direction: stratDecision.direction,
               stage: 'CONFIRMED',
-              entryPrice: refPrice,
-              candleOpenPrice: currentCandle.close,
+              entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
+              candleOpenPrice: 0,
               isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
               confluenceScore: stratDecision.score,
               strategyId: stratDecision.strategy.id,

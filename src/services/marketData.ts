@@ -842,9 +842,9 @@ export class MarketDataManager {
       // Start new candle
       const newCandle: Candle = {
         time: currentBoundary,
-        open: binanceK ? parseFloat(binanceK.o) : last.close,
-        high: binanceK ? Math.max(parseFloat(binanceK.h), price) : Math.max(last.close, price),
-        low: binanceK ? Math.min(parseFloat(binanceK.l), price) : Math.min(last.close, price),
+        open: binanceK ? parseFloat(binanceK.o) : price,
+        high: binanceK ? Math.max(parseFloat(binanceK.h), price) : price,
+        low: binanceK ? Math.min(parseFloat(binanceK.l), price) : price,
         close: price,
         volume: 1,
         isClosed: false,

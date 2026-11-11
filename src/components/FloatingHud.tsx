@@ -1010,13 +1010,13 @@ DIRETRIZES:
       ? currentCandle.open
       : (activeTrade?.entryPrice || 0));
   const livePrice = currentCandle?.close || asset.currentPrice;
-  const isWinning = isTradeRunning
+  const isWinning = isTradeRunning && tradeRefOpen > 0
     ? isCallTrade
       ? livePrice > tradeRefOpen
       : livePrice < tradeRefOpen
     : false;
-  const isTied = isTradeRunning ? livePrice === tradeRefOpen : false;
-  const diffPips = isTradeRunning && activeTrade
+  const isTied = isTradeRunning && tradeRefOpen > 0 ? livePrice === tradeRefOpen : false;
+  const diffPips = isTradeRunning && activeTrade && tradeRefOpen > 0
     ? Math.abs(livePrice - tradeRefOpen) * (asset.pipDecimals === 5 ? 10000 : 100)
     : 0;
 
@@ -1720,7 +1720,7 @@ DIRETRIZES:
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-800 text-neutral-300">
-                          <span>Abertura: <strong className="text-white">{(tradeRefOpen > 0 ? tradeRefOpen : (activeTrade.candleOpenPrice || activeTrade.entryPrice)).toFixed(asset.pipDecimals)}</strong></span>
+                          <span>Abertura: <strong className="text-white">{tradeRefOpen > 0 ? tradeRefOpen.toFixed(asset.pipDecimals) : 'Aguardando vela...'}</strong></span>
                           <span>Término: <strong className="text-emerald-300">{activeTrade.expirationTimeFormatted || 'Fechamento'} BRT</strong></span>
                         </div>
                       </div>
