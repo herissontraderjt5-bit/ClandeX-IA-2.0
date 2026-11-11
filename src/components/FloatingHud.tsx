@@ -1520,11 +1520,10 @@ DIRETRIZES:
                 <div className="grid grid-cols-2 gap-1.5 p-1.5 bg-black/70 border border-cyan-500/30 rounded-xl font-mono text-[10px] shadow-lg shadow-cyan-950/20">
                   <button
                     onClick={handleRequestNotif}
-                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      notifPermission === 'granted'
+                    className={`py-1.5 px-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${notifPermission === 'granted'
                         ? 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-300'
                         : 'bg-gradient-to-r from-cyan-600/30 to-blue-600/30 border border-cyan-400 text-cyan-200 hover:from-cyan-600/50 hover:to-blue-600/50 animate-pulse'
-                    }`}
+                      }`}
                   >
                     {notifPermission === 'granted' ? (
                       <>
@@ -2349,8 +2348,8 @@ DIRETRIZES:
                   <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/90 flex items-center justify-between gap-2 shadow-inner">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className={`p-1.5 rounded-lg border shrink-0 ${autoFilterProfitOnly
-                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                          : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                        : 'bg-neutral-800 border-neutral-700 text-neutral-400'
                         }`}>
                         <Bot className="w-3.5 h-3.5" />
                       </div>
@@ -2358,8 +2357,8 @@ DIRETRIZES:
                         <div className="text-[10px] font-bold text-white flex items-center gap-1.5">
                           <span>Auto-Filtro IA de Lucro</span>
                           <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${autoFilterProfitOnly
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
                             }`}>
                             {autoFilterProfitOnly ? 'ATIVADO' : 'DESLIGADO'}
                           </span>
@@ -2373,8 +2372,8 @@ DIRETRIZES:
                       type="button"
                       onClick={handleToggleAutoFilterProfit}
                       className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer shrink-0 ${autoFilterProfitOnly
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-                          : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                        : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white'
                         }`}
                     >
                       {autoFilterProfitOnly ? '✓ LIGADO' : 'DESLIGADO'}
@@ -2413,10 +2412,10 @@ DIRETRIZES:
                           key={strat.id}
                           onClick={() => handleToggleStrategy(strat.id)}
                           className={`p-2 rounded-xl border transition-all cursor-pointer select-none flex items-center justify-between gap-2 ${isActive
-                              ? isHighAssertive
-                                ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/40 shadow-sm hover:border-emerald-400'
-                                : 'bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border-cyan-500/40 shadow-sm hover:border-cyan-400'
-                              : 'bg-black/40 border-neutral-800/80 opacity-60 hover:opacity-90 hover:border-neutral-700'
+                            ? isHighAssertive
+                              ? 'bg-gradient-to-r from-emerald-950/40 via-neutral-900 to-black border-emerald-500/40 shadow-sm hover:border-emerald-400'
+                              : 'bg-gradient-to-r from-cyan-950/30 via-neutral-900 to-black border-cyan-500/40 shadow-sm hover:border-cyan-400'
+                            : 'bg-black/40 border-neutral-800/80 opacity-60 hover:opacity-90 hover:border-neutral-700'
                             }`}
                         >
                           {/* Left: Nome & Placar Real */}
@@ -2447,12 +2446,12 @@ DIRETRIZES:
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span
                               className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${isHighAssertive
-                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                                  : isDecent
-                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                                    : isLow
-                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                                : isDecent
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                  : isLow
+                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                    : 'bg-neutral-800 text-neutral-400 border-neutral-700'
                                 }`}
                             >
                               {winRate}%
@@ -2465,8 +2464,8 @@ DIRETRIZES:
                                 handleToggleStrategy(strat.id);
                               }}
                               className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${isActive
-                                  ? 'bg-cyan-400 text-black shadow-sm shadow-cyan-400/30'
-                                  : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
+                                ? 'bg-cyan-400 text-black shadow-sm shadow-cyan-400/30'
+                                : 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
                                 }`}
                             >
                               {isActive ? 'ATIVA' : 'PAUSADA'}
@@ -2492,10 +2491,10 @@ DIRETRIZES:
                         <span>Painel Completo de Indicadores</span>
                         <span
                           className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${indicatorConsensus.bias === 'CALL'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                              : indicatorConsensus.bias === 'PUT'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                                : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : indicatorConsensus.bias === 'PUT'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-neutral-800 text-neutral-300 border border-neutral-700'
                             }`}
                         >
                           {indicatorConsensus.verdict}
@@ -2542,10 +2541,10 @@ DIRETRIZES:
                 {/* 2. Termômetro de Consenso Geral Institucional (Compacto) */}
                 <div
                   className={`p-3 rounded-xl border transition-all ${indicatorConsensus.bias === 'CALL'
-                      ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                      : indicatorConsensus.bias === 'PUT'
-                        ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                        : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
+                    ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    : indicatorConsensus.bias === 'PUT'
+                      ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
+                      : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
                     }`}
                 >
                   <div className="flex items-center justify-between pb-1.5">
@@ -2571,10 +2570,10 @@ DIRETRIZES:
                         </div>
                         <div
                           className={`text-xs font-black tracking-wider ${indicatorConsensus.bias === 'CALL'
-                              ? 'text-emerald-400'
-                              : indicatorConsensus.bias === 'PUT'
-                                ? 'text-rose-400'
-                                : 'text-amber-400'
+                            ? 'text-emerald-400'
+                            : indicatorConsensus.bias === 'PUT'
+                              ? 'text-rose-400'
+                              : 'text-amber-400'
                             }`}
                         >
                           {indicatorConsensus.verdict}
@@ -2627,10 +2626,10 @@ DIRETRIZES:
                       ORDER FLOW (DELTA)
                     </span>
                     <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${technicalData.delta.status === 'ALTA'
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : technicalData.delta.status === 'BAIXA'
-                          ? 'bg-rose-500/20 text-rose-300'
-                          : 'bg-neutral-800 text-neutral-300'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : technicalData.delta.status === 'BAIXA'
+                        ? 'bg-rose-500/20 text-rose-300'
+                        : 'bg-neutral-800 text-neutral-300'
                       }`}>
                       {technicalData.delta.netDelta > 0 ? `+${technicalData.delta.netDelta}% NET` : `${technicalData.delta.netDelta}% NET`}
                     </span>
@@ -2660,7 +2659,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">RSI (14)</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.rsi.signal === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.rsi.signal === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.rsi.signal === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.rsi.signal}
                       </span>
@@ -2676,7 +2675,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">MACD</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.macd.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.macd.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.macd.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.macd.status}
                       </span>
@@ -2694,7 +2693,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">EMA (9/21)</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.maShort.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.maShort.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.maShort.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.maShort.status}
                       </span>
@@ -2712,7 +2711,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">SMA (50/200)</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.maLong.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.maLong.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.maLong.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.maLong.status}
                       </span>
@@ -2730,7 +2729,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">Bollinger</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.bollingerBands.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.bollingerBands.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.bollingerBands.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.bollingerBands.status}
                       </span>
@@ -2750,7 +2749,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">Estocástico</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.stochastic.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.stochastic.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.stochastic.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.stochastic.status}
                       </span>
@@ -2770,7 +2769,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">ADX</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.adx.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.adx.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.adx.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.adx.status}
                       </span>
@@ -2788,7 +2787,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">Volume</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.volume.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.volume.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.volume.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.volume.status}
                       </span>
@@ -2806,7 +2805,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">ATR</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.atr.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.atr.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.atr.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.atr.status}
                       </span>
@@ -2822,7 +2821,7 @@ DIRETRIZES:
                     <div className="flex items-center justify-between">
                       <span className="text-[9.5px] text-neutral-400 font-semibold">Macro ({timeframe})</span>
                       <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.majorTrend.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                          technicalData.majorTrend.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
+                        technicalData.majorTrend.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
                         }`}>
                         {technicalData.majorTrend.status}
                       </span>
@@ -2841,7 +2840,7 @@ DIRETRIZES:
                     <span>Confluência: <strong className="text-emerald-400">{indicatorConsensus.callCount} CALL</strong> vs <strong className="text-rose-400">{indicatorConsensus.putCount} PUT</strong></span>
                   </div>
                   <span className={`font-bold px-2 py-0.5 rounded text-[9px] ${indicatorConsensus.bias === 'CALL' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
-                      indicatorConsensus.bias === 'PUT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-neutral-800 text-neutral-400'
+                    indicatorConsensus.bias === 'PUT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-neutral-800 text-neutral-400'
                     }`}>
                     {indicatorConsensus.verdict}
                   </span>

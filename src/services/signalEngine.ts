@@ -144,10 +144,10 @@ export class SignalEngine {
 
   public dispatchSignalEvent(signal: SignalRecord, event: 'PRE_ALERT' | 'CONFIRMED' | 'RESULT' | 'CANCELLED') {
     if (this.onSignalEventCallback) {
-      try { this.onSignalEventCallback(signal, event); } catch {}
+      try { this.onSignalEventCallback(signal, event); } catch { }
     }
     this.signalEventListeners.forEach((listener) => {
-      try { listener(signal, event); } catch {}
+      try { listener(signal, event); } catch { }
     });
 
     // Notificações Push nativas no Celular e PC
@@ -161,7 +161,7 @@ export class SignalEngine {
       } else if (event === 'CANCELLED') {
         notificationService.notifySignalCancelled(signal);
       }
-    } catch {}
+    } catch { }
   }
 
   public getHistory(): SignalRecord[] {
@@ -229,7 +229,7 @@ export class SignalEngine {
       if (typeof window !== 'undefined') {
         localStorage.removeItem(this.getStorageKey());
       }
-    } catch {}
+    } catch { }
     this.notify();
   }
 
@@ -262,7 +262,7 @@ export class SignalEngine {
         const entryTime = trade.entryTimestamp || (expTime - expSec);
 
         // Localiza a vela da operação correspondente à abertura da vela do sinal (entryTime, tolerância de até 20s)
-        const targetCandle = candleList.find((c) => Math.abs(c.time - entryTime) < Math.min(20, expSec * 0.4))
+        const targetCandle = [...candleList].reverse().find((c) => Math.abs(c.time - entryTime) < Math.min(20, expSec * 0.4))
           || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expSec * 0.4) ? currentCandle : null);
 
         // Quando a vela do sinal abre (segundo 00:00 da vela oficial): trava a taxa oficial de abertura da vela de forma IMUTÁVEL
@@ -502,56 +502,56 @@ export class SignalEngine {
 
         // REGRA ESTRITA DO USUÁRIO: Pavio de rejeição não superou o corpo da vela -> CONFIRMAÇÃO PROSSEGUE
         const confirmed: SignalRecord = {
-            ...this.activePreAlert,
-            id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            stage: 'CONFIRMED',
-            timestamp: Date.now(),
-            formattedTime,
-            entryTimeFormatted,
-            expirationTimeFormatted,
-            timeframe,
-            expiration: activeExpiration,
-            entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
-            candleOpenPrice: 0,
-            isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
-            confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
-            strategyId: this.activePreAlert.strategyId,
-            strategyName: this.activePreAlert.strategyName,
-            strategyBadge: this.activePreAlert.strategyBadge,
-            strategyWinRate: this.activePreAlert.strategyWinRate,
-            reasons: this.activePreAlert.reasons.length > 0 ? [...this.activePreAlert.reasons] : confluences.reasons,
-            result: 'PENDING',
-            candleCloseTime: targetEntryTimestamp,
-            entryTimestamp: targetEntryTimestamp,
-            expirationTimestamp: targetExpirationTimestamp,
-            isEstimatedResult: false,
-          };
+          ...this.activePreAlert,
+          id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          stage: 'CONFIRMED',
+          timestamp: Date.now(),
+          formattedTime,
+          entryTimeFormatted,
+          expirationTimeFormatted,
+          timeframe,
+          expiration: activeExpiration,
+          entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
+          candleOpenPrice: 0,
+          isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
+          confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
+          strategyId: this.activePreAlert.strategyId,
+          strategyName: this.activePreAlert.strategyName,
+          strategyBadge: this.activePreAlert.strategyBadge,
+          strategyWinRate: this.activePreAlert.strategyWinRate,
+          reasons: this.activePreAlert.reasons.length > 0 ? [...this.activePreAlert.reasons] : confluences.reasons,
+          result: 'PENDING',
+          candleCloseTime: targetEntryTimestamp,
+          entryTimestamp: targetEntryTimestamp,
+          expirationTimestamp: targetExpirationTimestamp,
+          isEstimatedResult: false,
+        };
 
-          this.lastConfirmedCandleTime = currentCandle.time;
-          this.latestConfirmedSignal = confirmed;
-          this.latestConfirmedTime = Date.now();
-          this.activePreAlert = null;
-          this.lastCancelledSignal = null;
-          this.lastResolvedTrade = null;
-          // Registra cooldown: impede sinal imediato logo após a confirmação
-          this.lastSignalConfirmedAt = Date.now();
+        this.lastConfirmedCandleTime = currentCandle.time;
+        this.latestConfirmedSignal = confirmed;
+        this.latestConfirmedTime = Date.now();
+        this.activePreAlert = null;
+        this.lastCancelledSignal = null;
+        this.lastResolvedTrade = null;
+        // Registra cooldown: impede sinal imediato logo após a confirmação
+        this.lastSignalConfirmedAt = Date.now();
 
-          if (settings.confirmedSound) {
-            if (confirmed.direction === 'CALL') {
-              audioAlerts.playCallSignal();
-            } else {
-              audioAlerts.playPutSignal();
-            }
+        if (settings.confirmedSound) {
+          if (confirmed.direction === 'CALL') {
+            audioAlerts.playCallSignal();
+          } else {
+            audioAlerts.playPutSignal();
           }
+        }
 
-          this.dispatchSignalEvent(confirmed, 'CONFIRMED');
+        this.dispatchSignalEvent(confirmed, 'CONFIRMED');
 
-          this.pendingTrades.push(confirmed);
-          this.signalHistory.unshift(confirmed);
-          this.saveHistory(confirmed);
-          this.notify();
-          return;
-        } else {
+        this.pendingTrades.push(confirmed);
+        this.signalHistory.unshift(confirmed);
+        this.saveHistory(confirmed);
+        this.notify();
+        return;
+      } else {
         // Confirmação direta instantânea de alta convicção faltando 10 segundos
         // EXCLUSIVO para os 6 Padrões Oficiais CandleX-IA
         const activeStrategies = (settings.activeStrategies && settings.activeStrategies.length > 0)
@@ -783,13 +783,11 @@ export class SignalEngine {
       const entryTime = trade.entryTimestamp || (expTime - expirationSec);
 
       // Localiza a vela exata da operação (iniciada em entryTime, tolerância de até 20s)
-      const tradeCandle = candleList.find((c) => Math.abs(c.time - entryTime) < Math.min(20, expirationSec * 0.4))
+      const tradeCandle = [...candleList].reverse().find((c) => Math.abs(c.time - entryTime) < Math.min(20, expirationSec * 0.4))
         || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expirationSec * 0.4) ? currentCandle : null);
 
       // Localiza a vela SUBSEQUENTE (iniciada em expTime, tolerância de até 20s):
-      // REGRA CRÍTICA: nextCandle DEVE ser estritamente posterior a tradeCandle para não
-      // confundir a mesma vela como "próxima" e usar seu close indevido como fechamento.
-      const nextCandle = candleList.find((c) => Math.abs(c.time - expTime) < Math.min(20, expirationSec * 0.4) && c.time > entryTime)
+      const nextCandle = [...candleList].reverse().find((c) => Math.abs(c.time - expTime) < Math.min(20, expirationSec * 0.4) && c.time > entryTime)
         || (currentCandle && Math.abs(currentCandle.time - expTime) < Math.min(20, expirationSec * 0.4) && currentCandle.time > entryTime ? currentCandle : null);
 
       // A vela do sinal encerra estritamente quando:
@@ -1132,7 +1130,7 @@ export class SignalEngine {
       if (typeof window !== 'undefined') {
         localStorage.setItem(this.getStorageKey(), JSON.stringify(this.signalHistory.slice(0, 150)));
       }
-    } catch {}
+    } catch { }
 
     if (signalToUpsert) {
       upsertSignalToSupabase(signalToUpsert);
@@ -1176,7 +1174,7 @@ export class SignalEngine {
           }
         }
       }
-    } catch {}
+    } catch { }
     this.signalHistory = [];
     this.pendingTrades = [];
   }

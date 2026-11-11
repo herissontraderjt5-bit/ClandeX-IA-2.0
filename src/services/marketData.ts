@@ -198,6 +198,19 @@ export function getTimeframeSeconds(tf: TimeFrame): number {
   }
 }
 
+export function getBybitPair(symbol: string): string {
+  const sym = symbol.toUpperCase();
+  if (sym.includes('BTC')) return 'BTCUSDT';
+  if (sym.includes('ETH')) return 'ETHUSDT';
+  if (sym.includes('SOL')) return 'SOLUSDT';
+  if (sym.includes('BNB')) return 'BNBUSDT';
+  if (sym.includes('XRP')) return 'XRPUSDT';
+  const clean = symbol.replace(/[\/\-_]/g, '').toUpperCase();
+  if (clean.endsWith('USDT')) return clean;
+  if (clean.endsWith('USD')) return clean + 'T';
+  return clean + 'USDT';
+}
+
 export function getBinancePair(symbol: string): string {
   const sym = symbol.toUpperCase();
   if (sym.includes('BTC')) return 'btcusdt';
@@ -393,7 +406,7 @@ export class MarketDataManager {
     if (this.currentAsset.category === 'CRYPTO') {
       // 1. Bybit Spot Klines Oficial
       try {
-        const bybitPair = this.currentAsset.symbol.replace('/', '').toUpperCase();
+        const bybitPair = getBybitPair(this.currentAsset.symbol);
         let bybitInterval = '1';
         if (this.currentTimeframe === 'M5') bybitInterval = '5';
         else if (this.currentTimeframe === 'M15') bybitInterval = '15';
@@ -432,13 +445,13 @@ export class MarketDataManager {
         console.warn('[MarketData] Fallback Bybit klines para', this.currentAsset.symbol, err);
       }
 
-      // 2. Fallback secundário Binance
+      // 2. Fallback secundário Binance com CORS aberto (* via data-api.binance.vision)
       try {
         const pair = getBinancePair(this.currentAsset.symbol);
         const interval = getBinanceInterval(this.currentTimeframe);
         const limit = this.currentTimeframe === 'M2' ? 110 : 55;
         const res = await fetch(
-          `https://api.binance.com/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=${limit}`
+          `https://data-api.binance.vision/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=${limit}`
         );
         if (res.ok) {
           const data = await res.json();
@@ -712,7 +725,7 @@ export class MarketDataManager {
 
     if (this.currentAsset.category === 'CRYPTO' && typeof WebSocket !== 'undefined') {
       try {
-        const pair = this.currentAsset.symbol.replace('/', '').toUpperCase();
+        const pair = getBybitPair(this.currentAsset.symbol);
         let bybitInterval = '1';
         if (this.currentTimeframe === 'M5') bybitInterval = '5';
         else if (this.currentTimeframe === 'M15') bybitInterval = '15';
@@ -808,7 +821,16 @@ export class MarketDataManager {
         }
 
         const livePrice = Number(this.currentAsset.currentPrice.toFixed(this.currentAsset.pipDecimals));
-        this.updateCurrentCandle(livePrice);
+        if (latestTv && latestTv.price > 0) {
+          this.updateCurrentCandle(livePrice, {
+            o: latestTv.open,
+            h: latestTv.high,
+            l: latestTv.low,
+            c: latestTv.price,
+          });
+        } else {
+          this.updateCurrentCandle(livePrice);
+        }
       }
 
       // Nos momentos críticos de fechamento/abertura de vela (0s e 59s), força leitura imediata
@@ -842,7 +864,7 @@ export class MarketDataManager {
       // Start new candle
       const newCandle: Candle = {
         time: currentBoundary,
-        open: binanceK ? parseFloat(binanceK.o) : price,
+        open: binanceK?.o ? parseFloat(binanceK.o) : price,
         high: binanceK ? Math.max(parseFloat(binanceK.h), price) : price,
         low: binanceK ? Math.min(parseFloat(binanceK.l), price) : price,
         close: price,
@@ -859,6 +881,9 @@ export class MarketDataManager {
       // Update existing candle
       last.close = price;
       if (binanceK) {
+        if (binanceK.o && (!last.open || last.open <= 0)) {
+          last.open = parseFloat(binanceK.o);
+        }
         last.high = Math.max(last.high, parseFloat(binanceK.h));
         last.low = Math.min(last.low, parseFloat(binanceK.l));
         if (binanceK.x) last.isClosed = true;
