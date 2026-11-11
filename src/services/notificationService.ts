@@ -172,8 +172,9 @@ class NotificationService {
       `Fique atento! Confluência de ${signal.confluenceScore}%. Prepare sua ordem na corretora para a vela das ${entryTime} (${signal.timeframe}).`,
       {
         tag: `prealert-${signal.id}`,
+        image: '/notifications/pre_alert.png',
         vibrate: [200, 100, 200],
-      }
+      } as any
     );
   }
 
@@ -190,8 +191,9 @@ class NotificationService {
       `Entrada na vela das ${entryTime} (${signal.timeframe}). Confluência: ${signal.confluenceScore}%. Prepare sua ordem na corretora!`,
       {
         tag: `confirmed-${signal.id}`,
+        image: '/notifications/signal_confirmed.png',
         vibrate: [300, 100, 300, 100, 300],
-      }
+      } as any
     );
   }
 
@@ -212,8 +214,9 @@ class NotificationService {
         `Operação finalizada no LUCRO! Abertura: ${openPrice} ➔ Fechamento: ${closePrice}. +1 WIN adicionado ao Placar do Dia!`,
         {
           tag: `result-${signal.id}`,
+          image: '/notifications/win.png',
           vibrate: [200, 100, 400],
-        }
+        } as any
       );
     } else if (isLoss) {
       this.sendNotification(
@@ -221,8 +224,9 @@ class NotificationService {
         `Abertura: ${openPrice} ➔ Fechamento: ${closePrice}. Gerenciamento mantido para a próxima entrada.`,
         {
           tag: `result-${signal.id}`,
+          image: '/notifications/loss.png',
           vibrate: [400, 150, 400],
-        }
+        } as any
       );
     }
   }
@@ -236,8 +240,9 @@ class NotificationService {
       signal.cancelReason || 'Entrada abortada pelo algoritmo por rejeição contrária. Capital protegido!',
       {
         tag: `cancel-${signal.id}`,
+        image: '/notifications/cancelled.png',
         vibrate: [200, 100, 200],
-      }
+      } as any
     );
   }
 }
