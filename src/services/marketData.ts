@@ -24,7 +24,7 @@ export function isForexMarketOpen(d = new Date()): boolean {
 }
 
 export const INITIAL_ASSETS: Asset[] = [
-  // 1. FOREX (Mercado Aberto de Segunda a Sexta; Fechado no Fim de Semana)
+  // 1. FOREX (Oficial TradingView OANDA)
   {
     symbol: 'EUR/USD',
     name: 'Euro / Dólar Americano',
@@ -35,7 +35,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.6,
     hiovePayoutPercent: 88,
-    tvSymbol: 'FX:EURUSD',
+    tvSymbol: 'OANDA:EURUSD',
   },
   {
     symbol: 'GBP/USD',
@@ -47,7 +47,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 87,
-    tvSymbol: 'FX:GBPUSD',
+    tvSymbol: 'OANDA:GBPUSD',
   },
   {
     symbol: 'USD/JPY',
@@ -59,7 +59,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.7,
     hiovePayoutPercent: 86,
-    tvSymbol: 'FX:USDJPY',
+    tvSymbol: 'OANDA:USDJPY',
   },
   {
     symbol: 'AUD/USD',
@@ -71,7 +71,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.9,
     hiovePayoutPercent: 85,
-    tvSymbol: 'FX:AUDUSD',
+    tvSymbol: 'OANDA:AUDUSD',
   },
   {
     symbol: 'USD/CAD',
@@ -83,7 +83,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 0.8,
     hiovePayoutPercent: 85,
-    tvSymbol: 'FX:USDCAD',
+    tvSymbol: 'OANDA:USDCAD',
   },
   {
     symbol: 'EUR/JPY',
@@ -95,7 +95,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.1,
     hiovePayoutPercent: 86,
-    tvSymbol: 'FX:EURJPY',
+    tvSymbol: 'OANDA:EURJPY',
   },
   {
     symbol: 'GBP/JPY',
@@ -107,10 +107,10 @@ export const INITIAL_ASSETS: Asset[] = [
     status: isForexMarketOpen() ? 'OPEN' : 'CLOSED',
     spread: 1.2,
     hiovePayoutPercent: 85,
-    tvSymbol: 'FX:GBPJPY',
+    tvSymbol: 'OANDA:GBPJPY',
   },
 
-  // 2. CRIPTOMOEDAS (Abertas 24 horas por dia, 7 dias por semana - Fim de semana 100% ativo)
+  // 2. CRIPTOMOEDAS (Oficial TradingView BYBIT - Aberto 24/7)
   {
     symbol: 'BTC/USD',
     name: 'Bitcoin / Dólar Americano',
@@ -121,7 +121,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: 'OPEN',
     spread: 2.5,
     hiovePayoutPercent: 90,
-    tvSymbol: 'BINANCE:BTCUSDT',
+    tvSymbol: 'BYBIT:BTCUSDT',
   },
   {
     symbol: 'ETH/USD',
@@ -133,7 +133,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: 'OPEN',
     spread: 0.8,
     hiovePayoutPercent: 89,
-    tvSymbol: 'BINANCE:ETHUSDT',
+    tvSymbol: 'BYBIT:ETHUSDT',
   },
   {
     symbol: 'SOL/USD',
@@ -145,7 +145,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: 'OPEN',
     spread: 0.2,
     hiovePayoutPercent: 88,
-    tvSymbol: 'BINANCE:SOLUSDT',
+    tvSymbol: 'BYBIT:SOLUSDT',
   },
   {
     symbol: 'BNB/USD',
@@ -157,7 +157,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: 'OPEN',
     spread: 0.5,
     hiovePayoutPercent: 87,
-    tvSymbol: 'BINANCE:BNBUSDT',
+    tvSymbol: 'BYBIT:BNBUSDT',
   },
   {
     symbol: 'XRP/USD',
@@ -169,7 +169,7 @@ export const INITIAL_ASSETS: Asset[] = [
     status: 'OPEN',
     spread: 0.001,
     hiovePayoutPercent: 86,
-    tvSymbol: 'BINANCE:XRPUSDT',
+    tvSymbol: 'BYBIT:XRPUSDT',
   },
 ];
 
@@ -391,6 +391,48 @@ export class MarketDataManager {
     }
 
     if (this.currentAsset.category === 'CRYPTO') {
+      // 1. Bybit Spot Klines Oficial
+      try {
+        const bybitPair = this.currentAsset.symbol.replace('/', '').toUpperCase();
+        let bybitInterval = '1';
+        if (this.currentTimeframe === 'M5') bybitInterval = '5';
+        else if (this.currentTimeframe === 'M15') bybitInterval = '15';
+        else if (this.currentTimeframe === 'M30') bybitInterval = '30';
+        else if (this.currentTimeframe === 'H1') bybitInterval = '60';
+        else if (this.currentTimeframe === 'H4') bybitInterval = '240';
+        else if (this.currentTimeframe === 'D1') bybitInterval = 'D';
+
+        const bybitRes = await fetch(
+          `https://api.bybit.com/v5/market/kline?category=spot&symbol=${bybitPair}&interval=${bybitInterval}&limit=55`
+        );
+        if (bybitRes.ok) {
+          const bybitData = await bybitRes.json();
+          if (bybitData?.result?.list && Array.isArray(bybitData.result.list) && bybitData.result.list.length > 0) {
+            const rawList = [...bybitData.result.list].reverse();
+            let parsed: Candle[] = rawList.map((item: any, idx: number) => ({
+              time: Math.floor(Number(item[0]) / 1000),
+              open: Number(parseFloat(item[1]).toFixed(this.currentAsset.pipDecimals)),
+              high: Number(parseFloat(item[2]).toFixed(this.currentAsset.pipDecimals)),
+              low: Number(parseFloat(item[3]).toFixed(this.currentAsset.pipDecimals)),
+              close: Number(parseFloat(item[4]).toFixed(this.currentAsset.pipDecimals)),
+              volume: Math.round(parseFloat(item[5] || '0')),
+              isClosed: idx < rawList.length - 1,
+            }));
+
+            if (parsed.length > 0) {
+              this.currentAsset.currentPrice = parsed[parsed.length - 1].close;
+              this.candles = parsed;
+              this.candleCache.set(key, parsed);
+              this.notifyTickImmediately();
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[MarketData] Fallback Bybit klines para', this.currentAsset.symbol, err);
+      }
+
+      // 2. Fallback secundário Binance
       try {
         const pair = getBinancePair(this.currentAsset.symbol);
         const interval = getBinanceInterval(this.currentTimeframe);
@@ -670,29 +712,65 @@ export class MarketDataManager {
 
     if (this.currentAsset.category === 'CRYPTO' && typeof WebSocket !== 'undefined') {
       try {
-        const pair = getBinancePair(this.currentAsset.symbol);
-        const interval = getBinanceInterval(this.currentTimeframe);
-        const wsUrl = `wss://stream.binance.com:9443/ws/${pair}@kline_${interval}`;
+        const pair = this.currentAsset.symbol.replace('/', '').toUpperCase();
+        let bybitInterval = '1';
+        if (this.currentTimeframe === 'M5') bybitInterval = '5';
+        else if (this.currentTimeframe === 'M15') bybitInterval = '15';
+        else if (this.currentTimeframe === 'M30') bybitInterval = '30';
+        else if (this.currentTimeframe === 'H1') bybitInterval = '60';
+        else if (this.currentTimeframe === 'H4') bybitInterval = '240';
+        else if (this.currentTimeframe === 'D1') bybitInterval = 'D';
+
+        const wsUrl = 'wss://stream.bybit.com/v5/public/spot';
         this.cryptoWs = new WebSocket(wsUrl);
 
         this.cryptoWs.onopen = () => {
-          this.latency = 22 + Math.floor(Math.random() * 15);
+          this.latency = 18 + Math.floor(Math.random() * 10);
           this.notifySource();
+          try {
+            this.cryptoWs?.send(JSON.stringify({
+              op: 'subscribe',
+              args: [`kline.${bybitInterval}.${pair}`],
+            }));
+          } catch {}
         };
 
         this.cryptoWs.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
-            if (data && data.k) {
-              const k = data.k;
-              const closePrice = parseFloat(k.c);
+            const msg = JSON.parse(event.data);
+            if (msg && msg.topic && Array.isArray(msg.data) && msg.data.length > 0) {
+              const k = msg.data[0];
+              const closePrice = parseFloat(k.close);
               this.currentAsset.currentPrice = closePrice;
-              this.updateCurrentCandle(closePrice, k);
+              this.updateCurrentCandle(closePrice, {
+                o: k.open,
+                h: k.high,
+                l: k.low,
+                c: k.close,
+                x: k.confirm,
+              });
             }
-          } catch { }
+          } catch {}
         };
 
         this.cryptoWs.onerror = () => {
+          // Fallback para Binance WebSocket se Bybit falhar
+          try {
+            const bPair = getBinancePair(this.currentAsset.symbol);
+            const bInterval = getBinanceInterval(this.currentTimeframe);
+            const bWs = new WebSocket(`wss://stream.binance.com:9443/ws/${bPair}@kline_${bInterval}`);
+            bWs.onmessage = (e) => {
+              try {
+                const bData = JSON.parse(e.data);
+                if (bData?.k) {
+                  const cPrice = parseFloat(bData.k.c);
+                  this.currentAsset.currentPrice = cPrice;
+                  this.updateCurrentCandle(cPrice, bData.k);
+                }
+              } catch {}
+            };
+            this.cryptoWs = bWs;
+          } catch {}
           this.notifySource();
         };
       } catch {

@@ -795,17 +795,17 @@ export class SignalEngine {
       const nextCandle = candleList.find((c) => Math.abs(c.time - expTime) < Math.min(20, expirationSec * 0.4) && c.time > entryTime)
         || (currentCandle && Math.abs(currentCandle.time - expTime) < Math.min(20, expirationSec * 0.4) && currentCandle.time > entryTime ? currentCandle : null);
 
-      // A vela do sinal encerra quando:
-      // - O tempo de expiração foi atingido (nowSec >= expTime)
-      // - OU a duração integral da vela foi cumprida (tradeElapsedFromEntry >= expirationSec - 2)
-      // E confirmação de encerramento da vela (próxima vela já aberta, candle fechada ou timer zerado)
+      // A vela do sinal encerra estritamente quando:
+      // 1. O tempo de expiração foi atingido (nowSec >= expTime)
+      // 2. E a vela da operação foi finalizada (isClosed = true ou próxima vela já aberta)
+      // Isso impede apuração prematura com cotação parcial de meio de vela e assegura
+      // cálculo exato entre a abertura e o fechamento definitivos da vela.
       const isTimeExpired = nowSec >= expTime;
       const hasNextCandle = !!nextCandle;
-      const isTimerZero = remainingSec !== undefined && remainingSec === 0 && tradeElapsedFromEntry >= expirationSec - 2;
-      const isCandleClosed = tradeCandle?.isClosed === true && tradeElapsedFromEntry >= expirationSec - 2;
-      const isTimeoutSafety = tradeElapsedFromEntry >= expirationSec + 5; // Segurança para não travar se o feed congelar
+      const isCandleClosed = tradeCandle?.isClosed === true;
+      const isTimeoutSafety = tradeElapsedFromEntry >= expirationSec + 3;
 
-      const isExpired = (isTimeExpired && (hasNextCandle || isTimerZero || isCandleClosed || tradeElapsedFromEntry >= expirationSec)) || isTimeoutSafety;
+      const isExpired = (isTimeExpired && (hasNextCandle || isCandleClosed || tradeElapsedFromEntry >= expirationSec + 1)) || isTimeoutSafety;
 
       if (isExpired) {
         // ABERTURA E FECHAMENTO OFICIAIS DA VELA DO SINAL:

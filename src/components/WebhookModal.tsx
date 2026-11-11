@@ -106,7 +106,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
         entryPrice: 1.08485,
         reasons: ["Padrão Engolfo de Alta", "SMC: Order Block Comprador", "TradingView: FORTE COMPRA"],
         tradingView: {
-          symbol: "FX:EURUSD",
+          symbol: "OANDA:EURUSD",
           recommendation: "FORTE COMPRA",
           rsi: 62,
           macdSignal: "BULLISH"
