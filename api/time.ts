@@ -18,3 +18,4 @@ export default async function handler(req: any, res: any) {
     utc: new Date(nowMs).toISOString(),
   });
 }
+

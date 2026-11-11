@@ -456,7 +456,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   const [backtestList, setBacktestList] = useState<StrategyBacktestResult[]>(() => {
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       return runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
     } catch (e) {
       console.error('[FloatingHud] Error initializing backtestList:', e);
@@ -467,7 +467,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   // Atualização em tempo real do backtest conforme as velas, ativo e timeframe mudam
   useEffect(() => {
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       const results = runRealtimeBacktest(list, activeStrategyIds || [], autoFilterProfitOnly);
       setBacktestList(results);
 
@@ -501,7 +501,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     settings.autoFilterProfitOnly = nextVal;
 
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       const results = runRealtimeBacktest(list, activeStrategyIds || [], nextVal);
       setBacktestList(results);
 
@@ -528,7 +528,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     settings.activeStrategies = updated;
 
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       const results = runRealtimeBacktest(list, updated, autoFilterProfitOnly);
       setBacktestList(results);
     } catch {}
@@ -546,7 +546,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     settings.activeStrategies = allIds;
 
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       const results = runRealtimeBacktest(list, allIds, false);
       setBacktestList(results);
     } catch {}
@@ -558,7 +558,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     settings.autoFilterProfitOnly = true;
 
     try {
-      const list = candles && candles.length > 0 ? candles : marketDataManager.getCandles();
+      const list = marketDataManager.getCandlesForAsset(asset.symbol, timeframe);
       const results = runRealtimeBacktest(list, AVAILABLE_STRATEGIES.map((s) => s.id), true);
       setBacktestList(results);
 

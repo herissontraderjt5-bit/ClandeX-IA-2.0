@@ -381,7 +381,7 @@ export class MarketDataManager {
     } catch { }
 
     const key = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
-    if (this.candleCache.has(key)) {
+    if (this.currentAsset.category !== 'CRYPTO' && this.candleCache.has(key) && (this.candleCache.get(key) || []).length >= 10) {
       this.candles = [...this.candleCache.get(key)!];
       if (this.candles.length > 0) {
         this.candles[this.candles.length - 1].close = this.currentAsset.currentPrice;
@@ -497,7 +497,7 @@ export class MarketDataManager {
   public async setAsset(symbol: string) {
     const liveAssets = getLiveAssets();
     const found = liveAssets.find((a) => a.symbol === symbol);
-    if (found && found.symbol !== this.currentAsset.symbol) {
+    if (found) {
       // 1. Salva candles do ativo anterior no cache
       const oldKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
       this.candleCache.set(oldKey, [...this.candles]);
@@ -505,15 +505,18 @@ export class MarketDataManager {
       // 2. Altera ativo
       this.currentAsset = { ...found };
 
-      // 3. Carrega do cache (se já foi acessado antes) ou gera/busca
+      // 3. Carrega do cache ou gera imediatamente para o novo par
       const newKey = `${this.currentAsset.symbol}::${this.currentTimeframe}`;
-      if (this.candleCache.has(newKey)) {
+      if (this.candleCache.has(newKey) && (this.candleCache.get(newKey) || []).length >= 10) {
         this.candles = [...this.candleCache.get(newKey)!];
-        this.notifyTickImmediately();
       } else {
-        await this.loadCandlesForCurrentSelection();
+        const fresh = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);
+        this.candles = fresh;
+        this.candleCache.set(newKey, fresh);
       }
 
+      this.notifyTickImmediately();
+      await this.loadCandlesForCurrentSelection();
       tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
       this.reconnectStreams();
       this.notifySource();
@@ -529,19 +532,19 @@ export class MarketDataManager {
       // 2. Muda timeframe
       this.currentTimeframe = tf;
 
-      // 3. Carrega velas do cache para este timeframe (mantendo confluências e histórico)
+      // 3. Carrega do cache ou gera imediatamente para o novo timeframe
       const newKey = `${this.currentAsset.symbol}::${tf}`;
-      if (this.candleCache.has(newKey)) {
+      if (this.candleCache.has(newKey) && (this.candleCache.get(newKey) || []).length >= 10) {
         this.candles = [...this.candleCache.get(newKey)!];
-        this.notifyTickImmediately();
       } else {
-        await this.loadCandlesForCurrentSelection();
+        const fresh = generateDeterministicCandles(this.currentAsset, tf, 55);
+        this.candles = fresh;
+        this.candleCache.set(newKey, fresh);
       }
 
-      // Atualiza os indicadores do TradingView para o novo timeframe imediatamente
+      this.notifyTickImmediately();
+      await this.loadCandlesForCurrentSelection();
       tradingViewScanner.fetchAssetData(this.currentAsset, tf);
-
-      // 4. Reconecta stream WebSocket para o novo timeframe (1m, 5m, etc.)
       this.reconnectStreams();
       this.notifySource();
     }
@@ -607,12 +610,18 @@ export class MarketDataManager {
   }
 
   public getCandlesForAsset(symbol: string, timeframe: TimeFrame): Candle[] {
-    if (this.currentAsset.symbol === symbol && this.currentTimeframe === timeframe) {
+    const key = `${symbol}::${timeframe}`;
+    if (this.currentAsset.symbol === symbol && this.currentTimeframe === timeframe && this.candles.length >= 10) {
       return [...this.candles];
     }
-    const key = `${symbol}::${timeframe}`;
     const cached = this.candleCache.get(key);
-    return cached && cached.length > 0 ? [...cached] : [...this.candles];
+    if (cached && cached.length >= 10) {
+      return [...cached];
+    }
+    const found = getLiveAssets().find((a) => a.symbol === symbol) || this.currentAsset;
+    const generated = generateDeterministicCandles(found, timeframe, 55);
+    this.candleCache.set(key, generated);
+    return [...generated];
   }
 
   public getCurrentAsset(): Asset {

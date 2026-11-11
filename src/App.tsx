@@ -344,8 +344,9 @@ export default function App() {
   const handleSelectAsset = useCallback(async (symbol: string) => {
     await marketDataManager.setAsset(symbol);
     const newAsset = marketDataManager.getCurrentAsset();
+    const freshCandles = marketDataManager.getCandles();
     setAsset({ ...newAsset });
-    setCandles(marketDataManager.getCandles());
+    setCandles([...freshCandles]);
     setAiInsightText(null);
   }, []);
 
@@ -356,7 +357,8 @@ export default function App() {
     setExpiration(exp);
     setSettings((prev) => ({ ...prev, defaultExpiration: exp }));
     await marketDataManager.setTimeframe(tf);
-    setCandles(marketDataManager.getCandles());
+    const freshCandles = marketDataManager.getCandles();
+    setCandles([...freshCandles]);
     setAiInsightText(null);
   }, []);
 
