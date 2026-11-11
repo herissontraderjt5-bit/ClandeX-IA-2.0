@@ -821,11 +821,12 @@ export class MarketDataManager {
         }
 
         const livePrice = Number(this.currentAsset.currentPrice.toFixed(this.currentAsset.pipDecimals));
-        if (latestTv && latestTv.price > 0) {
+        // Para FOREX: passamos o open da vela do TradingView para manter o open real
+        if (latestTv && latestTv.open > 0 && this.currentAsset.category === 'FOREX') {
           this.updateCurrentCandle(livePrice, {
             o: latestTv.open,
-            h: latestTv.high,
-            l: latestTv.low,
+            h: latestTv.high || livePrice,
+            l: latestTv.low || livePrice,
             c: latestTv.price,
           });
         } else {
@@ -881,11 +882,14 @@ export class MarketDataManager {
       // Update existing candle
       last.close = price;
       if (binanceK) {
+        // Preserva o open original da vela (nunca sobrescreve com outro valor depois do primeiro)
         if (binanceK.o && (!last.open || last.open <= 0)) {
           last.open = parseFloat(binanceK.o);
         }
-        last.high = Math.max(last.high, parseFloat(binanceK.h));
-        last.low = Math.min(last.low, parseFloat(binanceK.l));
+        const hVal = parseFloat(binanceK.h);
+        const lVal = parseFloat(binanceK.l);
+        if (hVal > last.high) last.high = hVal;
+        if (lVal < last.low) last.low = lVal;
         if (binanceK.x) last.isClosed = true;
       } else {
         if (price > last.high) last.high = price;

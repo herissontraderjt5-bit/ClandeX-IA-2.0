@@ -261,34 +261,17 @@ export class SignalEngine {
         const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expSec);
         const entryTime = trade.entryTimestamp || (expTime - expSec);
 
-        // Localiza a vela da operação correspondente à abertura da vela do sinal (entryTime, tolerância de até 20s)
-        const targetCandle = [...candleList].reverse().find((c) => Math.abs(c.time - entryTime) < Math.min(20, expSec * 0.4))
-          || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expSec * 0.4) ? currentCandle : null);
-
-        // Quando a vela do sinal abre (segundo 00:00 da vela oficial): trava a taxa oficial de abertura da vela de forma IMUTÁVEL
+        // Quando a vela do sinal abre (segundo 00:00 da vela oficial): trava a taxa oficial de abertura com o preço REAL do tick
         if (!trade.isEntered) {
           if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
             trade.isEntered = true;
-            const officialCandleOpen = (targetCandle && targetCandle.open > 0)
-              ? targetCandle.open
-              : (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expSec * 0.4) && currentCandle.open > 0)
-                ? currentCandle.open
-                : currentPrice;
-
-            trade.entryPrice = officialCandleOpen;
-            trade.candleOpenPrice = officialCandleOpen;
+            // ABERTURA: usa o preço real recebido no tick exato de abertura da vela
+            // Não usa tradeCandle.open para evitar valores determinísticos errados (especialmente em FOREX)
+            trade.entryPrice = currentPrice;
+            trade.candleOpenPrice = currentPrice;
             updatedEntry = true;
           }
         } else {
-          // Nos primeiros 15 segundos após a abertura, refina com a abertura exata da vela caso o candle chegue com leve atraso do feed
-          if (trade.entryTimestamp && (nowSec - trade.entryTimestamp) <= 15) {
-            if (targetCandle && targetCandle.open > 0 && Math.abs(targetCandle.open - trade.candleOpenPrice) > 1e-8) {
-              trade.entryPrice = targetCandle.open;
-              trade.candleOpenPrice = targetCandle.open;
-              updatedEntry = true;
-            }
-          }
-
           if (!trade.expirationTimestamp || nowSec <= trade.expirationTimestamp) {
             // Atualiza continuamente a última cotação registrada antes do fechamento
             trade.candleClosePrice = currentPrice;
@@ -803,20 +786,39 @@ export class SignalEngine {
       const isExpired = (isTimeExpired && (hasNextCandle || isCandleClosed || tradeElapsedFromEntry >= expirationSec + 1)) || isTimeoutSafety;
 
       if (isExpired) {
-        // ABERTURA E FECHAMENTO OFICIAIS DA VELA DO SINAL:
-        // Ambos DEVEM provir rigorosamente da mesma vela executada (tradeCandle) para garantir
-        // que vela positiva (verde) seja sempre WIN para COMPRA (CALL) e vela negativa (vermelha) seja sempre WIN para VENDA (PUT).
+        // =========================================================
+        // APURAÇÃO DEFINITIVA WIN/LOSS - LÓGICA CORRIGIDA
+        // =========================================================
+        // officialOpen  = preço que o trade registrou ao ENTRAR (segundo :00 da vela)
+        // officialClose = preço mais recente antes da expiração (último tick antes do :00 da próxima vela)
+        //
+        // NÃO usamos tradeCandle.open do array de velas para FOREX porque esse array
+        // é gerado deterministicamente e não reflete o preço real de mercado.
+        // Para CRYPTO, o tradeCandle pode vir da Bybit (real), mas preferimos o valor
+        // capturado no onMarketTick (trade.candleOpenPrice) que é o preço do tick exato.
+        //
+        // REGRA ESTRITA: se trade.candleOpenPrice > 0 (foi capturado corretamente),
+        // usar ele sempre. O tradeCandle.close é confiável apenas para CRYPTO real.
+        // =========================================================
         let officialOpen: number;
         let officialClose: number;
 
-        if (tradeCandle && tradeCandle.open > 0 && tradeCandle.close > 0) {
-          officialOpen = tradeCandle.open;
-          officialClose = tradeCandle.close;
-        } else {
-          officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-            ? trade.candleOpenPrice
-            : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
+        // Abertura: usar sempre o preço capturado ao entrar na operação (mais confiável)
+        officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+          ? trade.candleOpenPrice
+          : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
 
+        // Fechamento: para CRYPTO real com tradeCandle fechado, usar o close real da vela
+        // Para FOREX ou fallback, usar o último preço registrado nos ticks (candleClosePrice)
+        const isCryptoWithRealCandle = tradeCandle && tradeCandle.isClosed === true
+          && tradeCandle.close > 0 && tradeCandle.open > 0
+          // Só usa o close do tradeCandle se ele vier de dados reais (não determinísticos):
+          // verificamos que o open do tradeCandle é próximo ao candleOpenPrice registrado
+          && Math.abs(tradeCandle.open - officialOpen) < officialOpen * 0.01; // dentro de 1%
+
+        if (isCryptoWithRealCandle) {
+          officialClose = tradeCandle!.close;
+        } else {
           officialClose = (trade.candleClosePrice && trade.candleClosePrice > 0)
             ? trade.candleClosePrice
             : (trade.exitPrice > 0 ? trade.exitPrice : currentPrice);
