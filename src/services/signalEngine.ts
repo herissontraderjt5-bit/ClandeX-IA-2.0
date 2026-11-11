@@ -97,6 +97,10 @@ export class SignalEngine {
     this.loadHistory();
   }
 
+  private getNowSec(): number {
+    return marketDataManager.getServerTimeSec();
+  }
+
   /**
    * Vincula o placar estritamente ao usuário atual para que cada cliente tenha seu próprio placar privado
    */
@@ -171,7 +175,7 @@ export class SignalEngine {
 
   public getLatestConfirmedSignal(): SignalRecord | null {
     if (!this.latestConfirmedSignal) return null;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getNowSec();
     // Mantém a confirmação visível até a abertura da vela do sinal (+3s de margem visual)
     if (this.latestConfirmedSignal.entryTimestamp && nowSec < this.latestConfirmedSignal.entryTimestamp + 3) {
       return this.latestConfirmedSignal;
@@ -184,7 +188,7 @@ export class SignalEngine {
 
   public getActiveTrade(): SignalRecord | null {
     if (this.pendingTrades.length === 0) return null;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getNowSec();
     // A contagem e status de operação em andamento inicia estritamente a partir da abertura da vela do sinal (nowSec >= entryTimestamp)
     const active = this.pendingTrades.find(
       (t) => (!t.entryTimestamp || nowSec >= t.entryTimestamp) && t.result === 'PENDING'
@@ -230,7 +234,7 @@ export class SignalEngine {
     timeframe: TimeFrame,
     allCandles?: Candle[]
   ) {
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getNowSec();
 
     if (this.pendingTrades.length > 0) {
       let updatedEntry = false;
@@ -324,7 +328,7 @@ export class SignalEngine {
     marketAnalysis?: MarketAnalysis,
     allCandles?: Candle[]
   ) {
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.getNowSec();
     const formattedTime = formatBrasiliaTime();
 
     // 0. Configuração dinâmica dos limiares de acordo com o PERFIL DE ANÁLISE selecionado na Aba Técnica
@@ -402,9 +406,9 @@ export class SignalEngine {
     const expirationSeconds = tfSec;
     const candleBoundary = currentCandle?.time || (now - (((now % tfSec) + tfSec) % tfSec));
 
-    // Momento exato da CONFIRMAÇÃO OU CANCELAMENTO: ESTREITAMENTE ENTRE 10 E 5 SEGUNDOS RESTANTES
-    // Regra estrita do usuário: "apenas entre 10 a 5 segundos restante do pre alerta se ira confirmar o sinal ou se vai cancelar"
-    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 5;
+    // Momento exato da CONFIRMAÇÃO OU CANCELAMENTO: ENTRE 10 E 3 SEGUNDOS RESTANTES
+    // Garante disparo perfeito e sincronizado com o cronômetro da corretora Hiove
+    const isConfirmationWindow = remainingSec <= 10 && remainingSec >= 3;
     const isNewCandleConfirmation = this.lastConfirmedCandleTime !== currentCandle.time;
 
     // REGRA OBRIGATÓRIA CANDLEX-IA PARA OPÇÕES BINÁRIAS:
@@ -877,7 +881,7 @@ export class SignalEngine {
   public forceResolveTrade(tradeId: string, currentPrice: number, allCandles?: Candle[]) {
     const trade = this.pendingTrades.find((t) => t.id === tradeId);
     if (!trade) return;
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = this.getNowSec();
     const expirationSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
     const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : Math.floor((Date.now() - trade.timestamp) / 1000);
 
@@ -907,7 +911,7 @@ export class SignalEngine {
     expiration: ExpirationTime = '1m',
     remainingSec: number = 45
   ): SignalRecord {
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.getNowSec();
     const formattedTime = formatBrasiliaTime();
     const tfSec = (timeframe === 'M2') ? 120 : ((timeframe === 'M1') ? 60 : 300);
     const expirationSeconds = (expiration === '2m' || timeframe === 'M2') ? 120 : ((expiration === '1m' || timeframe === 'M1') ? 60 : 300);
@@ -972,7 +976,7 @@ export class SignalEngine {
     currentPrice = 1.08450,
     timeframe: TimeFrame = 'M1'
   ) {
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.getNowSec();
     const formattedTime = formatBrasiliaTime();
     // For test simulation, use 25s expiration so user doesn't have to wait 5 minutes
     const simulationExpSec = 25;
@@ -1005,7 +1009,7 @@ export class SignalEngine {
 
     // 2. Após 5 segundos: Confirmar faltando 10s para a abertura da vela
     setTimeout(() => {
-      const confirmedNow = Math.floor(Date.now() / 1000);
+      const confirmedNow = this.getNowSec();
       const entryTimestamp = confirmedNow + 10; // 10 segundos de preparação até a abertura
       const targetExpTimestamp = entryTimestamp + simulationExpSec;
       const entryTimeFormatted = formatBrasiliaTime(entryTimestamp);
@@ -1051,7 +1055,7 @@ export class SignalEngine {
     assetSymbol = 'EUR/USD',
     currentPrice = 1.08450
   ) {
-    const now = Math.floor(Date.now() / 1000);
+    const now = this.getNowSec();
     const formattedTime = formatBrasiliaTime();
 
     const preAlert: SignalRecord = {
@@ -1126,7 +1130,7 @@ export class SignalEngine {
           if (Array.isArray(parsed) && parsed.length > 0) {
             // Filtrar apenas sinais legítimos executados (eliminando sinais fictícios gerados por seeds anteriores)
             this.signalHistory = parsed.filter((s) => !s.id.startsWith('seed-'));
-            const nowSec = Math.floor(Date.now() / 1000);
+            const nowSec = this.getNowSec();
             this.pendingTrades = this.signalHistory.filter(
               (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec
             );

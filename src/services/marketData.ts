@@ -321,6 +321,13 @@ export class MarketDataManager {
 
   constructor() {
     this.syncServerTime();
+    // Ressincronização contínua a cada 45 segundos para manter precisão atômica com a Hiove
+    if (typeof window !== 'undefined') {
+      window.setInterval(() => {
+        this.syncServerTime().catch(() => {});
+      }, 45000);
+    }
+
     const liveAssets = getLiveAssets();
     const initialAsset = isForexMarketOpen()
       ? liveAssets[0]
@@ -447,14 +454,42 @@ export class MarketDataManager {
     this.notifyTickImmediately();
   }
 
+  public getServerOffsetMs(): number {
+    return this.serverOffsetMs;
+  }
+
+  public getManualOffsetSec(): number {
+    return this.manualOffsetSec;
+  }
+
+  public getServerTimeMs(): number {
+    return Date.now() + this.serverOffsetMs + (this.manualOffsetSec * 1000);
+  }
+
+  public getServerTimeSec(): number {
+    return Math.floor(this.getServerTimeMs() / 1000);
+  }
+
+  /**
+   * Cálculo atômico e sincronizado de vela e contagem regressiva em total harmonia com a Hiove.
+   * Em opções binárias, a vela exibe de (tfSeconds - 1) até 00s.
+   * Ex: M1 conta de 59s até 00s, virando a vela no segundo :00 exato.
+   */
+  public getCandleTiming(): { nowMs: number; nowSec: number; currentBoundary: number; remainingSec: number } {
+    const nowMs = this.getServerTimeMs();
+    const nowSec = Math.floor(nowMs / 1000);
+    const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
+    const currentBoundary = nowSec - (((nowSec % tfSeconds) + tfSeconds) % tfSeconds);
+    const nextBoundaryMs = (currentBoundary + tfSeconds) * 1000;
+    const msRemaining = Math.max(0, nextBoundaryMs - nowMs);
+    const remainingSec = Math.max(0, Math.floor(msRemaining / 1000));
+    return { nowMs, nowSec, currentBoundary, remainingSec };
+  }
+
   private notifyTickImmediately() {
     const activeCandle = this.candles[this.candles.length - 1];
     if (activeCandle && this.onTickCallback) {
-      const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
-      const nowMs = Date.now() + this.serverOffsetMs;
-      const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
-      const elapsed = ((nowSec % tfSeconds) + tfSeconds) % tfSeconds;
-      const remainingSec = elapsed === 0 ? tfSeconds : tfSeconds - elapsed;
+      const { remainingSec } = this.getCandleTiming();
       this.onTickCallback(activeCandle, remainingSec, this.currentAsset);
     }
   }
@@ -522,18 +557,49 @@ export class MarketDataManager {
   }
 
   public async syncServerTime() {
+    // 1. Prioridade máxima: Binance API (referência mundial de tempo atômico com CORS livre)
     try {
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const res = await fetch('/api/time');
+      const res = await fetch('https://api.binance.com/api/v3/time', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const rtt = t1 - t0;
+        const rtt = Math.max(1, t1 - t0);
+        const estimatedServerMs = Number(data.serverTime) + Math.round(rtt / 2);
+        this.serverOffsetMs = estimatedServerMs - Date.now();
+        console.log(`[MarketData] Relógio atômico sincronizado com Binance/Hiove. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
+        return;
+      }
+    } catch {}
+
+    // 2. Fallback: Endpoint próprio /api/time
+    try {
+      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const res = await fetch('/api/time', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const rtt = Math.max(1, t1 - t0);
         const estimatedServerMs = Number(data.serverTimeMs) + Math.round(rtt / 2);
         this.serverOffsetMs = estimatedServerMs - Date.now();
-        console.log(`[MarketData] Relógio atômico sincronizado. Offset: ${this.serverOffsetMs}ms`);
+        console.log(`[MarketData] Relógio atômico sincronizado via /api/time. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
+        return;
       }
-    } catch { }
+    } catch {}
+
+    // 3. Fallback: WorldTimeAPI
+    try {
+      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const res = await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const rtt = Math.max(1, t1 - t0);
+        const estimatedServerMs = Math.floor(Number(data.unixtime) * 1000) + Math.round(rtt / 2);
+        this.serverOffsetMs = estimatedServerMs - Date.now();
+        console.log(`[MarketData] Relógio sincronizado via WorldTime. Offset: ${this.serverOffsetMs}ms`);
+      }
+    } catch {}
   }
 
   public getCandles(): Candle[] {
@@ -631,11 +697,8 @@ export class MarketDataManager {
 
     // Micro-tick processor
     this.tickInterval = window.setInterval(() => {
-      const nowMs = Date.now() + this.serverOffsetMs;
-      const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
+      const { remainingSec } = this.getCandleTiming();
       const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
-      const elapsed = ((nowSec % tfSeconds) + tfSeconds) % tfSeconds;
-      const remainingSec = elapsed === 0 ? tfSeconds : tfSeconds - elapsed;
 
       // Se for Forex e for final de semana, o mercado está FECHADO no TradingView
       const isForexClosed = this.currentAsset.category === 'FOREX' && !isForexMarketOpen();
@@ -664,8 +727,8 @@ export class MarketDataManager {
         this.updateCurrentCandle(livePrice);
       }
 
-      // Nos momentos críticos de fechamento/abertura de vela (segundos 00 e 01), força leitura imediata
-      if (remainingSec === tfSeconds || remainingSec === 1) {
+      // Nos momentos críticos de fechamento/abertura de vela (0s e 59s), força leitura imediata
+      if (remainingSec === 0 || remainingSec === tfSeconds - 1) {
         tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
       }
 
@@ -677,10 +740,7 @@ export class MarketDataManager {
   }
 
   private updateCurrentCandle(price: number, binanceK?: any) {
-    const tfSeconds = getTimeframeSeconds(this.currentTimeframe);
-    const nowMs = Date.now() + this.serverOffsetMs;
-    const nowSec = Math.floor(nowMs / 1000) + this.manualOffsetSec;
-    const currentBoundary = nowSec - (((nowSec % tfSeconds) + tfSeconds) % tfSeconds);
+    const { currentBoundary } = this.getCandleTiming();
 
     if (this.candles.length === 0) {
       this.candles = generateDeterministicCandles(this.currentAsset, this.currentTimeframe, 55);

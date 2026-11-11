@@ -936,7 +936,7 @@ DIRETRIZES:
   const totalFinishedToday = todayWins + todayLosses;
   const todayWinRate = totalFinishedToday > 0 ? ((todayWins / totalFinishedToday) * 100).toFixed(1) : '100.0';
 
-  const nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = marketDataManager.getServerTimeSec();
 
   // Operação em andamento (inicia estritamente a partir da abertura da vela do sinal!)
   const isTradeRunning = !!activeTrade && activeTrade.result === 'PENDING' && (!activeTrade.entryTimestamp || nowSec >= activeTrade.entryTimestamp);
