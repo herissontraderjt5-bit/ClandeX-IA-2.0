@@ -127,12 +127,15 @@ export function computeTechnicalOverview(
   asset: Asset,
   tvData?: LiveTradingViewData | null
 ): TechnicalOverviewData {
-  const currentPrice = asset.currentPrice;
+  // Garante isolamento estrito: se tvData pertencer a outro par, descarta imediatamente
+  const safeTv = (tvData && tvData.symbol === asset.symbol) ? tvData : null;
+
+  const n = candles.length;
+  const currentPrice = n > 0 && candles[n - 1].close > 0 ? candles[n - 1].close : asset.currentPrice;
   const closes = candles.map((c) => c.close);
   const highs = candles.map((c) => c.high);
   const lows = candles.map((c) => c.low);
   const volumes = candles.map((c) => c.volume);
-  const n = candles.length;
 
   const latest = n > 0 ? candles[n - 1] : { open: currentPrice, high: currentPrice, low: currentPrice, close: currentPrice, volume: 100, time: 0, isClosed: false };
   const prev = n > 1 ? candles[n - 2] : latest;
@@ -142,8 +145,8 @@ export function computeTechnicalOverview(
 
   // --- 1. RSI (14 períodos) ---
   let rsiVal: number;
-  if (tvData && typeof tvData.rsi === 'number' && !isNaN(tvData.rsi)) {
-    rsiVal = tvData.rsi;
+  if (safeTv && typeof safeTv.rsi === 'number' && !isNaN(safeTv.rsi)) {
+    rsiVal = safeTv.rsi;
   } else {
     const rsiPeriod = Math.min(14, Math.max(2, n - 1));
     let gains = 0;
@@ -184,9 +187,9 @@ export function computeTechnicalOverview(
   let macdStatus: 'ALTA' | 'BAIXA' | 'NEUTRO' = 'NEUTRO';
   let macdDesc = 'Histograma próximo a zero';
 
-  if (tvData && typeof tvData.macd === 'number' && typeof tvData.macdSignal === 'number') {
-    macdLine = tvData.macd;
-    signalLine = tvData.macdSignal;
+  if (safeTv && typeof safeTv.macd === 'number' && typeof safeTv.macdSignal === 'number') {
+    macdLine = safeTv.macd;
+    signalLine = safeTv.macdSignal;
     histogram = macdLine - signalLine;
     if (histogram > threshold && macdLine > signalLine) {
       macdStatus = 'ALTA';
@@ -231,9 +234,9 @@ export function computeTechnicalOverview(
   let maShortStatus: 'ALTA' | 'BAIXA' | 'LATERAL' = 'LATERAL';
   let maShortLabel = 'EMAs 9/21 laterais';
 
-  if (tvData && typeof tvData.ema10 === 'number' && typeof tvData.ema20 === 'number') {
-    ema9 = tvData.ema10;
-    ema21 = tvData.ema20;
+  if (safeTv && typeof safeTv.ema10 === 'number' && typeof safeTv.ema20 === 'number') {
+    ema9 = safeTv.ema10;
+    ema21 = safeTv.ema20;
     const diff = ema9 - ema21;
     if (ema9 > ema21 && currentPrice >= ema9 && diff > threshold) {
       maShortStatus = 'ALTA';
@@ -267,9 +270,9 @@ export function computeTechnicalOverview(
   let maLongStatus: 'ALTA' | 'BAIXA' | 'LATERAL' = 'LATERAL';
   let maLongLabel = 'SMA 50/200 neutras';
 
-  if (tvData && typeof tvData.sma50 === 'number') {
-    sma50 = tvData.sma50;
-    sma200 = tvData.sma200 || sma50 * 0.998;
+  if (safeTv && typeof safeTv.sma50 === 'number') {
+    sma50 = safeTv.sma50;
+    sma200 = safeTv.sma200 || sma50 * 0.998;
     if (currentPrice > sma50 && sma50 >= sma200) {
       maLongStatus = 'ALTA';
       maLongLabel = 'Preço acima da SMA 50 e SMA 200 (TradingView)';
@@ -303,9 +306,9 @@ export function computeTechnicalOverview(
   let bbStatus: 'ALTA' | 'BAIXA' | 'NEUTRO' = 'NEUTRO';
   let bbDesc = 'Preço no centro do canal';
 
-  if (tvData && typeof tvData.bbUpper === 'number' && typeof tvData.bbLower === 'number') {
-    bbUpper = tvData.bbUpper;
-    bbLower = tvData.bbLower;
+  if (safeTv && typeof safeTv.bbUpper === 'number' && typeof safeTv.bbLower === 'number') {
+    bbUpper = safeTv.bbUpper;
+    bbLower = safeTv.bbLower;
     bbMiddle = (bbUpper + bbLower) / 2;
     const bbRange = bbUpper - bbLower || threshold;
     percentB = (currentPrice - bbLower) / bbRange;
@@ -409,13 +412,13 @@ export function computeTechnicalOverview(
   let adxStatus: 'ALTA' | 'BAIXA' | 'NEUTRO' = 'NEUTRO';
   let trendStrength = 'Mercado sem direção forte';
 
-  if (tvData && typeof tvData.adx === 'number') {
-    adxValue = tvData.adx;
+  if (safeTv && typeof safeTv.adx === 'number') {
+    adxValue = safeTv.adx;
     if (adxValue >= 24) {
-      if (tvData.recommendationScore >= 0.05) {
+      if (safeTv.recommendationScore >= 0.05) {
         adxStatus = 'ALTA';
         trendStrength = `Tendência Direcional de Alta no TradingView (ADX ${adxValue})`;
-      } else if (tvData.recommendationScore <= -0.05) {
+      } else if (safeTv.recommendationScore <= -0.05) {
         adxStatus = 'BAIXA';
         trendStrength = `Tendência Direcional de Baixa no TradingView (ADX ${adxValue})`;
       } else {
@@ -477,9 +480,9 @@ export function computeTechnicalOverview(
   let stochD: number;
   let stochStatus: 'ALTA' | 'BAIXA' | 'NEUTRO' = 'NEUTRO';
 
-  if (tvData && typeof tvData.stochK === 'number' && typeof tvData.stochD === 'number') {
-    stochK = tvData.stochK;
-    stochD = tvData.stochD;
+  if (safeTv && typeof safeTv.stochK === 'number' && typeof safeTv.stochD === 'number') {
+    stochK = safeTv.stochK;
+    stochD = safeTv.stochD;
   } else {
     const stochPeriod = Math.min(14, n);
     const stochSliceHighs = highs.slice(-stochPeriod);
@@ -500,8 +503,8 @@ export function computeTechnicalOverview(
   let atrVal: number;
   let atrPips: number;
 
-  if (tvData && typeof tvData.atr === 'number') {
-    atrVal = tvData.atr;
+  if (safeTv && typeof safeTv.atr === 'number') {
+    atrVal = safeTv.atr;
     atrPips = Number((atrVal * pipsMultiplier).toFixed(1));
   } else {
     let trSum = 0;
@@ -550,11 +553,11 @@ export function computeTechnicalOverview(
   else if (adxStatus === 'BAIXA') bearPoints += 1.5;
 
   // 7. TradingView Scanner (Se disponível, adiciona peso ao consenso)
-  if (tvData && tvData.recommendation) {
-    if (tvData.recommendation.includes('COMPRA')) {
-      bullPoints += tvData.recommendation.startsWith('FORTE') ? 3 : 1.5;
-    } else if (tvData.recommendation.includes('VENDA')) {
-      bearPoints += tvData.recommendation.startsWith('FORTE') ? 3 : 1.5;
+  if (safeTv && safeTv.recommendation) {
+    if (safeTv.recommendation.includes('COMPRA')) {
+      bullPoints += safeTv.recommendation.startsWith('FORTE') ? 3 : 1.5;
+    } else if (safeTv.recommendation.includes('VENDA')) {
+      bearPoints += safeTv.recommendation.startsWith('FORTE') ? 3 : 1.5;
     }
   }
 

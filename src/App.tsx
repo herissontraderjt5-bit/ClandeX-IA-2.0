@@ -309,20 +309,9 @@ export default function App() {
           currentCandles
         );
 
-        // If analyzing is active, evaluate confluences in the signal engine with TradingView feed no timeframe ativo
+        // If analyzing is active, evaluate confluences for AI and indicators
         if (isAnalyzing) {
-          const liveAnalysis = analyzeMarket(currentCandles, marketDataManager.getLiveTradingViewData(timeframe));
-          const liveConfluences = calculateConfluences(liveAnalysis, settings);
-          signalEngine.evaluate(
-            candle,
-            remainingSec,
-            liveConfluences,
-            settings,
-            currentAssetObj.symbol,
-            timeframe,
-            liveAnalysis,
-            currentCandles
-          );
+          analyzeMarket(currentCandles, marketDataManager.getLiveTradingViewData(timeframe));
         }
       },
       (sourceInfo) => {
@@ -345,6 +334,7 @@ export default function App() {
     const freshCandles = marketDataManager.getCandles();
     setAsset({ ...newAsset });
     setCandles([...freshCandles]);
+    setCurrentCandle(freshCandles.length > 0 ? { ...freshCandles[freshCandles.length - 1] } : null);
     setAiInsightText(null);
   }, []);
 
@@ -357,6 +347,7 @@ export default function App() {
     await marketDataManager.setTimeframe(tf);
     const freshCandles = marketDataManager.getCandles();
     setCandles([...freshCandles]);
+    setCurrentCandle(freshCandles.length > 0 ? { ...freshCandles[freshCandles.length - 1] } : null);
     setAiInsightText(null);
   }, []);
 

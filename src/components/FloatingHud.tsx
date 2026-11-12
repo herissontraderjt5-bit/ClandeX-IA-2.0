@@ -194,6 +194,7 @@ interface FloatingHudProps {
   userSession?: UserSession | null;
   onRefreshSession?: () => Promise<void>;
   onOpenAdminPanel?: () => void;
+  onOpenExtension?: () => void;
   onSelectAnalysisProfile?: (profile: 'CONSERVADORA' | 'MODERADA' | 'AGRESSIVA') => void;
   onLogout?: () => void;
 }
@@ -669,7 +670,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   );
 
   useEffect(() => {
-    setLiveTvData(marketDataManager.getLiveTradingViewData(timeframe));
+    const cached = tradingViewScanner.getCached(asset.symbol, timeframe);
+    setLiveTvData(cached ? { ...cached } : null);
     const unsubscribe = tradingViewScanner.subscribe((data) => {
       if (data.symbol === asset.symbol) {
         setLiveTvData({ ...data });
@@ -749,11 +751,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // Leitura direta e exata de Topo Real (Resistência) e Fundo Real (Suporte) dos pavios das velas recentes
   const srLevels = useMemo(() => {
-    const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
+    const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-45) : [];
+    const latestCandle = candleList.length > 0 ? candleList[candleList.length - 1] : null;
+    const curPrice = latestCandle?.close || asset.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
     const decimals = asset.pipDecimals || (asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5));
-
-    const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-45) : [];
 
     let highestWick = -Infinity;
     let lowestWick = Infinity;
@@ -782,7 +784,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       distTopoPips,
       distFundoPips,
     };
-  }, [activeCandles, currentCandle, technicalData.currentPrice, asset]);
+  }, [activeCandles, asset]);
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
@@ -1263,6 +1265,75 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 </div>
 
+                {/* 2. MODO OPERACIONAL / ANÁLISE TÉCNICA (CONSERVADORA / MODERADA / AGRESSIVA) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      MODO OPERACIONAL / ANÁLISE TÉCNICA
+                    </label>
+                    <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+                      {settings.analysisProfile || 'CONSERVADORA'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {/* CONSERVADORA (Sniper) */}
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'CONSERVADORA'
+                        ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-cyan-300">
+                        <span>🎯 Sniper</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Conservadora</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 72%+. Entradas cirúrgicas em taxas de S/R e Order Blocks.
+                      </div>
+                    </button>
+
+                    {/* MODERADA (Mediana) */}
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('MODERADA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'MODERADA'
+                        ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-emerald-300">
+                        <span>⚖️ Mediana</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Moderada</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 64%+. Equilíbrio calibrado (a cada 3-5 velas) e assertividade 80%+.
+                      </div>
+                    </button>
+
+                    {/* AGRESSIVA (Alavancagem) */}
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'AGRESSIVA'
+                        ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-amber-300">
+                        <span>⚡ Alavancagem</span>
+                      </div>
+                      <div className="text-[10px] font-bold text-white mt-0.5">Agressiva</div>
+                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
+                        Confluência 55%+. Entradas frequentes (a cada 1 a 3 velas) para alavancagem rápida.
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 {/* 1. Header Compacto */}
                 <div className="p-2.5 bg-gradient-to-b from-[#0e172a] via-[#09101f] to-neutral-950 border border-cyan-500/30 rounded-2xl flex items-center justify-between shadow-lg">
                   <div className="flex items-center gap-2">
@@ -1698,6 +1769,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 {chartMode === 'TRADINGVIEW' ? (
                   <div className="w-full h-[380px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
                     <TradingViewWidget
+                      key={`tv-${asset.symbol}-${timeframe}`}
                       symbol={asset.tvSymbol}
                       timeframe={timeframe}
                       mode="CHART"
@@ -1711,6 +1783,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 ) : (
                   <LiveLevelChart
+                    key={`sr-${asset.symbol}-${timeframe}`}
                     candles={activeCandles}
                     asset={asset}
                     timeframe={timeframe}
