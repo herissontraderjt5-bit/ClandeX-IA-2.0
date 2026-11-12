@@ -787,6 +787,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   }, [activeCandles, asset]);
 
   // Avaliação de Confluências e Sinal IA em Tempo Real por Perfil (Sniper / Alavancagem)
+  // Lógica: Pré-Alerta (> 8s) para próxima vela, e Confirmação aos 8 segundos (<= 8s)
+  // Alavancagem: Order Flow > 60% (Compra ou Venda)
+  // Sniper: Order Flow > 70% (Compra ou Venda)
   const activeSignalInfo = useMemo(() => {
     const dominantCount = indicatorConsensus.callCount >= indicatorConsensus.putCount
       ? indicatorConsensus.callCount
@@ -794,10 +797,31 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
 
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
-    const minCount = isSniper ? 5 : 4;
-    const minThreshold = isSniper ? 70 : 55;
-    const isSignalActive = isAnalyzing && (dominantCount >= minCount);
-    const score = Math.max(65, Math.min(96, dominantCount * 10 + (isSniper ? 20 : 15)));
+    const minIndicatorCount = isSniper ? 5 : 4;
+    const requiredOrderFlow = isSniper ? 70 : 60;
+
+    const currentOrderFlow = dominantDirection === 'CALL'
+      ? technicalData.delta.buyerPercent
+      : technicalData.delta.sellerPercent;
+
+    const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
+    const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
+
+    let stage: 'IDLE' | 'PRE_ALERT' | 'CONFIRMED' | 'CANCELLED' = 'IDLE';
+
+    if (isAnalyzing && hasIndicatorsDirection) {
+      if (remainingSeconds > 8) {
+        stage = 'PRE_ALERT';
+      } else if (remainingSeconds <= 8 && remainingSeconds >= 0) {
+        stage = hasOrderFlow ? 'CONFIRMED' : 'CANCELLED';
+      }
+    }
+
+    const isSignalActive = stage === 'CONFIRMED';
+    const isPreAlert = stage === 'PRE_ALERT';
+    const isCancelled = stage === 'CANCELLED';
+
+    const score = Math.max(65, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
     const triggers: { label: string; active: boolean }[] = [
       {
@@ -822,7 +846,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       },
       {
         label: `Delta de Volume (${dominantDirection === 'CALL' ? `${technicalData.delta.buyerPercent}% Comp.` : `${technicalData.delta.sellerPercent}% Vend.`})`,
-        active: (dominantDirection === 'CALL' && technicalData.delta.buyerPercent >= 50) || (dominantDirection === 'PUT' && technicalData.delta.sellerPercent >= 50),
+        active: (dominantDirection === 'CALL' && technicalData.delta.buyerPercent >= requiredOrderFlow) || (dominantDirection === 'PUT' && technicalData.delta.sellerPercent >= requiredOrderFlow),
       },
       {
         label: `Região de Pavio Real (${dominantDirection === 'CALL' ? `Fundo: ${srLevels.fundo}` : `Topo: ${srLevels.topo}`})`,
@@ -834,37 +858,52 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
     return {
       isSniper,
-      minCount,
-      minThreshold,
-      score,
-      isSignalActive,
+      modeName: isSniper ? 'SNIPER' : 'ALAVANCAGEM',
+      minCount: minIndicatorCount,
+      minIndicatorCount,
+      requiredOrderFlow,
+      currentOrderFlow,
       dominantCount,
+      dominantDirection,
+      stage,
+      isSignalActive,
+      isPreAlert,
+      isCancelled,
+      hasIndicatorsDirection,
+      hasOrderFlow,
       direction: isSignalActive ? dominantDirection : 'NEUTRO',
       targetDirection: dominantDirection,
       triggers,
       activeCount,
+      score,
+      minThreshold: requiredOrderFlow,
       callCount: indicatorConsensus.callCount,
       putCount: indicatorConsensus.putCount,
+      remainingSeconds,
     };
-  }, [indicatorConsensus, technicalData, srLevels, settings.analysisProfile, isAnalyzing]);
+  }, [indicatorConsensus, technicalData, srLevels, settings.analysisProfile, isAnalyzing, remainingSeconds]);
 
-  // Alerta sonoro automático ao confirmar sinal (se habilitado nas configurações)
-  const prevSignalStateRef = useRef<{ active: boolean; dir: string }>({ active: false, dir: 'NEUTRO' });
+  // Alerta sonoro automático de transição de estágios (Pré-Alerta, Confirmação, Cancelado)
+  const prevSignalStageRef = useRef<{ stage: string; dir: string }>({ stage: 'IDLE', dir: 'NEUTRO' });
   useEffect(() => {
-    if (activeSignalInfo.isSignalActive && (!prevSignalStateRef.current.active || prevSignalStateRef.current.dir !== activeSignalInfo.direction)) {
-      if (settings.confirmedSound) {
-        if (activeSignalInfo.direction === 'CALL') {
+    if (settings.confirmedSound && isAnalyzing) {
+      if (activeSignalInfo.stage === 'PRE_ALERT' && prevSignalStageRef.current.stage !== 'PRE_ALERT') {
+        audioAlerts.playPreAlert();
+      } else if (activeSignalInfo.stage === 'CONFIRMED' && prevSignalStageRef.current.stage !== 'CONFIRMED') {
+        if (activeSignalInfo.dominantDirection === 'CALL') {
           audioAlerts.playCallSignal();
-        } else if (activeSignalInfo.direction === 'PUT') {
+        } else if (activeSignalInfo.dominantDirection === 'PUT') {
           audioAlerts.playPutSignal();
         }
+      } else if (activeSignalInfo.stage === 'CANCELLED' && prevSignalStageRef.current.stage !== 'CANCELLED') {
+        audioAlerts.playCancelAlert();
       }
     }
-    prevSignalStateRef.current = {
-      active: activeSignalInfo.isSignalActive,
-      dir: activeSignalInfo.direction,
+    prevSignalStageRef.current = {
+      stage: activeSignalInfo.stage,
+      dir: activeSignalInfo.dominantDirection,
     };
-  }, [activeSignalInfo.isSignalActive, activeSignalInfo.direction, settings.confirmedSound]);
+  }, [activeSignalInfo.stage, activeSignalInfo.dominantDirection, settings.confirmedSound, isAnalyzing]);
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
@@ -1168,8 +1207,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             >
               <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>Sinal IA</span>
-              {activeSignalInfo.isSignalActive && (
+              {activeSignalInfo.stage === 'CONFIRMED' && (
                 <span className={`w-2 h-2 rounded-full animate-ping shrink-0 ${activeSignalInfo.direction === 'CALL' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              )}
+              {activeSignalInfo.stage === 'PRE_ALERT' && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
               )}
             </button>
 
@@ -1278,7 +1320,43 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             {/* TAB EXCLUSIVA 0: PAINEL DE SINAL IA */}
             {activeTab === 'sinal' && (
               <div className="space-y-3 font-mono">
-                {/* 1. MODO OPERACIONAL (SNIPER / ALAVANCAGEM) */}
+                {/* 1. CONTROLE PRINCIPAL: INICIAR / PARAR ANÁLISE */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-3 h-3 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'}`} />
+                    <div>
+                      <span className="text-[11px] font-mono font-black text-white block">
+                        {isAnalyzing ? 'ANÁLISE EM TEMPO REAL: ATIVA' : 'ANÁLISE EM TEMPO REAL: PARADA'}
+                      </span>
+                      <span className="text-[9px] text-neutral-400 block">
+                        {isAnalyzing ? 'Rastreando 10 indicadores e Order Flow' : 'Pressione Iniciar para monitorar o mercado'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onToggleAnalysis}
+                    className={`px-3 py-2 rounded-xl font-mono font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-lg active:scale-95 ${
+                      isAnalyzing
+                        ? 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white border border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.35)]'
+                        : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                    }`}
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>PARAR</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>INICIAR</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 2. MODO OPERACIONAL (SNIPER / ALAVANCAGEM) */}
                 <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1286,7 +1364,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       MODO OPERACIONAL
                     </label>
                     <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                      {settings.analysisProfile === 'AGRESSIVA' ? 'AGRESSIVA' : 'CONSERVADORA'}
+                      {settings.analysisProfile === 'AGRESSIVA' ? '⚡ ALAVANCAGEM (>60% FLOW)' : '🎯 SNIPER (>70% FLOW)'}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1299,8 +1377,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         }`}
                     >
                       <div className="text-[11px] font-mono font-black text-cyan-300">🎯 Sniper</div>
-                      <div className="text-[9.5px] font-bold text-white mt-0.5">Conservadora (70%+)</div>
-                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas cirúrgicas em S/R</div>
+                      <div className="text-[9.5px] font-bold text-white mt-0.5">Order Flow &gt; 70%</div>
+                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Filtro institucional cirúrgico</div>
                     </button>
                     <button
                       type="button"
@@ -1311,14 +1389,36 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         }`}
                     >
                       <div className="text-[11px] font-mono font-black text-amber-300">⚡ Alavancagem</div>
-                      <div className="text-[9.5px] font-bold text-white mt-0.5">Agressiva (55%+)</div>
-                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas rápidas no fluxo</div>
+                      <div className="text-[9.5px] font-bold text-white mt-0.5">Order Flow &gt; 60%</div>
+                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas dinâmicas de fluxo</div>
                     </button>
                   </div>
                 </div>
 
-                {/* 2. HERO DISPLAY: O GRANDE PAINEL DE SINAL AO VIVO */}
-                {activeSignalInfo.isSignalActive ? (
+                {/* 3. HERO DISPLAY DO SINAL (PRÉ-ALERTA, CONFIRMADO, CANCELADO OU AGUARDANDO) */}
+                {!isAnalyzing ? (
+                  /* Painel quando a análise está parada */
+                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl text-center">
+                    <div className="flex items-center justify-center gap-2 text-amber-300">
+                      <AlertTriangle className="w-5 h-5 text-amber-400" />
+                      <span className="text-sm font-extrabold text-white">
+                        ANÁLISE PAUSADA
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-neutral-400 max-w-[280px] mx-auto">
+                      O monitoramento em tempo real está desligado. Clique no botão abaixo para ligar o scanner de confluências.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onToggleAnalysis}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>LIGAR ANÁLISE EM TEMPO REAL</span>
+                    </button>
+                  </div>
+                ) : activeSignalInfo.stage === 'CONFIRMED' ? (
+                  /* SINAL CONFIRMADO (Aos 8s finais com Order Flow atingindo a meta) */
                   <div
                     className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
                       activeSignalInfo.direction === 'CALL'
@@ -1331,7 +1431,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       <div className="flex items-center gap-2">
                         <span className={`w-2.5 h-2.5 rounded-full animate-ping ${activeSignalInfo.direction === 'CALL' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                         <span className="text-[11px] font-black uppercase tracking-wider text-white">
-                          SINAL CONFIRMADO • {activeSignalInfo.isSniper ? 'SNIPER' : 'ALAVANCAGEM'}
+                          SINAL CONFIRMADO • {activeSignalInfo.modeName}
                         </span>
                       </div>
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
@@ -1344,27 +1444,42 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
 
                     {/* Direção Gigante */}
-                    <div className="py-4 text-center space-y-1">
+                    <div className="py-3 text-center space-y-1">
                       <div className="flex items-center justify-center gap-3">
                         {activeSignalInfo.direction === 'CALL' ? (
                           <>
-                            <TrendingUp className="w-10 h-10 text-emerald-400 animate-bounce" />
+                            <TrendingUp className="w-9 h-9 text-emerald-400 animate-bounce" />
                             <span className="text-3xl font-black tracking-tight text-emerald-300 drop-shadow-[0_0_16px_rgba(16,185,129,0.8)]">
                               COMPRA (CALL)
                             </span>
                           </>
                         ) : (
                           <>
-                            <TrendingDown className="w-10 h-10 text-rose-400 animate-bounce" />
+                            <TrendingDown className="w-9 h-9 text-rose-400 animate-bounce" />
                             <span className="text-3xl font-black tracking-tight text-rose-300 drop-shadow-[0_0_16px_rgba(244,63,94,0.8)]">
                               VENDA (PUT)
                             </span>
                           </>
                         )}
                       </div>
-                      <p className="text-[11px] text-neutral-300 font-bold">
-                        {asset.symbol} • Entrar no fim da vela atual ou retração da taxa
-                      </p>
+                      <div className="p-2 rounded-xl bg-black/60 border border-white/10 mt-1">
+                        <span className="text-xs font-black text-amber-300 block">
+                          👉 ENTRAR NA ABERTURA DA PRÓXIMA VELA
+                        </span>
+                        <span className="text-[9.5px] text-neutral-300">
+                          Vela atual encerra em <strong>00:0{activeSignalInfo.remainingSeconds}s</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Order Flow Validado */}
+                    <div className="p-2 rounded-xl bg-black/40 border border-white/10 mb-2 flex items-center justify-between text-[10px]">
+                      <span className="text-neutral-300">
+                        Order Flow Confirmado: <strong className="text-emerald-400 font-black">{activeSignalInfo.currentOrderFlow}%</strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
+                        ✓ Meta (&gt;{activeSignalInfo.requiredOrderFlow}%) Atingida
+                      </span>
                     </div>
 
                     {/* Métricas Operacionais */}
@@ -1389,90 +1504,182 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                     </div>
                   </div>
-                ) : (
-                  /* Painel de Monitoramento / Aguardando Confluência */
-                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl">
-                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                ) : activeSignalInfo.stage === 'PRE_ALERT' ? (
+                  /* PRÉ-ALERTA (Vela acima de 8s com direção dos indicadores alinhada) */
+                  <div className="p-4 rounded-2xl border-2 border-amber-400/90 bg-gradient-to-br from-amber-950/80 via-[#261b0a] to-black space-y-3 shadow-[0_0_25px_rgba(245,158,11,0.35)] relative overflow-hidden">
+                    <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
                       <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
-                        <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
-                          {isAnalyzing ? 'MONITORAMENTO EM TEMPO REAL' : 'SISTEMA EM PAUSA'}
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+                          ⚠️ PRÉ-ALERTA • ENTRADA NA PRÓXIMA VELA
                         </span>
                       </div>
-                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-                        {activeSignalInfo.isSniper ? 'Filtro Sniper (70%+)' : 'Filtro Alavancagem (55%+)'}
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-neutral-950 shadow-[0_0_8px_rgba(245,158,11,0.6)]">
+                        VALIDAÇÃO AOS 00:08
                       </span>
                     </div>
 
-                    {!isAnalyzing ? (
-                      <div className="py-2 text-center space-y-2.5">
-                        <div className="flex items-center justify-center gap-2 text-amber-300">
-                          <AlertTriangle className="w-5 h-5 text-amber-400" />
-                          <span className="text-base font-extrabold text-white">
-                            ANÁLISE PAUSADA
+                    <div className="py-2 text-center space-y-1">
+                      <div className="flex items-center justify-center gap-2.5">
+                        {activeSignalInfo.dominantDirection === 'CALL' ? (
+                          <>
+                            <TrendingUp className="w-8 h-8 text-amber-400" />
+                            <span className="text-2xl font-black text-amber-300">
+                              PREPARAR: COMPRA (CALL)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-8 h-8 text-amber-400" />
+                            <span className="text-2xl font-black text-amber-300">
+                              PREPARAR: VENDA (PUT)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-neutral-300">
+                        {activeSignalInfo.dominantCount}/10 indicadores a favor • Faltam <strong>{Math.max(0, activeSignalInfo.remainingSeconds - 8)}s</strong> para a validação dos 00:08
+                      </p>
+                    </div>
+
+                    {/* Rastreador de Order Flow do Pré-Alerta */}
+                    <div className="p-2.5 rounded-xl bg-black/60 border border-amber-500/30 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-neutral-300">
+                          Força {activeSignalInfo.dominantDirection === 'CALL' ? 'Compradora' : 'Vendedora'}: <strong className={activeSignalInfo.hasOrderFlow ? 'text-emerald-400' : 'text-amber-300'}>{activeSignalInfo.currentOrderFlow}%</strong>
+                        </span>
+                        <span className="text-neutral-400">
+                          Exigido p/ Confirmação: <strong className="text-cyan-300">&gt;{activeSignalInfo.requiredOrderFlow}%</strong>
+                        </span>
+                      </div>
+                      <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden relative">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            activeSignalInfo.hasOrderFlow ? 'bg-emerald-400' : 'bg-amber-400'
+                          }`}
+                          style={{ width: `${Math.min(100, activeSignalInfo.currentOrderFlow)}%` }}
+                        />
+                      </div>
+                      <p className="text-[9px] text-neutral-400 text-center">
+                        {activeSignalInfo.hasOrderFlow
+                          ? `🟢 Order flow no alvo! Se mantiver até os 00:08, o sinal será confirmado para a próxima vela.`
+                          : `⏳ Faltam ${Math.max(0, activeSignalInfo.requiredOrderFlow - activeSignalInfo.currentOrderFlow)}% de força para validar aos 00:08 no modo ${activeSignalInfo.modeName}.`}
+                      </p>
+                    </div>
+
+                    {/* Métricas */}
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-1">
+                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                        <span className="text-neutral-500 block uppercase">Cotação Atual</span>
+                        <span className="font-mono font-bold text-white">
+                          {srLevels.curPrice.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                        <span className="text-neutral-500 block uppercase">Vela Fecha Em</span>
+                        <span className="font-mono font-bold text-amber-300">
+                          {formattedCountdown}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : activeSignalInfo.stage === 'CANCELLED' ? (
+                  /* SINAL CANCELADO (Aos 8s finais mas Order Flow < meta) */
+                  <div className="p-4 rounded-2xl border-2 border-rose-500/80 bg-gradient-to-br from-rose-950/80 via-[#260a12] to-black space-y-3 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
+                    <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="w-4 h-4 text-rose-400" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-rose-300">
+                          🛑 SINAL CANCELADO • PROTEÇÃO DE CAPITAL
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-300 border border-rose-500/40">
+                        SEM ORDER FLOW
+                      </span>
+                    </div>
+
+                    <div className="py-2 text-center space-y-1">
+                      <span className="text-lg font-black text-white block">
+                        ENTRADA ABORTADA
+                      </span>
+                      <p className="text-[10px] text-neutral-300 leading-relaxed">
+                        Os indicadores apontavam <strong>{activeSignalInfo.dominantDirection}</strong>, porém a força {activeSignalInfo.dominantDirection === 'CALL' ? 'compradora' : 'vendedora'} atingiu apenas <strong className="text-rose-400">{activeSignalInfo.currentOrderFlow}%</strong> aos 8s (mínimo necessário no modo {activeSignalInfo.modeName}: <strong className="text-white">&gt;{activeSignalInfo.requiredOrderFlow}%</strong>).
+                      </p>
+                      <p className="text-[9.5px] text-neutral-400 italic">
+                        O sinal foi cancelado pela IA para proteger sua banca contra consolidação ou rompimento falso.
+                      </p>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-black/50 border border-neutral-800 text-center text-[10px] text-neutral-400">
+                      Nova oportunidade na próxima vela em <strong className="text-amber-300 font-mono">00:0{activeSignalInfo.remainingSeconds}s</strong>
+                    </div>
+                  </div>
+                ) : (
+                  /* MONITORANDO O MERCADO (Buscando confluências de indicadores) */
+                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl">
+                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
+                          MONITORANDO EM TEMPO REAL
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                        {activeSignalInfo.modeName} (&gt;{activeSignalInfo.requiredOrderFlow}% Flow)
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="py-1 text-center space-y-1">
+                        <div className="flex items-center justify-center gap-2 text-neutral-300">
+                          <Activity className="w-4 h-4 text-cyan-400 animate-spin" />
+                          <span className="text-sm font-extrabold text-white">
+                            ANALISANDO INDICADORES: {activeSignalInfo.dominantCount}/10 EM {activeSignalInfo.dominantDirection}
                           </span>
                         </div>
                         <p className="text-[10px] text-neutral-400">
-                          A análise em tempo real está pausada. Clique no botão abaixo para ligar o scanner.
+                          Aguardando confluência mínima de {activeSignalInfo.minIndicatorCount} indicadores para pré-alerta
                         </p>
-                        <button
-                          type="button"
-                          onClick={onToggleAnalysis}
-                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
-                        >
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>LIGAR ANÁLISE EM TEMPO REAL</span>
-                        </button>
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="py-1 text-center space-y-1">
-                          <div className="flex items-center justify-center gap-2 text-neutral-300">
-                            <Activity className="w-4 h-4 text-cyan-400 animate-spin" />
-                            <span className="text-sm font-extrabold text-white">
-                              ANALISANDO ATIVO: {activeSignalInfo.dominantCount} GATILHOS
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-neutral-400">
-                            Aguardando alinhamento de {activeSignalInfo.minCount} ou mais indicadores confluentes
-                          </p>
-                        </div>
 
-                        {/* Barra de Confluência Atual */}
-                        <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-neutral-400">
-                              Confluência: <strong className="text-white">{activeSignalInfo.score}%</strong> ({activeSignalInfo.callCount} CALL vs {activeSignalInfo.putCount} PUT)
-                            </span>
-                            <span className="text-cyan-400 font-bold">
-                              Meta: {activeSignalInfo.minThreshold}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
-                            <div
-                              className="bg-cyan-500 h-full rounded-full transition-all duration-300"
-                              style={{ width: `${Math.min(100, Math.round((activeSignalInfo.score / activeSignalInfo.minThreshold) * 100))}%` }}
-                            />
-                          </div>
+                      {/* Medidor de Order Flow */}
+                      <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-emerald-400 font-bold">
+                            ▲ Compra: {technicalData.delta.buyerPercent}%
+                          </span>
+                          <span className="text-rose-400 font-bold">
+                            ▼ Venda: {technicalData.delta.sellerPercent}%
+                          </span>
                         </div>
-
-                        {/* Métricas Rápidas */}
-                        <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
-                          <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                            <span className="text-neutral-500 block uppercase">Maior Pressão</span>
-                            <span className={`font-black ${activeSignalInfo.targetDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {activeSignalInfo.targetDirection === 'CALL' ? '▲ COMPRA (CALL)' : '▼ VENDA (PUT)'} ({activeSignalInfo.activeCount}/7 ativos)
-                            </span>
-                          </div>
-                          <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                            <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
-                            <span className="font-black text-amber-300 font-mono">
-                              {formattedCountdown}
-                            </span>
-                          </div>
+                        <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden flex">
+                          <div
+                            className="bg-emerald-500 h-full transition-all duration-300"
+                            style={{ width: `${technicalData.delta.buyerPercent}%` }}
+                          />
+                          <div
+                            className="bg-rose-500 h-full transition-all duration-300"
+                            style={{ width: `${technicalData.delta.sellerPercent}%` }}
+                          />
                         </div>
                       </div>
-                    )}
+
+                      {/* Métricas Rápidas */}
+                      <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                        <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                          <span className="text-neutral-500 block uppercase">Confluência Atual</span>
+                          <span className={`font-black ${activeSignalInfo.dominantDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {activeSignalInfo.callCount} CALL vs {activeSignalInfo.putCount} PUT
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                          <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
+                          <span className="font-black text-amber-300 font-mono">
+                            {formattedCountdown}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1627,25 +1834,41 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 <div
                   onClick={() => setActiveTab('sinal')}
                   className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                    activeSignalInfo.isSignalActive
+                    activeSignalInfo.stage === 'CONFIRMED'
                       ? activeSignalInfo.direction === 'CALL'
                         ? 'bg-emerald-950/70 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                         : 'bg-rose-950/70 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
-                      : 'bg-black/60 border-neutral-800 hover:border-neutral-700'
+                      : activeSignalInfo.stage === 'PRE_ALERT'
+                        ? 'bg-amber-950/70 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                        : activeSignalInfo.stage === 'CANCELLED'
+                          ? 'bg-rose-950/40 border-rose-500/50'
+                          : 'bg-black/60 border-neutral-800 hover:border-neutral-700'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Zap className={`w-4 h-4 ${activeSignalInfo.isSignalActive ? (activeSignalInfo.direction === 'CALL' ? 'text-emerald-400' : 'text-rose-400') : 'text-neutral-500'}`} />
+                    <Zap className={`w-4 h-4 ${
+                      activeSignalInfo.stage === 'CONFIRMED'
+                        ? activeSignalInfo.direction === 'CALL' ? 'text-emerald-400' : 'text-rose-400'
+                        : activeSignalInfo.stage === 'PRE_ALERT'
+                          ? 'text-amber-400 animate-pulse'
+                          : 'text-neutral-500'
+                    }`} />
                     <div>
                       <span className="text-[10px] font-bold text-white block">
-                        {activeSignalInfo.isSignalActive
-                          ? `SINAL ATIVO: ${activeSignalInfo.direction === 'CALL' ? '🟢 COMPRA (CALL)' : '🔴 VENDA (PUT)'}`
-                          : 'PAINEL DE SINAL IA • AGUARDANDO CONFLUÊNCIA'}
+                        {activeSignalInfo.stage === 'CONFIRMED'
+                          ? `SINAL CONFIRMADO: ${activeSignalInfo.direction === 'CALL' ? '🟢 COMPRA (CALL)' : '🔴 VENDA (PUT)'}`
+                          : activeSignalInfo.stage === 'PRE_ALERT'
+                            ? `⚠️ PRÉ-ALERTA: PREPARAR PARA ${activeSignalInfo.dominantDirection === 'CALL' ? 'COMPRA' : 'VENDA'} (PRÓXIMA VELA)`
+                            : activeSignalInfo.stage === 'CANCELLED'
+                              ? `🛑 SINAL CANCELADO (Order Flow < ${activeSignalInfo.requiredOrderFlow}%)`
+                              : 'PAINEL DE SINAL IA • AGUARDANDO CONFLUÊNCIA'}
                       </span>
                       <span className="text-[9px] text-neutral-400">
-                        {activeSignalInfo.isSignalActive
-                          ? `${activeSignalInfo.score}% Assertividade • Toque para abrir painel completo`
-                          : `${activeSignalInfo.score}% de confluência no momento • Toque para abrir`}
+                        {activeSignalInfo.stage === 'CONFIRMED'
+                          ? `${activeSignalInfo.score}% Assertividade • Order Flow: ${activeSignalInfo.currentOrderFlow}%`
+                          : activeSignalInfo.stage === 'PRE_ALERT'
+                            ? `Validação aos 00:08 • Flow Atual: ${activeSignalInfo.currentOrderFlow}%`
+                            : `${activeSignalInfo.dominantCount}/10 indicadores alinhados • Toque para abrir`}
                       </span>
                     </div>
                   </div>
