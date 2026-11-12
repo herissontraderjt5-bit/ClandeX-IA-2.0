@@ -89,7 +89,7 @@ import { marketDataManager, isForexMarketOpen } from '../services/marketData';
 import { tradingViewScanner, LiveTradingViewData } from '../services/tradingViewScanner';
 import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
-import { formatBrasiliaTime } from '../utils/timeFormat';
+import { formatBrasiliaTime, formatBrasiliaDate } from '../utils/timeFormat';
 import { checkMemberAccessStatus } from '../services/memberService';
 
 interface FloatingHudProps {
@@ -939,29 +939,19 @@ DIRETRIZES:
     }
   };
 
-  // Placar do Dia (Hoje) - Estatísticas dinâmicas dos sinais de hoje
+  // Placar do Dia (Hoje) - Estatísticas dinâmicas sincronizadas no Horário Oficial de Brasília (BRT)
   const todayDateString = useMemo(() => {
-    return new Date().toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  }, []);
+    return formatBrasiliaDate(Date.now());
+  }, [currentBrasiliaClock]);
 
   const todaySignals = useMemo(() => {
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
-    const curDate = now.getDate();
+    const todayStr = formatBrasiliaDate(Date.now());
     return signalsHistory.filter((s) => {
-      const d = new Date(s.resolvedAt || s.timestamp);
-      return (
-        d.getDate() === curDate &&
-        d.getMonth() === curMonth &&
-        d.getFullYear() === curYear
-      );
+      if (s.result !== 'WIN' && s.result !== 'LOSS' && s.result !== 'EMPATE') return false;
+      const dStr = formatBrasiliaDate(s.resolvedAt || s.timestamp);
+      return dStr === todayStr;
     });
-  }, [signalsHistory]);
+  }, [signalsHistory, currentBrasiliaClock]);
 
   const todayWins = todaySignals.filter((s) => s.result === 'WIN').length;
   const todayLosses = todaySignals.filter((s) => s.result === 'LOSS').length;
@@ -977,24 +967,6 @@ DIRETRIZES:
   const expMins = Math.floor(remainingExpSec / 60);
   const expSecs = remainingExpSec % 60;
   const formattedExpCountdown = `${String(expMins).padStart(2, '0')}:${String(expSecs).padStart(2, '0')}`;
-
-  // Se o cronômetro zerou (00:00) na tela E a operação cumpriu seu tempo integral, aciona a apuração no fechamento
-  useEffect(() => {
-    if (
-      activeTrade &&
-      activeTrade.result === 'PENDING' &&
-      isTradeRunning &&
-      activeTrade.expirationTimestamp &&
-      nowSec >= activeTrade.expirationTimestamp &&
-      remainingExpSec <= 0
-    ) {
-      const expSec = (activeTrade.timeframe === 'M2' || activeTrade.expiration === '2m') ? 120 : ((activeTrade.timeframe === 'M1' || activeTrade.expiration === '1m') ? 60 : 300);
-      const tradeElapsed = activeTrade.entryTimestamp ? (nowSec - activeTrade.entryTimestamp) : Math.floor((Date.now() - activeTrade.timestamp) / 1000);
-      if (tradeElapsed >= expSec - 3) {
-        signalEngine.forceResolveTrade(activeTrade.id, asset.currentPrice, marketDataManager.getCandlesForAsset(asset.symbol, timeframe));
-      }
-    }
-  }, [activeTrade, isTradeRunning, remainingExpSec, asset.currentPrice, nowSec]);
 
   // Confirmação recente aguardando a abertura da vela do sinal
   const isWaitingEntry = !!latestConfirmedSignal && !isTradeRunning && (

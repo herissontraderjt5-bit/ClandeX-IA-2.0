@@ -228,6 +228,11 @@ export class SignalEngine {
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem(this.getStorageKey());
+        localStorage.removeItem('clandex_signal_history_v2');
+        localStorage.removeItem('clandex_ai_signals_history');
+        localStorage.removeItem('clandex_signals_history');
+        localStorage.removeItem('clandex_signal_history_guest');
+        localStorage.removeItem('clandex_scoreboard');
       }
     } catch { }
     this.notify();
@@ -253,27 +258,20 @@ export class SignalEngine {
     if (this.pendingTrades.length > 0) {
       let updatedEntry = false;
       this.pendingTrades.forEach((trade) => {
-        const candleList = (allCandles && allCandles.length > 0)
-          ? allCandles
-          : marketDataManager.getCandlesForAsset(trade.asset, trade.timeframe);
-
-        const expSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
-        const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expSec);
-        const entryTime = trade.entryTimestamp || (expTime - expSec);
-
-        // Quando a vela do sinal abre (segundo 00:00 da vela oficial): trava a taxa oficial de abertura com o preço REAL do tick
+        // Quando a vela do sinal abre (segundo 00:00 da vela oficial de entrada):
+        // Trava a taxa oficial de abertura com o preço REAL do tick
         if (!trade.isEntered) {
           if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
             trade.isEntered = true;
-            // ABERTURA: usa o preço real recebido no tick exato de abertura da vela
-            // Não usa tradeCandle.open para evitar valores determinísticos errados (especialmente em FOREX)
-            trade.entryPrice = currentPrice;
-            trade.candleOpenPrice = currentPrice;
+            // Trava taxa atômica de abertura
+            const openRate = currentPrice > 0 ? currentPrice : (currentCandle?.open || trade.entryPrice);
+            trade.entryPrice = openRate;
+            trade.candleOpenPrice = openRate;
             updatedEntry = true;
           }
         } else {
-          if (!trade.expirationTimestamp || nowSec <= trade.expirationTimestamp) {
-            // Atualiza continuamente a última cotação registrada antes do fechamento
+          // Enquanto a vela está em andamento (antes da expiração), registra a cotação ao vivo
+          if (!trade.expirationTimestamp || nowSec < trade.expirationTimestamp) {
             trade.candleClosePrice = currentPrice;
           }
         }
@@ -293,7 +291,7 @@ export class SignalEngine {
 
       // Apuração rigorosa no fechamento da vela
       this.resolvePendingTrades(
-        currentCandle.close || currentPrice,
+        currentPrice,
         nowSec,
         remainingSec,
         allCandles,
@@ -757,8 +755,8 @@ export class SignalEngine {
   }
 
   /**
-   * Apura operações rigorosamente após o fechamento da vela do sinal,
-   * calculando WIN ou LOSS estritamente com base na ABERTURA e FECHAMENTO da vela do horário do sinal.
+   * Apura operações rigorosamente no fechamento da vela do sinal (segundo :00 de expiração),
+   * calculando WIN ou LOSS estritamente com base na ABERTURA e FECHAMENTO da vela oficial.
    */
   private resolvePendingTrades(
     currentPrice: number,
@@ -771,147 +769,92 @@ export class SignalEngine {
 
     let updated = false;
     this.pendingTrades = this.pendingTrades.filter((trade) => {
-      const expirationSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
-      const tradeAge = Math.floor((Date.now() - trade.timestamp) / 1000);
-      const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : tradeAge;
-
-      // 1. TRAVA ABSOLUTA DE DURAÇÃO MÍNIMA:
-      // Se a vela ainda não abriu (nowSec < trade.entryTimestamp) ou se o timestamp de expiração
-      // ainda não foi atingido a partir da abertura oficial, ela NUNCA pode ser apurada! Mantém a operação em andamento.
+      // 1. Se a vela de entrada ainda não começou, mantém a operação pendente
       if (trade.entryTimestamp && nowSec < trade.entryTimestamp) {
         return true;
       }
-      if (tradeElapsedFromEntry < expirationSec - 2 && nowSec < trade.expirationTimestamp) {
+
+      // 2. Se a vela de expiração ainda não terminou (não atingiu expirationTimestamp), mantém a operação pendente
+      // Não apura antes do fechamento oficial!
+      if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp) {
         return true;
       }
 
-      const candleList = (allCandles && allCandles.length > 0)
-        ? allCandles
-        : marketDataManager.getCandlesForAsset(trade.asset, trade.timeframe);
+      // 3. APURAÇÃO DEFINITIVA NO FECHAMENTO DA VELA
+      // Taxa oficial de abertura: travada no momento em que a vela abriu
+      const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
+        ? trade.candleOpenPrice
+        : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
 
-      const expTime = trade.expirationTimestamp || ((trade.entryTimestamp || 0) + expirationSec);
-      const entryTime = trade.entryTimestamp || (expTime - expirationSec);
+      // Taxa oficial de fechamento: preço no término da vela
+      const officialClose = (currentPrice > 0)
+        ? currentPrice
+        : ((trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : officialOpen);
 
-      // Localiza a vela exata da operação (iniciada em entryTime, tolerância de até 20s)
-      const tradeCandle = [...candleList].reverse().find((c) => Math.abs(c.time - entryTime) < Math.min(20, expirationSec * 0.4))
-        || (currentCandle && Math.abs(currentCandle.time - entryTime) < Math.min(20, expirationSec * 0.4) ? currentCandle : null);
+      const diff = officialClose - officialOpen;
+      const EPSILON = 1e-8;
 
-      // Localiza a vela SUBSEQUENTE (iniciada em expTime, tolerância de até 20s):
-      const nextCandle = [...candleList].reverse().find((c) => Math.abs(c.time - expTime) < Math.min(20, expirationSec * 0.4) && c.time > entryTime)
-        || (currentCandle && Math.abs(currentCandle.time - expTime) < Math.min(20, expirationSec * 0.4) && currentCandle.time > entryTime ? currentCandle : null);
-
-      // A vela do sinal encerra estritamente quando:
-      // 1. O tempo de expiração foi atingido (nowSec >= expTime)
-      // 2. E a vela da operação foi finalizada (isClosed = true ou próxima vela já aberta)
-      // Isso impede apuração prematura com cotação parcial de meio de vela e assegura
-      // cálculo exato entre a abertura e o fechamento definitivos da vela.
-      const isTimeExpired = nowSec >= expTime;
-      const hasNextCandle = !!nextCandle;
-      const isCandleClosed = tradeCandle?.isClosed === true;
-      const isTimeoutSafety = tradeElapsedFromEntry >= expirationSec + 3;
-
-      const isExpired = (isTimeExpired && (hasNextCandle || isCandleClosed || tradeElapsedFromEntry >= expirationSec + 1)) || isTimeoutSafety;
-
-      if (isExpired) {
-        // =========================================================
-        // APURAÇÃO DEFINITIVA WIN/LOSS - LÓGICA CORRIGIDA
-        // =========================================================
-        // officialOpen  = preço que o trade registrou ao ENTRAR (segundo :00 da vela)
-        // officialClose = preço mais recente antes da expiração (último tick antes do :00 da próxima vela)
-        //
-        // NÃO usamos tradeCandle.open do array de velas para FOREX porque esse array
-        // é gerado deterministicamente e não reflete o preço real de mercado.
-        // Para CRYPTO, o tradeCandle pode vir da Bybit (real), mas preferimos o valor
-        // capturado no onMarketTick (trade.candleOpenPrice) que é o preço do tick exato.
-        //
-        // REGRA ESTRITA: se trade.candleOpenPrice > 0 (foi capturado corretamente),
-        // usar ele sempre. O tradeCandle.close é confiável apenas para CRYPTO real.
-        // =========================================================
-        let officialOpen: number;
-        let officialClose: number;
-
-        // Abertura: usar sempre o preço capturado ao entrar na operação (mais confiável)
-        officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-          ? trade.candleOpenPrice
-          : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
-
-        // Fechamento: para CRYPTO real com tradeCandle fechado, usar o close real da vela
-        // Para FOREX ou fallback, usar o último preço registrado nos ticks (candleClosePrice)
-        const isCryptoWithRealCandle = tradeCandle && tradeCandle.isClosed === true
-          && tradeCandle.close > 0 && tradeCandle.open > 0
-          // Só usa o close do tradeCandle se ele vier de dados reais (não determinísticos):
-          // verificamos que o open do tradeCandle é próximo ao candleOpenPrice registrado
-          && Math.abs(tradeCandle.open - officialOpen) < officialOpen * 0.01; // dentro de 1%
-
-        if (isCryptoWithRealCandle) {
-          officialClose = tradeCandle!.close;
+      // REGRA OFICIAL DE OPÇÕES BINÁRIAS:
+      // CALL (COMPRA):
+      // - Fechamento > Abertura (diff > 0) => WIN
+      // - Fechamento < Abertura (diff < 0) => LOSS
+      // - Fechamento == Abertura => EMPATE
+      //
+      // PUT (VENDA):
+      // - Fechamento < Abertura (diff < 0) => WIN
+      // - Fechamento > Abertura (diff > 0) => LOSS
+      // - Fechamento == Abertura => EMPATE
+      let outcome: TradeResult = 'EMPATE';
+      if (trade.direction === 'CALL') {
+        if (diff > EPSILON) {
+          outcome = 'WIN';
+        } else if (diff < -EPSILON) {
+          outcome = 'LOSS';
         } else {
-          officialClose = (trade.candleClosePrice && trade.candleClosePrice > 0)
-            ? trade.candleClosePrice
-            : (trade.exitPrice > 0 ? trade.exitPrice : currentPrice);
+          outcome = 'EMPATE';
         }
-
-        if (!officialOpen || officialOpen <= 0) officialOpen = currentPrice;
-        if (!officialClose || officialClose <= 0) officialClose = currentPrice;
-
-        const diff = officialClose - officialOpen;
-        const EPSILON = 1e-8;
-
-        // REGRA ESTRITA DE OPÇÕES BINÁRIAS:
-        // CALL = WIN se a taxa final fechou ACIMA da taxa de entrada (officialClose > officialOpen, diff > 0)
-        // CALL = LOSS se a taxa final fechou ABAIXO da taxa de entrada (officialClose < officialOpen, diff < 0)
-        // PUT  = WIN se a taxa final fechou ABAIXO da taxa de entrada (officialClose < officialOpen, diff < 0)
-        // PUT  = LOSS se a taxa final fechou ACIMA da taxa de entrada (officialClose > officialOpen, diff > 0)
-        let outcome: TradeResult = 'EMPATE';
-        if (trade.direction === 'CALL') {
-          if (diff > EPSILON) {
-            outcome = 'WIN';
-          } else if (diff < -EPSILON) {
-            outcome = 'LOSS';
-          } else {
-            outcome = 'EMPATE';
-          }
+      } else if (trade.direction === 'PUT') {
+        if (diff < -EPSILON) {
+          outcome = 'WIN';
+        } else if (diff > EPSILON) {
+          outcome = 'LOSS';
         } else {
-          if (diff < -EPSILON) {
-            outcome = 'WIN';
-          } else if (diff > EPSILON) {
-            outcome = 'LOSS';
-          } else {
-            outcome = 'EMPATE';
-          }
+          outcome = 'EMPATE';
         }
-
-        trade.result = outcome;
-        trade.entryPrice = officialOpen;
-        trade.candleOpenPrice = officialOpen;
-        trade.exitPrice = officialClose;
-        trade.candleClosePrice = officialClose;
-        trade.resolvedAt = Date.now();
-
-        // Armazena para feedback de 7 segundos no HUD
-        this.lastResolvedTrade = { ...trade };
-        this.lastResolvedTime = Date.now();
-
-        console.log(
-          `[SignalEngine] Operação Finalizada na Vela: ${trade.asset} ${trade.direction} -> ${outcome} | Abertura: ${officialOpen} ➔ Fechamento: ${officialClose} (Dif: ${diff.toFixed(6)})`
-        );
-
-        // Atualiza histórico
-        const histIndex = this.signalHistory.findIndex((s) => s.id === trade.id);
-        if (histIndex !== -1) {
-          this.signalHistory[histIndex] = { ...trade };
-        }
-
-        // Toca o alerta sonoro de acordo com o resultado
-        if (outcome === 'WIN') audioAlerts.playWin();
-        if (outcome === 'LOSS') audioAlerts.playLoss();
-
-        this.dispatchSignalEvent(trade, 'RESULT');
-
-        updated = true;
-        return false; // Remove da lista de pendentes
       }
-      return true; // Continua aguardando o fechamento da vela
+
+      trade.result = outcome;
+      trade.entryPrice = officialOpen;
+      trade.candleOpenPrice = officialOpen;
+      trade.exitPrice = officialClose;
+      trade.candleClosePrice = officialClose;
+      trade.resolvedAt = Date.now();
+
+      // Armazena para exibição destacada de 7 segundos no HUD
+      this.lastResolvedTrade = { ...trade };
+      this.lastResolvedTime = Date.now();
+
+      console.log(
+        `[SignalEngine] 🎯 RESULTADO APURADO: ${trade.asset} ${trade.direction} -> ${outcome} | Abertura: ${officialOpen} ➔ Fechamento: ${officialClose} (Dif: ${diff > 0 ? '+' : ''}${diff.toFixed(6)})`
+      );
+
+      // Atualiza no histórico
+      const histIndex = this.signalHistory.findIndex((s) => s.id === trade.id);
+      if (histIndex !== -1) {
+        this.signalHistory[histIndex] = { ...trade };
+      } else {
+        this.signalHistory.unshift({ ...trade });
+      }
+
+      // Alerta sonoro oficial
+      if (outcome === 'WIN') audioAlerts.playWin();
+      if (outcome === 'LOSS') audioAlerts.playLoss();
+
+      // Dispara evento completo para notificações push, imagem/banner e webhooks
+      this.dispatchSignalEvent(trade, 'RESULT');
+
+      updated = true;
+      return false; // Remove da lista de pendentes
     });
 
     if (updated) {
@@ -921,21 +864,15 @@ export class SignalEngine {
   }
 
   /**
-   * Forçar apuração imediata no fechamento caso cronômetro atinja 00:00 no cliente
+   * Forçar apuração apenas se o tempo de expiração já foi atingido
    */
   public forceResolveTrade(tradeId: string, currentPrice: number, allCandles?: Candle[]) {
     const trade = this.pendingTrades.find((t) => t.id === tradeId);
     if (!trade) return;
     const nowSec = this.getNowSec();
-    const expirationSec = getSecondsForExpiration(trade.expiration, trade.timeframe);
-    const tradeElapsedFromEntry = trade.entryTimestamp ? (nowSec - trade.entryTimestamp) : Math.floor((Date.now() - trade.timestamp) / 1000);
 
-    // Proteção absoluta: nunca apurar prematuramente antes da abertura e duração mínima da vela
-    if (trade.entryTimestamp && nowSec < trade.entryTimestamp) {
-      return;
-    }
-    if (tradeElapsedFromEntry < expirationSec - 3 && nowSec < trade.expirationTimestamp) {
-      console.warn(`[SignalEngine] forceResolveTrade bloqueado: operação ${trade.id} ainda está em andamento (${tradeElapsedFromEntry}s decorridos).`);
+    // Proteção absoluta: nunca apurar antes da expiração oficial da vela
+    if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp) {
       return;
     }
 
@@ -1173,12 +1110,27 @@ export class SignalEngine {
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            const nowSec = this.getNowSec();
             // Filtrar apenas sinais legítimos executados (eliminando sinais fictícios gerados por seeds anteriores)
             let cleaned = parsed.filter((s) => !s.id.startsWith('seed-'));
-            // Recalibra e assegura precisão absoluta caso algum trade antigo tenha sido gravado com resultado invertido
+            // Recalibra e assegura precisão absoluta em operações expiradas
             cleaned = cleaned.map((s) => {
               const entry = s.candleOpenPrice || s.entryPrice || 0;
               const exit = s.candleClosePrice || s.exitPrice || 0;
+              // Se estava pendente mas já expirou antes do app carregar
+              if (s.result === 'PENDING' && s.expirationTimestamp && s.expirationTimestamp <= nowSec) {
+                if (entry > 0 && exit > 0) {
+                  const diff = exit - entry;
+                  const EPSILON = 1e-8;
+                  let outcome: TradeResult = 'EMPATE';
+                  if (s.direction === 'CALL') {
+                    outcome = diff > EPSILON ? 'WIN' : (diff < -EPSILON ? 'LOSS' : 'EMPATE');
+                  } else if (s.direction === 'PUT') {
+                    outcome = diff < -EPSILON ? 'WIN' : (diff > EPSILON ? 'LOSS' : 'EMPATE');
+                  }
+                  return { ...s, result: outcome, resolvedAt: s.resolvedAt || (s.expirationTimestamp * 1000) };
+                }
+              }
               if (entry > 0 && exit > 0 && (s.result === 'WIN' || s.result === 'LOSS')) {
                 const diff = exit - entry;
                 const EPSILON = 1e-8;
@@ -1195,7 +1147,6 @@ export class SignalEngine {
               return s;
             });
             this.signalHistory = cleaned;
-            const nowSec = this.getNowSec();
             this.pendingTrades = this.signalHistory.filter(
               (s) => s.result === 'PENDING' && s.expirationTimestamp > nowSec
             );
