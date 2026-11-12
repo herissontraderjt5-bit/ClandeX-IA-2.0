@@ -94,39 +94,39 @@ import { audioAlerts } from '../services/audioAlerts';
 import { formatBrasiliaTime, formatBrasiliaDate } from '../utils/timeFormat';
 import { checkMemberAccessStatus } from '../services/memberService';
 
-// Estilização ultra-visual em destaque para Alta, Baixa e Lateral/Neutro
+// Estilização limpa dos cards de indicadores: fundo neutro escuro, título em branco e cor exclusiva no badge lateral
 const getIndicatorCardStyle = (status: string) => {
   const s = (status || '').toUpperCase();
   if (s.includes('ALTA') || s.includes('COMPRA') || s.includes('SOBREVENDA') || (s.includes('FORTE') && !s.includes('VENDA') && !s.includes('BAIXA'))) {
     return {
-      border: 'border-2 border-emerald-500/80 shadow-[0_0_16px_rgba(16,185,129,0.3)]',
-      bg: 'bg-gradient-to-br from-emerald-950/80 via-emerald-900/30 to-black',
-      badge: 'bg-emerald-500 text-black font-black border border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.8)]',
-      title: 'text-emerald-300 font-extrabold',
+      border: 'border border-neutral-800 hover:border-neutral-700',
+      bg: 'bg-neutral-900/90',
+      badge: 'bg-emerald-500 text-neutral-950 font-bold border border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.5)]',
+      title: 'text-white font-bold',
       value: 'text-white font-black',
-      sub: 'text-emerald-400 font-semibold',
+      sub: 'text-neutral-400 font-medium',
       tag: '▲ ALTA',
     };
   }
   if (s.includes('BAIXA') || s.includes('VENDA') || s.includes('SOBRECOMPRA')) {
     return {
-      border: 'border-2 border-rose-500/80 shadow-[0_0_16px_rgba(244,63,94,0.3)]',
-      bg: 'bg-gradient-to-br from-rose-950/80 via-rose-900/30 to-black',
-      badge: 'bg-rose-500 text-white font-black border border-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.8)]',
-      title: 'text-rose-300 font-extrabold',
+      border: 'border border-neutral-800 hover:border-neutral-700',
+      bg: 'bg-neutral-900/90',
+      badge: 'bg-rose-500 text-white font-bold border border-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.5)]',
+      title: 'text-white font-bold',
       value: 'text-white font-black',
-      sub: 'text-rose-400 font-semibold',
+      sub: 'text-neutral-400 font-medium',
       tag: '▼ BAIXA',
     };
   }
   // LATERAL / NEUTRO
   return {
-    border: 'border-2 border-amber-400/80 shadow-[0_0_16px_rgba(251,191,36,0.3)]',
-    bg: 'bg-gradient-to-br from-amber-950/80 via-amber-900/30 to-black',
-    badge: 'bg-amber-400 text-black font-black border border-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.8)]',
-    title: 'text-amber-300 font-extrabold',
+    border: 'border border-neutral-800 hover:border-neutral-700',
+    bg: 'bg-neutral-900/90',
+    badge: 'bg-amber-400 text-neutral-950 font-bold border border-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.5)]',
+    title: 'text-white font-bold',
     value: 'text-white font-black',
-    sub: 'text-amber-400 font-semibold',
+    sub: 'text-neutral-400 font-medium',
     tag: '▬ LATERAL',
   };
 };
@@ -1503,6 +1503,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   {/* MACD */}
                   {(() => {
                     const style = getIndicatorCardStyle(technicalData.macd.status);
+                    const macdHist = technicalData.macd.histogram;
+                    const formattedMacd = Math.abs(macdHist) < 0.001
+                      ? macdHist.toFixed(6)
+                      : (Math.abs(macdHist) < 1 ? macdHist.toFixed(4) : macdHist.toFixed(2));
                     return (
                       <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
                         <div className="flex items-center justify-between">
@@ -1512,8 +1516,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           </span>
                         </div>
                         <div className="flex items-baseline justify-between mt-1.5">
-                          <span className={`text-sm font-black ${technicalData.macd.histogram >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                            {technicalData.macd.histogram >= 0 ? `+${technicalData.macd.histogram}` : technicalData.macd.histogram}
+                          <span className="text-sm font-black text-white">
+                            {macdHist >= 0 ? `+${formattedMacd}` : formattedMacd}
                           </span>
                           <span className={`text-[9px] ${style.sub} truncate`}>Histograma</span>
                         </div>
