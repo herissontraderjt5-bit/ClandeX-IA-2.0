@@ -20,7 +20,6 @@ import { webhookDispatcher } from './services/webhookDispatcher';
 import { FloatingHud } from './components/FloatingHud';
 import { HioveBrokerBackground } from './components/HioveBrokerBackground';
 import { SettingsModal } from './components/SettingsModal';
-import { ExtensionModal } from './components/ExtensionModal';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { WebhookModal } from './components/WebhookModal';
 import { AccessGateModal } from './components/AccessGateModal';
@@ -116,7 +115,6 @@ export default function App() {
 
   // Modals & Drawers
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -584,7 +582,6 @@ export default function App() {
           setIsWebhookModalOpen(true);
         }}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
-        onOpenExtension={() => setIsExtensionModalOpen(true)}
         onToggleSound={handleToggleSound}
       />
 
@@ -614,7 +611,6 @@ export default function App() {
         onLogout={handleLogout}
         onRefreshSession={handleRefreshSession}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
-        onOpenExtension={() => setIsExtensionModalOpen(true)}
         onSelectAnalysisProfile={handleSelectAnalysisProfile}
         onSelectAsset={handleSelectAsset}
         onSelectTimeframe={handleSelectTimeframe}
@@ -646,11 +642,7 @@ export default function App() {
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
       />
 
-      {/* Chrome Extension Modal */}
-      <ExtensionModal
-        isOpen={isExtensionModalOpen}
-        onClose={() => setIsExtensionModalOpen(false)}
-      />
+
 
       {/* Signal History Drawer */}
       <HistoryDrawer

@@ -28,7 +28,6 @@ import {
   Send,
   Settings,
   ShieldCheck,
-  Chrome,
 } from 'lucide-react';
 import { isForexMarketOpen } from '../services/marketData';
 import { TradingViewWidget } from './TradingViewWidget';
@@ -237,17 +236,7 @@ export const HioveBrokerBackground: React.FC<HioveBrokerBackgroundProps> = ({
                 </button>
               )}
 
-              {/* Sincronização Direta da Cotação Hiove (Extensão Chrome) */}
-              {onOpenExtension && (
-                <button
-                  onClick={onOpenExtension}
-                  className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 font-bold rounded-lg text-[11px] font-mono transition-colors cursor-pointer flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
-                  title="Sincronizar cotação oficial da corretora Hiove via Extensão Chrome (0ms de delay)"
-                >
-                  <Chrome className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Sincronizar Hiove</span>
-                </button>
-              )}
+
 
               {/* 5. Alertas Sonoros (Som) */}
               {onToggleSound && (

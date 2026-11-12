@@ -4,7 +4,6 @@ import {
   Sliders,
   Volume2,
   VolumeX,
-  Chrome,
   ExternalLink,
   Shield,
   Layers,
@@ -17,11 +16,11 @@ import { formatBrasiliaTime } from '../utils/timeFormat';
 interface NavbarProps {
   dataSource: DataSourceInfo;
   settings: AppSettings;
-  activeTab: 'COCKPIT' | 'HUD_ONLY' | 'EXTENSION';
-  onChangeTab: (tab: 'COCKPIT' | 'HUD_ONLY' | 'EXTENSION') => void;
+  activeTab: 'COCKPIT' | 'HUD_ONLY';
+  onChangeTab: (tab: 'COCKPIT' | 'HUD_ONLY') => void;
   onOpenSettings: () => void;
   onToggleSound: () => void;
-  onOpenExtensionModal: () => void;
+  onOpenExtensionModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -84,13 +83,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Foco no Painel HUD
-          </button>
-          <button
-            onClick={onOpenExtensionModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-neutral-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
-          >
-            <Chrome className="w-3.5 h-3.5 text-cyan-400" />
-            Extensão Chrome
           </button>
         </div>
 
