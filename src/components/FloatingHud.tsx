@@ -472,7 +472,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
-  const [chartMode, setChartMode] = useState<'TRADINGVIEW' | 'NATIVE_SR'>('TRADINGVIEW');
+  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('NATIVE_SR');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
@@ -747,91 +747,40 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [technicalData]);
 
-  // Leitura ultra-precisa de Topos Reais (Resistências) e Fundos Reais (Suportes) direto dos pavios das velas recentes
+  // Leitura direta e exata de Topo Real (Resistência) e Fundo Real (Suporte) dos pavios das velas recentes
   const srLevels = useMemo(() => {
     const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
-    const decimals = asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5);
+    const decimals = asset.pipDecimals || (asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5));
 
-    const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-50) : [];
+    const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-45) : [];
 
-    // 1. Identificar Topos Reais (máximas locais / swing highs) e Fundos Reais (mínimas locais / swing lows)
-    const confirmedTops: { price: number; index: number }[] = [];
-    const confirmedBottoms: { price: number; index: number }[] = [];
+    let highestWick = -Infinity;
+    let lowestWick = Infinity;
 
-    let highestHigh = -Infinity;
-    let lowestLow = Infinity;
-
-    for (let i = 0; i < candleList.length; i++) {
-      const c = candleList[i];
-      if (c.high > highestHigh) highestHigh = c.high;
-      if (c.low < lowestLow) lowestLow = c.low;
-
-      if (i >= 2 && i <= candleList.length - 3) {
-        const prev1 = candleList[i - 1];
-        const prev2 = candleList[i - 2];
-        const next1 = candleList[i + 1];
-        const next2 = candleList[i + 2];
-
-        // Topo real (máxima maior que as 2 vizinhas de cada lado)
-        if (c.high >= prev1.high && c.high >= prev2.high && c.high >= next1.high && c.high >= next2.high) {
-          confirmedTops.push({ price: c.high, index: i });
-        }
-
-        // Fundo real (mínima menor que as 2 vizinhas de cada lado)
-        if (c.low <= prev1.low && c.low <= prev2.low && c.low <= next1.low && c.low <= next2.low) {
-          confirmedBottoms.push({ price: c.low, index: i });
-        }
-      }
+    for (const c of candleList) {
+      if (c.high > highestWick) highestWick = c.high;
+      if (c.low < lowestWick) lowestWick = c.low;
     }
 
-    if (highestHigh > -Infinity) confirmedTops.push({ price: highestHigh, index: candleList.length - 1 });
-    if (lowestLow < Infinity) confirmedBottoms.push({ price: lowestLow, index: candleList.length - 1 });
+    // Topo (Resistência): máxima mais alta da janela visível
+    let topo = highestWick > -Infinity ? highestWick : curPrice * 1.002;
+    // Fundo (Suporte): mínima mais baixa da janela visível
+    let fundo = lowestWick < Infinity ? lowestWick : curPrice * 0.998;
 
-    // Topos acima do preço atual ordenados do mais próximo para o mais distante (Resistências)
-    const topsAbove = confirmedTops
-      .filter((t) => t.price > curPrice)
-      .sort((a, b) => a.price - b.price);
+    topo = Number(topo.toFixed(decimals));
+    fundo = Number(fundo.toFixed(decimals));
 
-    // Fundos abaixo do preço atual ordenados do mais próximo para o mais distante (Suportes)
-    const bottomsBelow = confirmedBottoms
-      .filter((b) => b.price < curPrice)
-      .sort((a, b) => b.price - a.price);
-
-    // Nível de Resistência 1: Topo mais próximo acima do preço
-    let r1 = topsAbove.length > 0 ? topsAbove[0].price : (highestHigh > curPrice ? highestHigh : curPrice * 1.002);
-    // Nível de Resistência 2: Topo máximo do período
-    let r2 = topsAbove.length > 1 ? topsAbove[topsAbove.length - 1].price : (highestHigh > r1 ? highestHigh : r1 * 1.004);
-
-    // Nível de Suporte 1: Fundo mais próximo abaixo do preço
-    let s1 = bottomsBelow.length > 0 ? bottomsBelow[0].price : (lowestLow < curPrice ? lowestLow : curPrice * 0.998);
-    // Nível de Suporte 2: Fundo mínimo do período
-    let s2 = bottomsBelow.length > 1 ? bottomsBelow[bottomsBelow.length - 1].price : (lowestLow < s1 ? lowestLow : s1 * 0.996);
-
-    // Arredondar para casas decimais oficiais do ativo
-    r1 = Number(r1.toFixed(decimals));
-    r2 = Number(r2.toFixed(decimals));
-    s1 = Number(s1.toFixed(decimals));
-    s2 = Number(s2.toFixed(decimals));
-
-    const distR1Pips = Math.abs((r1 - curPrice) * pipMultiplier);
-    const distS1Pips = Math.abs((curPrice - s1) * pipMultiplier);
-    const distR2Pips = Math.abs((r2 - curPrice) * pipMultiplier);
-    const distS2Pips = Math.abs((curPrice - s2) * pipMultiplier);
+    const distTopoPips = Math.abs((topo - curPrice) * pipMultiplier);
+    const distFundoPips = Math.abs((curPrice - fundo) * pipMultiplier);
 
     return {
       curPrice,
       decimals,
-      r1,
-      r2,
-      s1,
-      s2,
-      distR1Pips,
-      distS1Pips,
-      distR2Pips,
-      distS2Pips,
-      tops: confirmedTops,
-      bottoms: confirmedBottoms,
+      topo,
+      fundo,
+      distTopoPips,
+      distFundoPips,
     };
   }, [activeCandles, currentCandle, technicalData.currentPrice, asset]);
 
@@ -1755,9 +1704,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       className="w-full h-full"
                     />
                     <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
-                      <span className="text-rose-400 font-bold">R1: {srLevels.r1.toFixed(srLevels.decimals)}</span>
+                      <span className="text-rose-400 font-bold">TOPO: {srLevels.topo.toFixed(srLevels.decimals)}</span>
                       <span className="text-neutral-600">|</span>
-                      <span className="text-emerald-400 font-bold">S1: {srLevels.s1.toFixed(srLevels.decimals)}</span>
+                      <span className="text-emerald-400 font-bold">FUNDO: {srLevels.fundo.toFixed(srLevels.decimals)}</span>
                     </div>
                   </div>
                 ) : (
@@ -1766,12 +1715,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     asset={asset}
                     timeframe={timeframe}
                     currentPrice={srLevels.curPrice}
-                    resistance1={srLevels.r1}
-                    resistance2={srLevels.r2}
-                    support1={srLevels.s1}
-                    support2={srLevels.s2}
-                    tops={srLevels.tops}
-                    bottoms={srLevels.bottoms}
+                    resistance={srLevels.topo}
+                    support={srLevels.fundo}
                     height={380}
                   />
                 )}
@@ -1782,62 +1727,58 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <div className="flex items-center gap-2">
                       <Layers className="w-4 h-4 text-cyan-400" />
                       <span className="text-xs font-black text-white uppercase tracking-wider">
-                        SUPORTE & RESISTÊNCIA • TOPOS & FUNDOS REAIS
+                        SUPORTE & RESISTÊNCIA • MARCAÇÃO DE TOPO E FUNDO
                       </span>
                     </div>
                     <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-cyan-300">
-                      Leitura de Pavio 1:1
+                      Pavio Real
                     </span>
                   </div>
 
                   {/* CARD RESISTÊNCIA (TOPO REAL) */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/80 via-rose-900/30 to-black border-2 border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.25)] space-y-1.5">
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-950/80 via-rose-900/30 to-black border-2 border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.25)] space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-                        <span className="text-[11px] font-black text-rose-300 uppercase tracking-wider">
-                          🔴 RESISTÊNCIA 1 (TOPO REAL)
+                        <span className="text-xs font-black text-rose-300 uppercase tracking-wider">
+                          🔴 RESISTÊNCIA (TOPO)
                         </span>
                       </div>
                       <span className="text-[9px] font-black px-2 py-0.5 rounded bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]">
-                        +{srLevels.distR1Pips.toFixed(1)} PIPS ACIMA
+                        +{srLevels.distTopoPips.toFixed(1)} PIPS ACIMA
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between pt-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black font-mono text-white tracking-wider">
-                          {srLevels.r1.toFixed(srLevels.decimals)}
-                        </span>
-                      </div>
+                      <span className="text-2xl font-black font-mono text-white tracking-wider">
+                        {srLevels.topo.toFixed(srLevels.decimals)}
+                      </span>
                       <span className="text-[10px] text-rose-300/80 font-bold">
-                        R2 (Topo Máximo): {srLevels.r2.toFixed(srLevels.decimals)}
+                        Pavio Máximo
                       </span>
                     </div>
                   </div>
 
                   {/* CARD SUPORTE (FUNDO REAL) */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/30 to-black border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.25)] space-y-1.5">
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/30 to-black border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.25)] space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider">
-                          🟢 SUPORTE 1 (FUNDO REAL)
+                        <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">
+                          🟢 SUPORTE (FUNDO)
                         </span>
                       </div>
                       <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-500 text-black shadow-[0_0_8px_rgba(16,185,129,0.6)]">
-                        -{srLevels.distS1Pips.toFixed(1)} PIPS ABAIXO
+                        -{srLevels.distFundoPips.toFixed(1)} PIPS ABAIXO
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between pt-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black font-mono text-white tracking-wider">
-                          {srLevels.s1.toFixed(srLevels.decimals)}
-                        </span>
-                      </div>
+                      <span className="text-2xl font-black font-mono text-white tracking-wider">
+                        {srLevels.fundo.toFixed(srLevels.decimals)}
+                      </span>
                       <span className="text-[10px] text-emerald-300/80 font-bold">
-                        S2 (Fundo Mínimo): {srLevels.s2.toFixed(srLevels.decimals)}
+                        Pavio Mínimo
                       </span>
                     </div>
                   </div>

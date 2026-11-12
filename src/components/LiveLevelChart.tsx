@@ -6,12 +6,8 @@ interface LiveLevelChartProps {
   asset: Asset;
   timeframe: TimeFrame;
   currentPrice: number;
-  resistance1: number;
-  resistance2?: number;
-  support1: number;
-  support2?: number;
-  tops?: { price: number; index: number }[];
-  bottoms?: { price: number; index: number }[];
+  resistance: number; // Topo
+  support: number;    // Fundo
   height?: number;
 }
 
@@ -20,13 +16,9 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
   asset,
   timeframe,
   currentPrice,
-  resistance1,
-  resistance2,
-  support1,
-  support2,
-  tops = [],
-  bottoms = [],
-  height = 320,
+  resistance,
+  support,
+  height = 340,
 }) => {
   const chartWidth = 900;
   const paddingRight = 95;
@@ -34,7 +26,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
   const paddingTop = 25;
   const paddingBottom = 25;
 
-  // Usa as últimas 45 velas para visualização limpa
+  // Usa as últimas 45 velas para visualização nítida
   const visibleCandles = useMemo(() => {
     return candles && candles.length > 0 ? candles.slice(-45) : [];
   }, [candles]);
@@ -54,11 +46,8 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
       max = base * 1.002;
     }
 
-    // Inclui os níveis de Suporte e Resistência nos limites verticais se forem razoáveis
-    if (Number.isFinite(resistance1) && resistance1 > 0) max = Math.max(max, resistance1);
-    if (Number.isFinite(resistance2) && resistance2 > 0) max = Math.max(max, resistance2);
-    if (Number.isFinite(support1) && support1 > 0) min = Math.min(min, support1);
-    if (Number.isFinite(support2) && support2 > 0) min = Math.min(min, support2);
+    if (Number.isFinite(resistance) && resistance > 0) max = Math.max(max, resistance);
+    if (Number.isFinite(support) && support > 0) min = Math.min(min, support);
     if (Number.isFinite(currentPrice) && currentPrice > 0) {
       max = Math.max(max, currentPrice);
       min = Math.min(min, currentPrice);
@@ -75,7 +64,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
       maxPrice: safeMax,
       priceRange: safeRange,
     };
-  }, [visibleCandles, currentPrice, resistance1, resistance2, support1, support2]);
+  }, [visibleCandles, currentPrice, resistance, support]);
 
   // Transforma preço em coordenada Y do SVG
   const getY = (price: number): number => {
@@ -92,33 +81,31 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
   const decimals = asset.pipDecimals || (asset.category === 'CRYPTO' ? 2 : 5);
 
   const currentY = getY(currentPrice);
-  const r1Y = getY(resistance1);
-  const r2Y = resistance2 ? getY(resistance2) : null;
-  const s1Y = getY(support1);
-  const s2Y = support2 ? getY(support2) : null;
+  const rY = getY(resistance);
+  const sY = getY(support);
 
   return (
     <div className="w-full bg-[#070a12] border-2 border-neutral-800 rounded-2xl overflow-hidden shadow-2xl relative select-none font-mono">
       {/* Top Banner do Gráfico */}
-      <div className="flex items-center justify-between px-3 py-2 bg-neutral-950/80 border-b border-neutral-800/80 text-[10px]">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-neutral-950/90 border-b border-neutral-800/80 text-[10px]">
         <div className="flex items-center gap-2">
           <span className="font-black text-white">{asset.symbol}</span>
           <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
             {timeframe}
           </span>
           <span className="text-neutral-400 hidden sm:inline">
-            • Marcação Direta de Topos e Fundos
+            • Marcações Exclusivas de Topo e Fundo
           </span>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-rose-400 font-bold">
-            <span className="w-2 h-0.5 bg-rose-500 inline-block" />
-            <span>RESISTÊNCIA: {resistance1.toFixed(decimals)}</span>
+            <span className="w-2.5 h-1 bg-rose-500 inline-block rounded-full" />
+            <span>TOPO: {resistance.toFixed(decimals)}</span>
           </div>
           <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-            <span className="w-2 h-0.5 bg-emerald-500 inline-block" />
-            <span>SUPORTE: {support1.toFixed(decimals)}</span>
+            <span className="w-2.5 h-1 bg-emerald-500 inline-block rounded-full" />
+            <span>FUNDO: {support.toFixed(decimals)}</span>
           </div>
         </div>
       </div>
@@ -131,8 +118,8 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
           style={{ height: `${height}px` }}
           preserveAspectRatio="none"
         >
-          {/* Linhas de Grade de Fundo */}
-          {[0.2, 0.4, 0.6, 0.8].map((ratio, idx) => {
+          {/* Linhas de Grade Sutis */}
+          {[0.25, 0.5, 0.75].map((ratio, idx) => {
             const y = paddingTop + ratio * (height - paddingTop - paddingBottom);
             return (
               <line
@@ -148,70 +135,33 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             );
           })}
 
-          {/* 🔴 LINHA DE RESISTÊNCIA 2 (TOPO MÁXIMO SECUNDÁRIO) */}
-          {r2Y !== null && resistance2 && (
-            <g>
-              <line
-                x1={paddingLeft}
-                y1={r2Y}
-                x2={chartWidth - paddingRight}
-                y2={r2Y}
-                stroke="#f43f5e"
-                strokeWidth="1.2"
-                strokeDasharray="3 3"
-                opacity="0.65"
-              />
-              <rect
-                x={chartWidth - paddingRight + 4}
-                y={r2Y - 8}
-                width={paddingRight - 8}
-                height={16}
-                fill="#4c0519"
-                stroke="#f43f5e"
-                strokeWidth="0.8"
-                rx="3"
-                opacity="0.8"
-              />
-              <text
-                x={chartWidth - paddingRight + 8}
-                y={r2Y + 3.5}
-                fill="#fca5a5"
-                fontSize="8.5"
-                fontWeight="bold"
-                fontFamily="JetBrains Mono, monospace"
-              >
-                R2: {resistance2.toFixed(decimals)}
-              </text>
-            </g>
-          )}
-
-          {/* 🔴 LINHA DE RESISTÊNCIA 1 (TOPO PRINCIPAL / VENDA) */}
-          {Number.isFinite(r1Y) && (
+          {/* 🔴 LINHA DE RESISTÊNCIA (TOPO REAL) */}
+          {Number.isFinite(rY) && (
             <g className="transition-all duration-300">
               {/* Brilho da Linha */}
               <line
                 x1={paddingLeft}
-                y1={r1Y}
+                y1={rY}
                 x2={chartWidth - paddingRight}
-                y2={r1Y}
+                y2={rY}
                 stroke="#f43f5e"
-                strokeWidth="4"
-                opacity="0.2"
+                strokeWidth="5"
+                opacity="0.25"
               />
               {/* Linha Principal Tracejada */}
               <line
                 x1={paddingLeft}
-                y1={r1Y}
+                y1={rY}
                 x2={chartWidth - paddingRight}
-                y2={r1Y}
+                y2={rY}
                 stroke="#f43f5e"
-                strokeWidth="1.8"
+                strokeWidth="2"
                 strokeDasharray="6 3"
               />
-              {/* Badge na régua de preços */}
+              {/* Badge com Cotação do Topo na régua */}
               <rect
                 x={chartWidth - paddingRight + 2}
-                y={r1Y - 10}
+                y={rY - 10}
                 width={paddingRight - 4}
                 height={20}
                 fill="#e11d48"
@@ -221,81 +171,44 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
               />
               <text
                 x={chartWidth - paddingRight + 6}
-                y={r1Y + 3.5}
+                y={rY + 3.5}
                 fill="#ffffff"
                 fontSize="9"
                 fontWeight="900"
                 fontFamily="JetBrains Mono, monospace"
               >
-                R1 {resistance1.toFixed(decimals)}
+                TOPO {resistance.toFixed(decimals)}
               </text>
             </g>
           )}
 
-          {/* 🟢 LINHA DE SUPORTE 2 (FUNDO MÍNIMO SECUNDÁRIO) */}
-          {s2Y !== null && support2 && (
-            <g>
-              <line
-                x1={paddingLeft}
-                y1={s2Y}
-                x2={chartWidth - paddingRight}
-                y2={s2Y}
-                stroke="#10b981"
-                strokeWidth="1.2"
-                strokeDasharray="3 3"
-                opacity="0.65"
-              />
-              <rect
-                x={chartWidth - paddingRight + 4}
-                y={s2Y - 8}
-                width={paddingRight - 8}
-                height={16}
-                fill="#064e3b"
-                stroke="#10b981"
-                strokeWidth="0.8"
-                rx="3"
-                opacity="0.8"
-              />
-              <text
-                x={chartWidth - paddingRight + 8}
-                y={s2Y + 3.5}
-                fill="#a7f3d0"
-                fontSize="8.5"
-                fontWeight="bold"
-                fontFamily="JetBrains Mono, monospace"
-              >
-                S2: {support2.toFixed(decimals)}
-              </text>
-            </g>
-          )}
-
-          {/* 🟢 LINHA DE SUPORTE 1 (FUNDO PRINCIPAL / COMPRA) */}
-          {Number.isFinite(s1Y) && (
+          {/* 🟢 LINHA DE SUPORTE (FUNDO REAL) */}
+          {Number.isFinite(sY) && (
             <g className="transition-all duration-300">
               {/* Brilho da Linha */}
               <line
                 x1={paddingLeft}
-                y1={s1Y}
+                y1={sY}
                 x2={chartWidth - paddingRight}
-                y2={s1Y}
+                y2={sY}
                 stroke="#10b981"
-                strokeWidth="4"
-                opacity="0.2"
+                strokeWidth="5"
+                opacity="0.25"
               />
               {/* Linha Principal Tracejada */}
               <line
                 x1={paddingLeft}
-                y1={s1Y}
+                y1={sY}
                 x2={chartWidth - paddingRight}
-                y2={s1Y}
+                y2={sY}
                 stroke="#10b981"
-                strokeWidth="1.8"
+                strokeWidth="2"
                 strokeDasharray="6 3"
               />
-              {/* Badge na régua de preços */}
+              {/* Badge com Cotação do Fundo na régua */}
               <rect
                 x={chartWidth - paddingRight + 2}
-                y={s1Y - 10}
+                y={sY - 10}
                 width={paddingRight - 4}
                 height={20}
                 fill="#059669"
@@ -305,13 +218,13 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
               />
               <text
                 x={chartWidth - paddingRight + 6}
-                y={s1Y + 3.5}
+                y={sY + 3.5}
                 fill="#ffffff"
                 fontSize="9"
                 fontWeight="900"
                 fontFamily="JetBrains Mono, monospace"
               >
-                S1 {support1.toFixed(decimals)}
+                FUNDO {support.toFixed(decimals)}
               </text>
             </g>
           )}
@@ -329,9 +242,6 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 
             const candleColor = isBullish ? '#10b981' : '#f43f5e';
             const wickColor = isBullish ? '#34d399' : '#fb7185';
-
-            const isResistanceTop = Math.abs(c.high - resistance1) < 0.00005 * currentPrice;
-            const isSupportBottom = Math.abs(c.low - support1) < 0.00005 * currentPrice;
 
             return (
               <g key={c.time || i}>
@@ -355,22 +265,6 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                   strokeWidth="0.5"
                   rx="1"
                 />
-
-                {/* Marcador Visual do Topo Testado */}
-                {isResistanceTop && (
-                  <polygon
-                    points={`${xCenter},${yHigh - 4} ${xCenter - 4},${yHigh - 10} ${xCenter + 4},${yHigh - 10}`}
-                    fill="#f43f5e"
-                  />
-                )}
-
-                {/* Marcador Visual do Fundo Testado */}
-                {isSupportBottom && (
-                  <polygon
-                    points={`${xCenter},${yLow + 4} ${xCenter - 4},${yLow + 10} ${xCenter + 4},${yLow + 10}`}
-                    fill="#10b981"
-                  />
-                )}
               </g>
             );
           })}
@@ -421,4 +315,3 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
     </div>
   );
 };
-

@@ -50,15 +50,11 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = ({
         allow_symbol_change: false,
         calendar: false,
         hide_top_toolbar: false,
-        hide_side_toolbar: false, // Barra lateral de desenho ativa para traçar marcações
+        hide_side_toolbar: false, // Barra lateral de ferramentas de desenho para marcações manuais
         hide_legend: false,
         save_image: false,
         backgroundColor: '#07090e',
         gridColor: 'rgba(255, 255, 255, 0.04)',
-        studies: [
-          'PivotPointsHighLow@tv-basicstudies', // Marcação automática oficial do TradingView de Topos e Fundos (Pivot High/Low)
-          'PivotPointsStandard@tv-basicstudies', // Marcação oficial de Linhas de Suporte e Resistência (R1, R2, S1, S2, P)
-        ],
         support_host: 'https://www.tradingview.com',
       });
     } else {
