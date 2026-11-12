@@ -211,30 +211,6 @@ export function getBybitPair(symbol: string): string {
   return clean + 'USDT';
 }
 
-export function getBinancePair(symbol: string): string {
-  const sym = symbol.toUpperCase();
-  if (sym.includes('BTC')) return 'btcusdt';
-  if (sym.includes('ETH')) return 'ethusdt';
-  if (sym.includes('SOL')) return 'solusdt';
-  if (sym.includes('BNB')) return 'bnbusdt';
-  if (sym.includes('XRP')) return 'xrpusdt';
-  return 'btcusdt';
-}
-
-export function getBinanceInterval(tf: TimeFrame): string {
-  switch (tf) {
-    case 'M1': return '1m';
-    case 'M2': return '1m'; // Binance não possui 2m nativo; buscamos 1m e agrupamos a cada 2 velas
-    case 'M5': return '5m';
-    case 'M15': return '15m';
-    case 'M30': return '30m';
-    case 'H1': return '1h';
-    case 'H4': return '4h';
-    case 'D1': return '1d';
-    default: return '1m';
-  }
-}
-
 function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -315,7 +291,7 @@ export function generateInitialCandles(asset: Asset, timeframe: TimeFrame, count
 }
 
 /**
- * Market Data Manager com Cache Persistente Multi-Timeframe e Binance WebSocket
+ * Market Data Manager com Cache Persistente Multi-Timeframe e Bybit WebSocket
  */
 export class MarketDataManager {
   private cryptoWs: WebSocket | null = null;
@@ -405,7 +381,7 @@ export class MarketDataManager {
   }
 
   /**
-   * Busca cotações e velas reais diretamente do TradingView / Binance
+   * Busca cotações e velas reais diretamente do TradingView / Bybit
    */
   private async loadCandlesForCurrentSelection() {
     // 1. Sempre tenta buscar primeiro a cotação oficial do TradingView
@@ -428,7 +404,7 @@ export class MarketDataManager {
     }
 
     if (this.currentAsset.category === 'CRYPTO') {
-      // 1. Bybit Spot Klines Oficial
+      // 1. Bybit Spot Klines Oficial (100% Bybit)
       try {
         const bybitPair = getBybitPair(this.currentAsset.symbol);
         let bybitInterval = '1';
@@ -439,8 +415,9 @@ export class MarketDataManager {
         else if (this.currentTimeframe === 'H4') bybitInterval = '240';
         else if (this.currentTimeframe === 'D1') bybitInterval = 'D';
 
+        const limit = this.currentTimeframe === 'M2' ? 110 : 55;
         const bybitRes = await fetch(
-          `https://api.bybit.com/v5/market/kline?category=spot&symbol=${bybitPair}&interval=${bybitInterval}&limit=55`
+          `https://api.bybit.com/v5/market/kline?category=spot&symbol=${bybitPair}&interval=${bybitInterval}&limit=${limit}`
         );
         if (bybitRes.ok) {
           const bybitData = await bybitRes.json();
@@ -456,41 +433,7 @@ export class MarketDataManager {
               isClosed: idx < rawList.length - 1,
             }));
 
-            if (parsed.length > 0) {
-              this.currentAsset.currentPrice = parsed[parsed.length - 1].close;
-              this.candles = parsed;
-              this.candleCache.set(key, parsed);
-              this.notifyTickImmediately();
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[MarketData] Fallback Bybit klines para', this.currentAsset.symbol, err);
-      }
-
-      // 2. Fallback secundário Binance com CORS aberto (* via data-api.binance.vision)
-      try {
-        const pair = getBinancePair(this.currentAsset.symbol);
-        const interval = getBinanceInterval(this.currentTimeframe);
-        const limit = this.currentTimeframe === 'M2' ? 110 : 55;
-        const res = await fetch(
-          `https://data-api.binance.vision/api/v3/klines?symbol=${pair.toUpperCase()}&interval=${interval}&limit=${limit}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            let parsed: Candle[] = data.map((item: any, idx: number) => ({
-              time: Math.floor(Number(item[0]) / 1000),
-              open: Number(parseFloat(item[1]).toFixed(this.currentAsset.pipDecimals)),
-              high: Number(parseFloat(item[2]).toFixed(this.currentAsset.pipDecimals)),
-              low: Number(parseFloat(item[3]).toFixed(this.currentAsset.pipDecimals)),
-              close: Number(parseFloat(item[4]).toFixed(this.currentAsset.pipDecimals)),
-              volume: Math.round(parseFloat(item[5])),
-              isClosed: idx < data.length - 1,
-            }));
-
-            // Se for M2, agrupa com precisão pares de velas de 1m em velas de 2m
+            // Se for M2, agrupa com precisão pares de velas de 1m da Bybit em velas de 2m
             if (this.currentTimeframe === 'M2' && parsed.length >= 2) {
               const m2Candles: Candle[] = [];
               for (let i = 0; i < parsed.length - 1; i += 2) {
@@ -510,16 +453,16 @@ export class MarketDataManager {
             }
 
             if (parsed.length > 0) {
-              parsed[parsed.length - 1].close = this.currentAsset.currentPrice;
+              this.currentAsset.currentPrice = parsed[parsed.length - 1].close;
+              this.candles = parsed;
+              this.candleCache.set(key, parsed);
+              this.notifyTickImmediately();
+              return;
             }
-            this.candles = parsed;
-            this.candleCache.set(key, parsed);
-            this.notifyTickImmediately();
-            return;
           }
         }
       } catch (err) {
-        console.warn('[MarketData] Fallback klines para', this.currentAsset.symbol, err);
+        console.warn('[MarketData] Falha na consulta Bybit klines para', this.currentAsset.symbol, err);
       }
     }
 
@@ -639,22 +582,7 @@ export class MarketDataManager {
   }
 
   public async syncServerTime() {
-    // 1. Prioridade máxima: Binance API aberta (data-api.binance.vision com CORS aberto no navegador)
-    try {
-      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const res = await fetch('https://data-api.binance.vision/api/v3/time', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const rtt = Math.max(1, t1 - t0);
-        const estimatedServerMs = Number(data.serverTime) + Math.round(rtt / 2);
-        this.serverOffsetMs = estimatedServerMs - Date.now();
-        console.log(`[MarketData] Relógio atômico sincronizado com Binance/Hiove. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
-        return;
-      }
-    } catch { }
-
-    // 2. Fallback: Bybit Server Time (CORS aberto)
+    // 1. Prioridade máxima: Bybit Server Time oficial (CORS aberto)
     try {
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const res = await fetch('https://api.bybit.com/v5/market/time', { cache: 'no-store' });
@@ -811,26 +739,13 @@ export class MarketDataManager {
         };
 
         this.cryptoWs.onerror = () => {
-          // Fallback para Binance WebSocket se Bybit falhar
-          try {
-            const bPair = getBinancePair(this.currentAsset.symbol);
-            const bInterval = getBinanceInterval(this.currentTimeframe);
-            const bWs = new WebSocket(`wss://stream.binance.com:9443/ws/${bPair}@kline_${bInterval}`);
-            bWs.onmessage = (e) => {
-              try {
-                const bData = JSON.parse(e.data);
-                if (bData?.k) {
-                  const cPrice = parseFloat(bData.k.c);
-                  if (!this.isUsingHioveFeed()) {
-                    this.currentAsset.currentPrice = cPrice;
-                    this.updateCurrentCandle(cPrice, bData.k);
-                  }
-                }
-              } catch { }
-            };
-            this.cryptoWs = bWs;
-          } catch { }
+          // Reconexão automática Bybit WebSocket
           this.notifySource();
+          setTimeout(() => {
+            if (this.isConnected && this.currentAsset.category === 'CRYPTO') {
+              this.reconnectStreams();
+            }
+          }, 2500);
         };
       } catch {
         // Fallback to local tick loop
@@ -892,7 +807,7 @@ export class MarketDataManager {
     }, 500);
   }
 
-  private updateCurrentCandle(price: number, binanceK?: any) {
+  private updateCurrentCandle(price: number, klineData?: any) {
     const { currentBoundary } = this.getCandleTiming();
 
     if (this.candles.length === 0) {
@@ -911,9 +826,9 @@ export class MarketDataManager {
       // Start new candle
       const newCandle: Candle = {
         time: currentBoundary,
-        open: binanceK?.o ? parseFloat(binanceK.o) : price,
-        high: binanceK ? Math.max(parseFloat(binanceK.h), price) : price,
-        low: binanceK ? Math.min(parseFloat(binanceK.l), price) : price,
+        open: klineData?.o ? parseFloat(klineData.o) : price,
+        high: klineData ? Math.max(parseFloat(klineData.h), price) : price,
+        low: klineData ? Math.min(parseFloat(klineData.l), price) : price,
         close: price,
         volume: 1,
         isClosed: false,
@@ -927,16 +842,16 @@ export class MarketDataManager {
     } else {
       // Update existing candle
       last.close = price;
-      if (binanceK) {
+      if (klineData) {
         // Preserva o open original da vela (nunca sobrescreve com outro valor depois do primeiro)
-        if (binanceK.o && (!last.open || last.open <= 0)) {
-          last.open = parseFloat(binanceK.o);
+        if (klineData.o && (!last.open || last.open <= 0)) {
+          last.open = parseFloat(klineData.o);
         }
-        const hVal = parseFloat(binanceK.h);
-        const lVal = parseFloat(binanceK.l);
+        const hVal = parseFloat(klineData.h);
+        const lVal = parseFloat(klineData.l);
         if (hVal > last.high) last.high = hVal;
         if (lVal < last.low) last.low = lVal;
-        if (binanceK.x) last.isClosed = true;
+        if (klineData.x) last.isClosed = true;
       } else {
         if (price > last.high) last.high = price;
         if (price < last.low) last.low = price;
@@ -1020,14 +935,14 @@ export class MarketDataManager {
 
     this.onSourceChange({
       providerName: isCrypto
-        ? `Binance WebSocket / TradingView Spot (${this.currentAsset.tvSymbol}) 24/7`
+        ? `Bybit WebSocket / TradingView Spot (${this.currentAsset.tvSymbol}) 24/7`
         : `TradingView Interbank Spot Real-Time (${this.currentAsset.tvSymbol})`,
       sourceType: 'REAL_FEED',
       status: this.isConnected ? 'CONNECTED' : 'DISCONNECTED',
       latencyMs: this.latency,
       lastTickTime: Date.now(),
       disclaimer: isCrypto
-        ? 'Cotações em tempo real diretamente do livro de ofertas spot da Binance e TradingView. Mercado 24/7 aberto no fim de semana.'
+        ? 'Cotações em tempo real diretamente do livro de ofertas spot da Bybit e TradingView. Mercado 24/7 aberto no fim de semana.'
         : 'Cotações oficiais interbancárias TradingView em tempo real para Forex.',
     });
   }

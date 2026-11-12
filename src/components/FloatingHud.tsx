@@ -755,7 +755,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   className="bg-cyan-950/80 hover:bg-cyan-900/90 text-[10px] text-cyan-300 font-mono font-bold px-1.5 py-0.5 rounded border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none pr-4"
                   title="Clique para alternar o par oficial monitorado pela IA"
                 >
-                  <optgroup label="Cripto 24/7 (Bybit / Binance)">
+                  <optgroup label="Cripto 24/7 (Bybit)">
                     <option value="BTC/USD">BTC/USD (Bitcoin)</option>
                     <option value="ETH/USD">ETH/USD (Ethereum)</option>
                     <option value="SOL/USD">SOL/USD (Solana)</option>
@@ -1115,7 +1115,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                               );
                             })}
                         </optgroup>
-                        <optgroup label="⚡ CRIPTOMOEDAS (Abertas 24/7)">
+                        <optgroup label="⚡ CRIPTOMOEDAS (Bybit 24/7)">
                           {assetsList
                             .filter((a) => a.category === 'CRYPTO')
                             .map((a) => (
