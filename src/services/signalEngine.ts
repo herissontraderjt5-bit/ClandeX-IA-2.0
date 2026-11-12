@@ -66,6 +66,54 @@ export interface ActiveSignalState {
   lastOpportunityCandleTime: number;
 }
 
+/**
+ * Determina se existe um PAVIO DE REJEIÇÃO REAL e significativo.
+ * Para evitar falsos alarmes causados por micro-oscilações de spread (0.00001):
+ * 1. O pavio deve ter tamanho mínimo real (mínimo de pips ou % da cotação).
+ * 2. O pavio deve representar pelo menos 45% de TODA a amplitude da vela (candleRange).
+ * 3. O pavio deve ser estritamente maior que o corpo da vela (wick > body).
+ * 4. A vela NÃO pode estar fechando rente à extremidade (se fecha na mínima, não há rejeição compradora!).
+ */
+function isTrueRejectionWick(
+  wick: number,
+  body: number,
+  candleRange: number,
+  currentPrice: number,
+  direction: 'UPPER' | 'LOWER',
+  candle: Candle
+): boolean {
+  // 1. Limiar mínimo de tamanho para evitar falsos alarmes de ruído
+  let minWickSize = 0.00020; // 2.0 pips em pares normais
+  if (currentPrice > 1000) minWickSize = currentPrice * 0.0005; // BTC, ETH
+  else if (currentPrice > 50) minWickSize = currentPrice * 0.0006; // SOL, BNB
+  else if (currentPrice < 5) minWickSize = Math.max(0.00025, currentPrice * 0.0008); // XRP (evita 0.00002)
+
+  // Se o pavio for menor que a oscilação natural mínima de spread, NUNCA é pavio de rejeição
+  if (wick < minWickSize) return false;
+
+  // 2. Deve representar pelo menos 45% da amplitude total da vela (formato martelo/pinbar evidente)
+  if (candleRange <= 0.00001) return false;
+  const wickRatio = wick / candleRange;
+  if (wickRatio < 0.45) return false;
+
+  // 3. O pavio deve ser estritamente maior que o corpo da vela
+  if (wick <= body) return false;
+
+  // 4. Verificação de fechamento: se estiver fechando perto da mínima para PUT, não há rejeição compradora
+  if (direction === 'LOWER') {
+    // Rejeição inferior significa que o preço subiu muito em relação à mínima (deixando pavio embaixo)
+    // Se o fechamento estiver nos 30% inferiores da vela, ela é uma vela de força vendedora, sem rejeição!
+    const distFromLow = candle.close - candle.low;
+    if (distFromLow < candleRange * 0.35) return false;
+  } else {
+    // Rejeição superior significa que o preço caiu muito em relação à máxima
+    const distFromHigh = candle.high - candle.close;
+    if (distFromHigh < candleRange * 0.35) return false;
+  }
+
+  return true;
+}
+
 export class SignalEngine {
   private currentUserEmail: string | null = null;
   private activePreAlert: SignalRecord | null = null;
@@ -438,6 +486,7 @@ export class SignalEngine {
         // REGRA ESTRITA DO USUÁRIO PARA CANCELAMENTO:
         // "no cancelamento do sinal so e para cancelar se estiver um pavio de rejeição esse pavio tem que ser maior que o corpo da vela"
         const body = Math.abs(currentCandle.close - currentCandle.open);
+        const candleRange = Math.max(currentCandle.high - currentCandle.low, 0.00001);
         const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
         const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
 
@@ -445,9 +494,9 @@ export class SignalEngine {
         let cancelReason = '';
 
         if (this.activePreAlert.direction === 'CALL') {
-          // Para CALL: cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se a vela do Padrão 2 estiver fechando vermelha contrária à compra
-          if (upperWick > body && upperWick > 0.00001) {
+          // Para CALL: cancela se houver pavio SUPERIOR de rejeição real maior que o corpo da vela
+          const isUpperRejection = isTrueRejectionWick(upperWick, body, candleRange, currentCandle.close, 'UPPER', currentCandle);
+          if (isUpperRejection) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
           } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
@@ -458,9 +507,9 @@ export class SignalEngine {
             cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
           }
         } else if (this.activePreAlert.direction === 'PUT') {
-          // Para PUT: cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se a vela do Padrão 1 estiver fechando verde contrária à venda
-          if (lowerWick > body && lowerWick > 0.00001) {
+          // Para PUT: cancela se houver pavio INFERIOR de rejeição real maior que o corpo da vela
+          const isLowerRejection = isTrueRejectionWick(lowerWick, body, candleRange, currentCandle.close, 'LOWER', currentCandle);
+          if (isLowerRejection) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
           } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
@@ -581,12 +630,13 @@ export class SignalEngine {
         }
 
         if (activeDecision) {
+          const body = Math.abs(currentCandle.close - currentCandle.open);
+          const candleRange = Math.max(currentCandle.high - currentCandle.low, 0.00001);
           const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
           const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
-          const body = Math.abs(currentCandle.close - currentCandle.open);
 
-          const isHardResistanceBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
-          const isHardSupportBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
+          const isHardResistanceBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'CALL' && marketAnalysis?.nearResistance && isTrueRejectionWick(upperWick, body, candleRange, currentCandle.close, 'UPPER', currentCandle);
+          const isHardSupportBlock = activeDecision.strategy.id !== 'estrategia_suporte_resistencia' && activeDecision.direction === 'PUT' && marketAnalysis?.nearSupport && isTrueRejectionWick(lowerWick, body, candleRange, currentCandle.close, 'LOWER', currentCandle);
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
             const bRes = this.backtestResults.find((b) => b.id === activeDecision!.strategy.id);
@@ -686,13 +736,14 @@ export class SignalEngine {
     let stratWinRate: number | undefined = undefined;
 
     if (stratDecision) {
-      // Trava de Rejeição Extrema: não compra contra teto de resistência com pavio superior maior que metade do corpo
+      // Trava de Rejeição Extrema: não compra contra teto de resistência com pavio superior real
+      const body = Math.abs(currentCandle.close - currentCandle.open);
+      const candleRange = Math.max(currentCandle.high - currentCandle.low, 0.00001);
       const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
       const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
-      const body = Math.abs(currentCandle.close - currentCandle.open);
 
-      const isHardResistanceBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && upperWick > body;
-      const isHardSupportBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && lowerWick > body;
+      const isHardResistanceBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'CALL' && marketAnalysis?.nearResistance && isTrueRejectionWick(upperWick, body, candleRange, currentCandle.close, 'UPPER', currentCandle);
+      const isHardSupportBlock = stratDecision.strategy.id !== 'estrategia_suporte_resistencia' && stratDecision.direction === 'PUT' && marketAnalysis?.nearSupport && isTrueRejectionWick(lowerWick, body, candleRange, currentCandle.close, 'LOWER', currentCandle);
 
       if (!isHardResistanceBlock && !isHardSupportBlock) {
         signalDirection = stratDecision.direction;
