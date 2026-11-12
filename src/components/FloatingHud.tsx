@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   HelpCircle,
   Send,
+  Chrome,
   Zap,
   BarChart3,
   ChevronRight,
@@ -146,6 +147,7 @@ interface FloatingHudProps {
   onOpenSettings: () => void;
   onOpenWebhook?: () => void;
   onOpenVoice?: () => void;
+  onOpenExtension?: () => void;
   onTriggerAiInsight: () => void;
   onTriggerTestSignal?: () => void;
   onTriggerCancelTest?: () => void;
@@ -276,6 +278,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   onOpenSettings,
   onOpenWebhook,
   onOpenVoice,
+  onOpenExtension,
   onTriggerAiInsight,
   onTriggerTestSignal,
   onTriggerCancelTest,
@@ -1543,6 +1546,31 @@ DIRETRIZES:
                     <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
                     <span>{canInstallPwa ? 'Baixar / Instalar App' : 'Instalar no Aparelho'}</span>
                   </button>
+                </div>
+
+                {/* STATUS DA COTAÇÃO: HIOVE DIRETO VS BYBIT/TRADINGVIEW */}
+                <div className="flex items-center justify-between p-2 bg-black/60 border border-neutral-800 rounded-xl font-mono text-[10px]">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${dataSource.providerName.includes('HIOVE') ? 'bg-emerald-400 shadow-[0_0_8px_#10b981] animate-ping' : 'bg-cyan-400'}`} />
+                    <span className="text-neutral-400">Fonte:</span>
+                    <strong className={`truncate ${dataSource.providerName.includes('HIOVE') ? 'text-emerald-400 font-bold' : 'text-cyan-300'}`}>
+                      {dataSource.providerName.includes('HIOVE') ? 'HIOVE DIRETO (0ms)' : 'BYBIT / TRADINGVIEW'}
+                    </strong>
+                  </div>
+                  {onOpenExtension && (
+                    <button
+                      onClick={onOpenExtension}
+                      className={`ml-2 px-2 py-0.5 rounded transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                        dataSource.providerName.includes('HIOVE')
+                          ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
+                          : 'bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 hover:text-white hover:bg-cyan-900'
+                      }`}
+                      title="Configurar Extensão Chrome para puxar cotações 100% da Hiove"
+                    >
+                      <Chrome className="w-3 h-3 text-cyan-400" />
+                      <span>{dataSource.providerName.includes('HIOVE') ? 'Hiove Ativa' : 'Sincronizar Hiove'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* 1. PLACAR DO DIA COM A DATA DE HOJE E QUANTIDADE DE WIN E LOSS */}

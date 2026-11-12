@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "ClandeX-IA — Sincronizador de Cotações Hiove",
+  "version": "2.0.0",
+  "description": "Sincroniza as cotações em tempo real da corretora Hiove diretamente com o ClandeX-IA para apuração perfeita de WIN e LOSS no placar.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://app.hiove.com/*",
+    "https://*.hiove.com/*",
+    "https://hiove.io/*",
+    "https://*.hiove.io/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.hiove.com/*",
+        "https://*.hiove.com/*",
+        "https://hiove.io/*",
+        "https://*.hiove.io/*"
+      ],
+      "js": ["content_script.js"],
+      "css": ["hud_styles.css"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page_hook.js"],
+      "matches": [
+        "https://app.hiove.com/*",
+        "https://*.hiove.com/*",
+        "https://hiove.io/*",
+        "https://*.hiove.io/*"
+      ]
+    }
+  ]
+}

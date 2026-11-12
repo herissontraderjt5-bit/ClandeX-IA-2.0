@@ -1,0 +1,27 @@
+/* ClandeX-IA — Floating Badge Styles on Hiove */
+#clandex-hiove-sync-badge {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 99999999;
+  background: rgba(8, 9, 14, 0.92);
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 0 10px rgba(6, 182, 212, 0.25);
+  padding: 6px 12px;
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  user-select: none;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}

@@ -584,6 +584,7 @@ export default function App() {
           setIsWebhookModalOpen(true);
         }}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
+        onOpenExtension={() => setIsExtensionModalOpen(true)}
         onToggleSound={handleToggleSound}
       />
 
@@ -613,6 +614,7 @@ export default function App() {
         onLogout={handleLogout}
         onRefreshSession={handleRefreshSession}
         onOpenAdminPanel={() => setIsAdminModalOpen(true)}
+        onOpenExtension={() => setIsExtensionModalOpen(true)}
         onSelectAnalysisProfile={handleSelectAnalysisProfile}
         onSelectAsset={handleSelectAsset}
         onSelectTimeframe={handleSelectTimeframe}

@@ -331,6 +331,8 @@ export class MarketDataManager {
   private isDemoMode = false;
   private serverOffsetMs = 0;
   private manualOffsetSec = 0;
+  private lastHioveTickTime = 0;
+  private isHioveFeedActive = false;
 
   constructor() {
     this.syncServerTime();
@@ -339,6 +341,26 @@ export class MarketDataManager {
       window.setInterval(() => {
         this.syncServerTime().catch(() => {});
       }, 45000);
+
+      // Ponte de integração direta com a Extensão Chrome ClandeX (Cotação oficial da Corretora Hiove)
+      window.addEventListener('message', (event) => {
+        if (event.data && (event.data.type === 'CLANDEX_HIOVE_TICK' || event.data.type === 'CLANDEX_HOOK_TICK')) {
+          const { price, ticker, time } = event.data;
+          this.updateFromHiove(price, ticker, time);
+        }
+      });
+
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          const bc = new BroadcastChannel('clandex_hiove_channel');
+          bc.onmessage = (event) => {
+            if (event.data && (event.data.type === 'CLANDEX_HIOVE_TICK' || event.data.type === 'CLANDEX_HOOK_TICK')) {
+              const { price, ticker, time } = event.data;
+              this.updateFromHiove(price, ticker, time);
+            }
+          };
+        } catch {}
+      }
     }
 
     const liveAssets = getLiveAssets();
@@ -356,12 +378,14 @@ export class MarketDataManager {
         assetMatch.change24h = tvData.change24h;
       }
 
-      // Se for o ativo em foco, atualiza preço, calibra candle e dispara evento
+      // Se for o ativo em foco, atualiza preço, calibra candle e dispara evento (apenas se Hiove feed não estiver dominando)
       if (tvData.symbol === this.currentAsset.symbol) {
-        this.currentAsset.currentPrice = tvData.price;
-        this.currentAsset.change24h = tvData.change24h;
-        this.updateCurrentCandle(tvData.price);
-        this.notifyTickImmediately();
+        if (!this.isUsingHioveFeed()) {
+          this.currentAsset.currentPrice = tvData.price;
+          this.currentAsset.change24h = tvData.change24h;
+          this.updateCurrentCandle(tvData.price);
+          this.notifyTickImmediately();
+        }
       }
     });
 
@@ -772,14 +796,16 @@ export class MarketDataManager {
             if (msg && msg.topic && Array.isArray(msg.data) && msg.data.length > 0) {
               const k = msg.data[0];
               const closePrice = parseFloat(k.close);
-              this.currentAsset.currentPrice = closePrice;
-              this.updateCurrentCandle(closePrice, {
-                o: k.open,
-                h: k.high,
-                l: k.low,
-                c: k.close,
-                x: k.confirm,
-              });
+              if (!this.isUsingHioveFeed()) {
+                this.currentAsset.currentPrice = closePrice;
+                this.updateCurrentCandle(closePrice, {
+                  o: k.open,
+                  h: k.high,
+                  l: k.low,
+                  c: k.close,
+                  x: k.confirm,
+                });
+              }
             }
           } catch {}
         };
@@ -795,8 +821,10 @@ export class MarketDataManager {
                 const bData = JSON.parse(e.data);
                 if (bData?.k) {
                   const cPrice = parseFloat(bData.k.c);
-                  this.currentAsset.currentPrice = cPrice;
-                  this.updateCurrentCandle(cPrice, bData.k);
+                  if (!this.isUsingHioveFeed()) {
+                    this.currentAsset.currentPrice = cPrice;
+                    this.updateCurrentCandle(cPrice, bData.k);
+                  }
                 }
               } catch {}
             };
@@ -831,7 +859,7 @@ export class MarketDataManager {
 
       // Sincronização estrita com cotações reais oficiais (SEM ruído artificial)
       // Garante que a abertura, fechamento e resultado de WIN/LOSS batam 100% com a cotação real
-      if (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN) {
+      if (!this.isUsingHioveFeed() && (this.currentAsset.category === 'FOREX' || !this.cryptoWs || this.cryptoWs.readyState !== WebSocket.OPEN)) {
         const latestTv = tradingViewScanner.getLatest(this.currentAsset.symbol, this.currentTimeframe);
         if (latestTv && latestTv.price > 0) {
           this.currentAsset.currentPrice = latestTv.price;
@@ -920,8 +948,48 @@ export class MarketDataManager {
     this.candleCache.set(cacheKey, this.candles);
   }
 
+  public isUsingHioveFeed(): boolean {
+    return this.isHioveFeedActive && (Date.now() - this.lastHioveTickTime < 4000);
+  }
+
+  public updateFromHiove(price: number, ticker?: string, _time?: number) {
+    if (!price || isNaN(price) || price <= 0) return;
+
+    if (ticker) {
+      const cleanCurrent = this.currentAsset.symbol.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const cleanIncoming = ticker.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (!cleanIncoming.includes(cleanCurrent) && !cleanCurrent.includes(cleanIncoming)) {
+        return;
+      }
+    }
+
+    const roundedPrice = Number(price.toFixed(this.currentAsset.pipDecimals));
+    this.currentAsset.currentPrice = roundedPrice;
+    this.updateCurrentCandle(roundedPrice);
+    this.notifyTickImmediately();
+
+    this.lastHioveTickTime = Date.now();
+    if (!this.isHioveFeedActive) {
+      this.isHioveFeedActive = true;
+      console.log(`[MarketData] 🔥 FEED HIOVE CONECTADO! Cotações agora vêm 100% da corretora Hiove (${roundedPrice})`);
+      this.notifySource();
+    }
+  }
+
   private notifySource() {
     if (!this.onSourceChange) return;
+
+    if (this.isUsingHioveFeed()) {
+      this.onSourceChange({
+        providerName: 'HIOVE CORRETORA (FEED DIRETO)',
+        sourceType: 'REAL_FEED',
+        status: 'CONNECTED',
+        latencyMs: 0,
+        lastTickTime: this.lastHioveTickTime || Date.now(),
+        disclaimer: 'Cotação capturada diretamente da tela/websocket da corretora Hiove via Extensão Chrome (0ms de latência).',
+      });
+      return;
+    }
 
     if (this.isDemoMode) {
       this.onSourceChange({
