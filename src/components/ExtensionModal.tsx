@@ -122,8 +122,8 @@ COMO INSTALAR NO GOOGLE CHROME (30 Segundos):
           <button
             onClick={() => setActiveTab('INSTRUCOES')}
             className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${activeTab === 'INSTRUCOES'
-                ? 'border-emerald-400 text-emerald-300'
-                : 'border-transparent text-neutral-400 hover:text-white'
+              ? 'border-emerald-400 text-emerald-300'
+              : 'border-transparent text-neutral-400 hover:text-white'
               }`}
           >
             <Zap className="w-3.5 h-3.5" />
@@ -132,8 +132,8 @@ COMO INSTALAR NO GOOGLE CHROME (30 Segundos):
           <button
             onClick={() => setActiveTab('MANIFEST')}
             className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${activeTab === 'MANIFEST'
-                ? 'border-cyan-400 text-cyan-300'
-                : 'border-transparent text-neutral-400 hover:text-white'
+              ? 'border-cyan-400 text-cyan-300'
+              : 'border-transparent text-neutral-400 hover:text-white'
               }`}
           >
             <Layers className="w-3.5 h-3.5" />

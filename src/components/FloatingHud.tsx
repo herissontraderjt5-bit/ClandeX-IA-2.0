@@ -473,48 +473,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
-  // Níveis de Suporte e Resistência com Cotações em Destaque
-  const srLevels = useMemo(() => {
-    const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
-    const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
-    const decimals = asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5);
-
-    const resistances = (marketAnalysis?.keyLevels || [])
-      .filter((l) => l.type === 'RESISTANCE' && l.price > curPrice)
-      .sort((a, b) => a.price - b.price);
-
-    const supports = (marketAnalysis?.keyLevels || [])
-      .filter((l) => l.type === 'SUPPORT' && l.price < curPrice)
-      .sort((a, b) => b.price - a.price);
-
-    const r1 = resistances[0]?.price || (curPrice * 1.0035);
-    const r2 = resistances[1]?.price || (curPrice * 1.0075);
-    const s1 = supports[0]?.price || (curPrice * 0.9965);
-    const s2 = supports[1]?.price || (curPrice * 0.9925);
-
-    const distR1Pips = Math.abs((r1 - curPrice) * pipMultiplier);
-    const distS1Pips = Math.abs((curPrice - s1) * pipMultiplier);
-    const distR2Pips = Math.abs((r2 - curPrice) * pipMultiplier);
-    const distS2Pips = Math.abs((curPrice - s2) * pipMultiplier);
-
-    const totalRange = Math.max(0.00001, r1 - s1);
-    const rangePosition = Math.min(100, Math.max(0, ((curPrice - s1) / totalRange) * 100));
-
-    return {
-      curPrice,
-      decimals,
-      r1,
-      r2,
-      s1,
-      s2,
-      distR1Pips,
-      distS1Pips,
-      distR2Pips,
-      distS2Pips,
-      rangePosition,
-    };
-  }, [marketAnalysis, currentCandle, technicalData.currentPrice, asset]);
-
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
   const [currentBrasiliaClock, setCurrentBrasiliaClock] = useState(() => formatBrasiliaTime());
   useEffect(() => {
@@ -786,6 +744,48 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       bias,
     };
   }, [technicalData]);
+
+  // Níveis de Suporte e Resistência com Cotações em Destaque (calculado após technicalData)
+  const srLevels = useMemo(() => {
+    const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
+    const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
+    const decimals = asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5);
+
+    const resistances = (marketAnalysis?.keyLevels || [])
+      .filter((l) => l.type === 'RESISTANCE' && l.price > curPrice)
+      .sort((a, b) => a.price - b.price);
+
+    const supports = (marketAnalysis?.keyLevels || [])
+      .filter((l) => l.type === 'SUPPORT' && l.price < curPrice)
+      .sort((a, b) => b.price - a.price);
+
+    const r1 = resistances[0]?.price || (curPrice * 1.0035);
+    const r2 = resistances[1]?.price || (curPrice * 1.0075);
+    const s1 = supports[0]?.price || (curPrice * 0.9965);
+    const s2 = supports[1]?.price || (curPrice * 0.9925);
+
+    const distR1Pips = Math.abs((r1 - curPrice) * pipMultiplier);
+    const distS1Pips = Math.abs((curPrice - s1) * pipMultiplier);
+    const distR2Pips = Math.abs((r2 - curPrice) * pipMultiplier);
+    const distS2Pips = Math.abs((curPrice - s2) * pipMultiplier);
+
+    const totalRange = Math.max(0.00001, r1 - s1);
+    const rangePosition = Math.min(100, Math.max(0, ((curPrice - s1) / totalRange) * 100));
+
+    return {
+      curPrice,
+      decimals,
+      r1,
+      r2,
+      s1,
+      s2,
+      distR1Pips,
+      distS1Pips,
+      distR2Pips,
+      distS2Pips,
+      rangePosition,
+    };
+  }, [marketAnalysis, currentCandle, technicalData.currentPrice, asset]);
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
