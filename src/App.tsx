@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   panelPosition: { x: 30, y: 75 },
   panelSize: { width: 380, height: 500 },
   activeMode: 'REAL',
-  analysisProfile: 'MODERADA',
+  analysisProfile: 'CONSERVADORA',
   webhook: {
     enabled: false,
     url: '',

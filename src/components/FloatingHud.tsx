@@ -195,7 +195,7 @@ interface FloatingHudProps {
   onRefreshSession?: () => Promise<void>;
   onOpenAdminPanel?: () => void;
   onOpenExtension?: () => void;
-  onSelectAnalysisProfile?: (profile: 'CONSERVADORA' | 'MODERADA' | 'AGRESSIVA') => void;
+  onSelectAnalysisProfile?: (profile: 'CONSERVADORA' | 'AGRESSIVA') => void;
   onLogout?: () => void;
 }
 
@@ -1265,7 +1265,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 </div>
 
-                {/* 2. MODO OPERACIONAL / ANÁLISE TÉCNICA (CONSERVADORA / MODERADA / AGRESSIVA) */}
+                {/* 2. MODO OPERACIONAL / ANÁLISE TÉCNICA (CONSERVADORA / AGRESSIVA) */}
                 <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1273,16 +1273,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       MODO OPERACIONAL / ANÁLISE TÉCNICA
                     </label>
                     <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                      {settings.analysisProfile || 'CONSERVADORA'}
+                      {settings.analysisProfile === 'AGRESSIVA' ? 'AGRESSIVA' : 'CONSERVADORA'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 gap-2">
                     {/* CONSERVADORA (Sniper) */}
                     <button
                       type="button"
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'CONSERVADORA'
+                      className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA'
                         ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
                         : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                         }`}
@@ -1296,29 +1296,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                     </button>
 
-                    {/* MODERADA (Mediana) */}
-                    <button
-                      type="button"
-                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('MODERADA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'MODERADA'
-                        ? 'bg-gradient-to-b from-emerald-950/70 to-black border-emerald-400 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]'
-                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                        }`}
-                    >
-                      <div className="flex items-center gap-1 text-[11px] font-mono font-black text-emerald-300">
-                        <span>⚖️ Mediana</span>
-                      </div>
-                      <div className="text-[10px] font-bold text-white mt-0.5">Moderada</div>
-                      <div className="text-[9px] text-neutral-400 mt-1 leading-tight">
-                        Confluência 64%+. Equilíbrio calibrado (a cada 3-5 velas) e assertividade 80%+.
-                      </div>
-                    </button>
-
                     {/* AGRESSIVA (Alavancagem) */}
                     <button
                       type="button"
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') === 'AGRESSIVA'
+                      className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${settings.analysisProfile === 'AGRESSIVA'
                         ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
                         : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                         }`}
