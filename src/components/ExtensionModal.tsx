@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Chrome, Download, Check, Copy, ExternalLink, ShieldCheck, Sparkles, FolderOpen, Zap, Layers } from 'lucide-react';
+import { X, Download, Check, Copy, ExternalLink, ShieldCheck, Sparkles, FolderOpen, Zap, Layers, Globe } from 'lucide-react';
 import { HIOVE_LOGIN_URL } from './HioveBrokerBackground';
 
 interface ExtensionModalProps {
@@ -98,7 +98,7 @@ COMO INSTALAR NO GOOGLE CHROME (30 Segundos):
         <div className="flex items-center justify-between px-5 py-3.5 bg-neutral-900 border-b border-neutral-800">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-              <Chrome className="w-4 h-4 text-emerald-400" />
+              <Globe className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">

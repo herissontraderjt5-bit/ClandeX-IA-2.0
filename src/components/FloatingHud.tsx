@@ -76,6 +76,7 @@ import {
   getProfitableStrategyIds,
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
+import { TradingViewWidget } from './TradingViewWidget';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
   getRelevantEconomicEvents,
@@ -91,6 +92,43 @@ import { signalEngine } from '../services/signalEngine';
 import { audioAlerts } from '../services/audioAlerts';
 import { formatBrasiliaTime, formatBrasiliaDate } from '../utils/timeFormat';
 import { checkMemberAccessStatus } from '../services/memberService';
+
+// Estilização ultra-visual em destaque para Alta, Baixa e Lateral/Neutro
+const getIndicatorCardStyle = (status: string) => {
+  const s = (status || '').toUpperCase();
+  if (s.includes('ALTA') || s.includes('COMPRA') || s.includes('SOBREVENDA') || (s.includes('FORTE') && !s.includes('VENDA') && !s.includes('BAIXA'))) {
+    return {
+      border: 'border-2 border-emerald-500/80 shadow-[0_0_16px_rgba(16,185,129,0.3)]',
+      bg: 'bg-gradient-to-br from-emerald-950/80 via-emerald-900/30 to-black',
+      badge: 'bg-emerald-500 text-black font-black border border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.8)]',
+      title: 'text-emerald-300 font-extrabold',
+      value: 'text-white font-black',
+      sub: 'text-emerald-400 font-semibold',
+      tag: '▲ ALTA',
+    };
+  }
+  if (s.includes('BAIXA') || s.includes('VENDA') || s.includes('SOBRECOMPRA')) {
+    return {
+      border: 'border-2 border-rose-500/80 shadow-[0_0_16px_rgba(244,63,94,0.3)]',
+      bg: 'bg-gradient-to-br from-rose-950/80 via-rose-900/30 to-black',
+      badge: 'bg-rose-500 text-white font-black border border-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.8)]',
+      title: 'text-rose-300 font-extrabold',
+      value: 'text-white font-black',
+      sub: 'text-rose-400 font-semibold',
+      tag: '▼ BAIXA',
+    };
+  }
+  // LATERAL / NEUTRO
+  return {
+    border: 'border-2 border-amber-400/80 shadow-[0_0_16px_rgba(251,191,36,0.3)]',
+    bg: 'bg-gradient-to-br from-amber-950/80 via-amber-900/30 to-black',
+    badge: 'bg-amber-400 text-black font-black border border-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.8)]',
+    title: 'text-amber-300 font-extrabold',
+    value: 'text-white font-black',
+    sub: 'text-amber-400 font-semibold',
+    tag: '▬ LATERAL',
+  };
+};
 
 interface FloatingHudProps {
   asset: Asset;
@@ -431,9 +469,51 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [isDragging, position]);
 
-  // HUD Tabs: apenas 'indicadores' e 'voz'
-  const [activeTab, setActiveTab] = useState<'indicadores' | 'voz'>('indicadores');
+  // HUD Tabs: 'indicadores', 'grafico' e 'voz'
+  const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
+
+  // Níveis de Suporte e Resistência com Cotações em Destaque
+  const srLevels = useMemo(() => {
+    const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
+    const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
+    const decimals = asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5);
+
+    const resistances = (marketAnalysis?.keyLevels || [])
+      .filter((l) => l.type === 'RESISTANCE' && l.price > curPrice)
+      .sort((a, b) => a.price - b.price);
+
+    const supports = (marketAnalysis?.keyLevels || [])
+      .filter((l) => l.type === 'SUPPORT' && l.price < curPrice)
+      .sort((a, b) => b.price - a.price);
+
+    const r1 = resistances[0]?.price || (curPrice * 1.0035);
+    const r2 = resistances[1]?.price || (curPrice * 1.0075);
+    const s1 = supports[0]?.price || (curPrice * 0.9965);
+    const s2 = supports[1]?.price || (curPrice * 0.9925);
+
+    const distR1Pips = Math.abs((r1 - curPrice) * pipMultiplier);
+    const distS1Pips = Math.abs((curPrice - s1) * pipMultiplier);
+    const distR2Pips = Math.abs((r2 - curPrice) * pipMultiplier);
+    const distS2Pips = Math.abs((curPrice - s2) * pipMultiplier);
+
+    const totalRange = Math.max(0.00001, r1 - s1);
+    const rangePosition = Math.min(100, Math.max(0, ((curPrice - s1) / totalRange) * 100));
+
+    return {
+      curPrice,
+      decimals,
+      r1,
+      r2,
+      s1,
+      s2,
+      distR1Pips,
+      distS1Pips,
+      distR2Pips,
+      distS2Pips,
+      rangePosition,
+    };
+  }, [marketAnalysis, currentCandle, technicalData.currentPrice, asset]);
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
   const [currentBrasiliaClock, setCurrentBrasiliaClock] = useState(() => formatBrasiliaTime());
@@ -982,38 +1062,49 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       ) : (
         /* Expanded HUD Content with Clean Separate Tabs */
         <div>
-          {/* Navigation Tabs Bar - APENAS INDICADORES E VOZ 3D */}
-          <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-2">
+          {/* Navigation Tabs Bar - INDICADORES, GRÁFICO & VOZ 3D */}
+          <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1.5">
             <button
               onClick={() => setActiveTab('indicadores')}
-              className={`flex-1 py-2 px-3 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'indicadores'
+              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'indicadores'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>Indicadores Técnicos</span>
+              <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Indicadores</span>
               {indicatorConsensus.verdict.includes('COMPRA') && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
               )}
               {indicatorConsensus.verdict.includes('VENDA') && (
-                <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
               )}
             </button>
 
             <button
-              onClick={() => setActiveTab('voz')}
-              className={`flex-1 py-2 px-3 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
+              onClick={() => setActiveTab('grafico')}
+              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'grafico'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
-              <Mic className="w-4 h-4 text-cyan-400 shrink-0" />
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Gráfico & Níveis</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('voz')}
+              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                }`}
+            >
+              <Mic className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>IA Voz 3D</span>
               {liveVoice && liveVoice.status !== 'idle' ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
               ) : (
-                <span className="w-2 h-2 rounded-full bg-cyan-400/60 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60 shrink-0" />
               )}
             </button>
           </div>
@@ -1200,42 +1291,42 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 </div>
 
-                {/* 2. Termômetro de Consenso Geral Institucional (Compacto) */}
+                {/* 2. Termômetro de Consenso Geral Institucional (Ultra Visual) */}
                 <div
-                  className={`p-3 rounded-xl border transition-all ${indicatorConsensus.bias === 'CALL'
-                    ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900 to-black border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                  className={`p-3.5 rounded-2xl border-2 transition-all ${indicatorConsensus.bias === 'CALL'
+                    ? 'bg-gradient-to-r from-emerald-950 via-emerald-900/40 to-black border-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.35)]'
                     : indicatorConsensus.bias === 'PUT'
-                      ? 'bg-gradient-to-r from-rose-950/60 via-neutral-900 to-black border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                      : 'bg-gradient-to-r from-amber-950/40 via-neutral-900 to-black border-amber-500/40'
+                      ? 'bg-gradient-to-r from-rose-950 via-rose-900/40 to-black border-rose-500 shadow-[0_0_25px_rgba(244,63,94,0.35)]'
+                      : 'bg-gradient-to-r from-amber-950 via-amber-900/40 to-black border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.35)]'
                     }`}
                 >
-                  <div className="flex items-center justify-between pb-1.5">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between pb-2">
+                    <div className="flex items-center gap-2.5">
                       {indicatorConsensus.bias === 'CALL' && (
-                        <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
-                          <TrendingUp className="w-3.5 h-3.5" />
+                        <div className="p-1.5 rounded-xl bg-emerald-500 text-black font-black border border-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.8)] animate-pulse">
+                          <TrendingUp className="w-4 h-4 stroke-[3]" />
                         </div>
                       )}
                       {indicatorConsensus.bias === 'PUT' && (
-                        <div className="p-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse">
-                          <TrendingDown className="w-3.5 h-3.5" />
+                        <div className="p-1.5 rounded-xl bg-rose-500 text-white font-black border border-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.8)] animate-pulse">
+                          <TrendingDown className="w-4 h-4 stroke-[3]" />
                         </div>
                       )}
                       {indicatorConsensus.bias === 'NEUTRO' && (
-                        <div className="p-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                          <Gauge className="w-3.5 h-3.5" />
+                        <div className="p-1.5 rounded-xl bg-amber-400 text-black font-black border border-amber-200 shadow-[0_0_12px_rgba(251,191,36,0.8)]">
+                          <Gauge className="w-4 h-4 stroke-[3]" />
                         </div>
                       )}
                       <div>
-                        <div className="text-[9px] text-neutral-400 uppercase font-semibold">
-                          Veredito Consolidado (10 Indicadores)
+                        <div className="text-[10px] text-neutral-300 uppercase font-bold tracking-wider">
+                          VEREDITO INSTITUCIONAL (10 INDICADORES)
                         </div>
                         <div
-                          className={`text-xs font-black tracking-wider ${indicatorConsensus.bias === 'CALL'
-                            ? 'text-emerald-400'
+                          className={`text-sm font-black tracking-wider uppercase drop-shadow-md ${indicatorConsensus.bias === 'CALL'
+                            ? 'text-emerald-300'
                             : indicatorConsensus.bias === 'PUT'
-                              ? 'text-rose-400'
-                              : 'text-amber-400'
+                              ? 'text-rose-300'
+                              : 'text-amber-300'
                             }`}
                         >
                           {indicatorConsensus.verdict}
@@ -1244,268 +1335,467 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
 
                     <div className="text-right">
-                      <div className="text-xs font-bold text-white">
+                      <div className="text-sm font-black text-white">
                         {indicatorConsensus.bias === 'CALL'
                           ? `${indicatorConsensus.callPercent}% ALTA`
                           : indicatorConsensus.bias === 'PUT'
                             ? `${indicatorConsensus.putPercent}% BAIXA`
                             : `${indicatorConsensus.neutralPercent}% NEUTRO`}
                       </div>
-                      <div className="text-[9px] text-neutral-400">
+                      <div className="text-[10px] text-neutral-300 font-bold">
                         {indicatorConsensus.callCount}C / {indicatorConsensus.neutralCount}N / {indicatorConsensus.putCount}V
                       </div>
                     </div>
                   </div>
 
                   {/* Barra de Distribuição Visual do Consenso */}
-                  <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden flex border border-white/10">
+                  <div className="w-full bg-neutral-950 rounded-full h-2.5 overflow-hidden flex border border-white/20 p-0.5">
                     <div
-                      className="bg-emerald-500 transition-all duration-500"
+                      className="bg-emerald-400 transition-all duration-500 shadow-[0_0_10px_rgba(52,211,153,0.8)] rounded-l-full"
                       style={{ width: `${indicatorConsensus.callPercent}%` }}
                     />
                     <div
-                      className="bg-amber-500/60 transition-all duration-500"
+                      className="bg-amber-400 transition-all duration-500 shadow-[0_0_10px_rgba(251,191,36,0.8)]"
                       style={{ width: `${indicatorConsensus.neutralPercent}%` }}
                     />
                     <div
-                      className="bg-rose-500 transition-all duration-500"
+                      className="bg-rose-500 transition-all duration-500 shadow-[0_0_10px_rgba(244,63,94,0.8)] rounded-r-full"
                       style={{ width: `${indicatorConsensus.putPercent}%` }}
                     />
                   </div>
 
-                  <div className="pt-1.5 flex items-center justify-between text-[8.5px]">
-                    <span className="text-emerald-400 font-bold">▲ {indicatorConsensus.callCount} Alta</span>
-                    <span className="text-neutral-400">▬ {indicatorConsensus.neutralCount} Neutro</span>
-                    <span className="text-rose-400 font-bold">▼ {indicatorConsensus.putCount} Baixa</span>
+                  <div className="pt-2 flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                    <span className="text-emerald-400 flex items-center gap-1 drop-shadow">
+                      ▲ {indicatorConsensus.callCount} ALTA ({indicatorConsensus.callPercent}%)
+                    </span>
+                    <span className="text-amber-400 flex items-center gap-1 drop-shadow">
+                      ▬ {indicatorConsensus.neutralCount} LATERAL / NEUTRO
+                    </span>
+                    <span className="text-rose-400 flex items-center gap-1 drop-shadow">
+                      ▼ {indicatorConsensus.putCount} BAIXA ({indicatorConsensus.putPercent}%)
+                    </span>
                   </div>
                 </div>
 
-                {/* 3. Order Flow Delta & Tendência Macro Integrados (Compacto) */}
-                <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-xl space-y-1.5">
+                {/* 3. Order Flow Delta (Ultra Visual) */}
+                <div className="p-3 bg-neutral-950 border-2 border-neutral-800 rounded-2xl space-y-2 shadow-lg">
                   <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-neutral-300 font-bold flex items-center gap-1">
-                      <Gauge className="w-3 h-3 text-cyan-400" />
-                      ORDER FLOW (DELTA)
+                    <span className="text-neutral-200 font-black tracking-wider flex items-center gap-1.5 uppercase">
+                      <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                      ORDER FLOW (PRESSÃO DELTA)
                     </span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${technicalData.delta.status === 'ALTA'
-                      ? 'bg-emerald-500/20 text-emerald-300'
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${technicalData.delta.status === 'ALTA'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
                       : technicalData.delta.status === 'BAIXA'
-                        ? 'bg-rose-500/20 text-rose-300'
-                        : 'bg-neutral-800 text-neutral-300'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                       }`}>
-                      {technicalData.delta.netDelta > 0 ? `+${technicalData.delta.netDelta}% NET` : `${technicalData.delta.netDelta}% NET`}
+                      {technicalData.delta.netDelta > 0 ? `+${technicalData.delta.netDelta}% NET DELTA` : `${technicalData.delta.netDelta}% NET DELTA`}
                     </span>
                   </div>
 
-                  <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden flex border border-neutral-800">
+                  <div className="w-full bg-neutral-900 rounded-full h-2.5 overflow-hidden flex border border-neutral-700 p-0.5">
                     <div
-                      className="bg-emerald-500 transition-all duration-300"
+                      className="bg-emerald-500 transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.8)] rounded-l-full"
                       style={{ width: `${technicalData.delta.buyerPercent}%` }}
                     />
                     <div
-                      className="bg-rose-500 transition-all duration-300"
+                      className="bg-rose-500 transition-all duration-300 shadow-[0_0_8px_rgba(244,63,94,0.8)] rounded-r-full"
                       style={{ width: `${technicalData.delta.sellerPercent}%` }}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[9px] text-neutral-400">
-                    <span className="text-emerald-400 font-semibold">{technicalData.delta.buyerPercent}% Compra</span>
-                    <span className="text-rose-400 font-semibold">{technicalData.delta.sellerPercent}% Venda</span>
+                  <div className="flex items-center justify-between text-[10px] font-bold">
+                    <span className="text-emerald-400">{technicalData.delta.buyerPercent}% Força Compradora</span>
+                    <span className="text-rose-400">{technicalData.delta.sellerPercent}% Força Vendedora</span>
                   </div>
                 </div>
 
-                {/* 4. Grid de Indicadores Resumidos (2 Colunas, Super Clean) */}
-                <div className="grid grid-cols-2 gap-1.5">
+                {/* 4. Grid de Indicadores Ultra Visual (10 Indicadores em Alto Contraste) */}
+                <div className="grid grid-cols-2 gap-2">
                   {/* RSI */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">RSI (14)</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.rsi.signal === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.rsi.signal === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.rsi.signal}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">{technicalData.rsi.value} <span className="text-[8px] text-neutral-500">pts</span></span>
-                      <span className="text-[8.5px] text-neutral-400 truncate">{technicalData.rsi.statusLabel}</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.rsi.signal);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>RSI (14)</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-sm font-black text-white">{technicalData.rsi.value} <span className="text-[8px] text-neutral-400">pts</span></span>
+                          <span className={`text-[9px] ${style.sub} truncate`}>{technicalData.rsi.statusLabel}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* MACD */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">MACD</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.macd.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.macd.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.macd.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className={`text-xs font-black ${technicalData.macd.histogram >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {technicalData.macd.histogram >= 0 ? `+${technicalData.macd.histogram}` : technicalData.macd.histogram}
-                      </span>
-                      <span className="text-[8.5px] text-neutral-400 truncate">Hist.</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.macd.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>MACD</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className={`text-sm font-black ${technicalData.macd.histogram >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {technicalData.macd.histogram >= 0 ? `+${technicalData.macd.histogram}` : technicalData.macd.histogram}
+                          </span>
+                          <span className={`text-[9px] ${style.sub} truncate`}>Histograma</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* EMA 9 / 21 */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">EMA (9/21)</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.maShort.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.maShort.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.maShort.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">
-                        {technicalData.maShort.status === 'ALTA' ? 'EMA 9 > 21' : technicalData.maShort.status === 'BAIXA' ? 'EMA 9 < 21' : 'Alinhadas'}
-                      </span>
-                      <span className="text-[8.5px] text-neutral-400">Curto</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.maShort.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>EMA (9/21)</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-xs font-black text-white truncate">
+                            {technicalData.maShort.status === 'ALTA' ? 'EMA 9 > 21' : technicalData.maShort.status === 'BAIXA' ? 'EMA 9 < 21' : 'Alinhadas'}
+                          </span>
+                          <span className={`text-[9px] ${style.sub}`}>Curto Prazo</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* SMA 50 / 200 */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">SMA (50/200)</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.maLong.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.maLong.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.maLong.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">
-                        {technicalData.maLong.status === 'ALTA' ? '50 > 200' : technicalData.maLong.status === 'BAIXA' ? '50 < 200' : 'Neutras'}
-                      </span>
-                      <span className="text-[8.5px] text-neutral-400">Longo</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.maLong.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>SMA (50/200)</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-xs font-black text-white truncate">
+                            {technicalData.maLong.status === 'ALTA' ? '50 > 200' : technicalData.maLong.status === 'BAIXA' ? '50 < 200' : 'Cruzadas'}
+                          </span>
+                          <span className={`text-[9px] ${style.sub}`}>Longo Prazo</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Bollinger */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">Bollinger</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.bollingerBands.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.bollingerBands.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.bollingerBands.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">
-                        %B: {(technicalData.bollingerBands.percentB * 100).toFixed(0)}%
-                      </span>
-                      <span className="text-[8.5px] text-neutral-400 truncate">
-                        {technicalData.bollingerBands.percentB > 0.85 ? 'Topo' : technicalData.bollingerBands.percentB < 0.15 ? 'Fundo' : 'Canal'}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.bollingerBands.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>Bollinger</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-sm font-black text-white">
+                            {(technicalData.bollingerBands.percentB * 100).toFixed(0)}%
+                          </span>
+                          <span className={`text-[9px] ${style.sub} truncate`}>
+                            {technicalData.bollingerBands.percentB > 0.85 ? 'Banda Superior' : technicalData.bollingerBands.percentB < 0.15 ? 'Banda Inferior' : 'Meio Canal'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Estocástico */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">Estocástico</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.stochastic.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.stochastic.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.stochastic.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">
-                        {technicalData.stochastic.kValue.toFixed(0)} / {technicalData.stochastic.dValue.toFixed(0)}
-                      </span>
-                      <span className="text-[8.5px] text-neutral-400 truncate">
-                        {technicalData.stochastic.kValue > 80 ? 'Sobrecompra' : technicalData.stochastic.kValue < 20 ? 'Sobrevenda' : 'Neutro'}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.stochastic.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>Estocástico</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-xs font-black text-white">
+                            K:{technicalData.stochastic.kValue.toFixed(0)} / D:{technicalData.stochastic.dValue.toFixed(0)}
+                          </span>
+                          <span className={`text-[9px] ${style.sub} truncate`}>
+                            {technicalData.stochastic.kValue > 80 ? 'Sobrecompra' : technicalData.stochastic.kValue < 20 ? 'Sobrevenda' : 'Neutro'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ADX */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">ADX</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.adx.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.adx.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.adx.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">{technicalData.adx.value.toFixed(1)} <span className="text-[8px] text-neutral-500">pts</span></span>
-                      <span className="text-[8.5px] text-neutral-400 truncate">
-                        {technicalData.adx.value > 25 ? 'Forte' : 'Fraco'}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.adx.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>ADX Força</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-sm font-black text-white">{technicalData.adx.value.toFixed(1)} <span className="text-[8px] text-neutral-400">pts</span></span>
+                          <span className={`text-[9px] ${style.sub} truncate`}>
+                            {technicalData.adx.value > 25 ? 'Tendência Forte' : 'Consolidação'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Volume */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">Volume</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.volume.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.volume.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.volume.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">{technicalData.volume.ratio.toFixed(1)}x</span>
-                      <span className="text-[8.5px] text-neutral-400">
-                        {technicalData.volume.ratio >= 1.2 ? 'Alto' : 'Normal'}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.volume.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>Volume</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-sm font-black text-white">{technicalData.volume.ratio.toFixed(1)}x</span>
+                          <span className={`text-[9px] ${style.sub}`}>
+                            {technicalData.volume.ratio >= 1.2 ? 'Volume Alto' : 'Médio/Normal'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ATR */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">ATR</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.atr.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.atr.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.atr.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">{technicalData.atr.pips.toFixed(1)} <span className="text-[8px] text-neutral-500">pips</span></span>
-                      <span className="text-[8.5px] text-neutral-400">Volatilidade</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.atr.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>ATR</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-sm font-black text-white">{technicalData.atr.pips.toFixed(1)} <span className="text-[8px] text-neutral-400">pips</span></span>
+                          <span className={`text-[9px] ${style.sub}`}>Volatilidade</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Tendência Macro */}
-                  <div className="p-2 bg-neutral-900/80 border border-neutral-800/90 rounded-xl flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9.5px] text-neutral-400 font-semibold">Macro ({timeframe})</span>
-                      <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${technicalData.majorTrend.status === 'ALTA' ? 'bg-emerald-500/20 text-emerald-300' :
-                        technicalData.majorTrend.status === 'BAIXA' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-300'
-                        }`}>
-                        {technicalData.majorTrend.status}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-xs font-black text-white">{technicalData.majorTrend.status}</span>
-                      <span className="text-[8.5px] text-neutral-400 font-semibold">{technicalData.majorTrend.strength}</span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const style = getIndicatorCardStyle(technicalData.majorTrend.status);
+                    return (
+                      <div className={`p-2.5 rounded-xl flex flex-col justify-between transition-all ${style.bg} ${style.border}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[10px] ${style.title}`}>Macro ({timeframe})</span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-md ${style.badge}`}>
+                            {style.tag}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between mt-1.5">
+                          <span className="text-xs font-black text-white truncate">{technicalData.majorTrend.status}</span>
+                          <span className={`text-[9px] ${style.sub} font-semibold truncate`}>{technicalData.majorTrend.strength}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* 5. Veredito Rápido Resumido */}
-                <div className="p-2 rounded-xl bg-black/60 border border-neutral-800 text-[10px] text-neutral-300 flex items-center justify-between">
+                <div className="p-2.5 rounded-xl bg-black/80 border-2 border-cyan-500/40 text-[10px] text-neutral-200 flex items-center justify-between shadow-lg">
                   <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
                     <span>Confluência: <strong className="text-emerald-400">{indicatorConsensus.callCount} CALL</strong> vs <strong className="text-rose-400">{indicatorConsensus.putCount} PUT</strong></span>
                   </div>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[9px] ${indicatorConsensus.bias === 'CALL' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
-                    indicatorConsensus.bias === 'PUT' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-neutral-800 text-neutral-400'
+                  <span className={`font-black px-2.5 py-1 rounded-lg text-[9.5px] uppercase tracking-wider ${indicatorConsensus.bias === 'CALL'
+                    ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.8)] border border-emerald-300'
+                    : indicatorConsensus.bias === 'PUT'
+                      ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)] border border-rose-300'
+                      : 'bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.8)] border border-amber-200'
                     }`}>
                     {indicatorConsensus.verdict}
                   </span>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: PÁGINA DE GRÁFICO EM TEMPO REAL COM SUPORTE E RESISTÊNCIA DESTACADOS */}
+            {activeTab === 'grafico' && (
+              <div className="space-y-3 font-mono">
+                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo */}
+                <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl flex items-center justify-between shadow-xl">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+                      <BarChart3 className="w-4 h-4 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-white tracking-wider">{asset.symbol}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                          {timeframe}
+                        </span>
+                      </div>
+                      <span className="text-[9.5px] text-neutral-400">
+                        {asset.category === 'CRYPTO' ? '⚡ Bybit Spot (24/7)' : '🌐 OANDA / Forex'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-[14px] font-black font-mono text-cyan-300 tracking-wider">
+                        {srLevels.curPrice.toFixed(srLevels.decimals)}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-neutral-400 uppercase">Cotação Atual ao Vivo</span>
+                  </div>
+                </div>
+
+                {/* 2. Container do Gráfico em Tempo Real (TradingView Advanced Chart) */}
+                <div className="w-full h-[320px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
+                  <TradingViewWidget
+                    symbol={asset.tvSymbol}
+                    timeframe={timeframe}
+                    mode="CHART"
+                    className="w-full h-full"
+                  />
+                </div>
+
+                {/* 3. Região de Suporte e Resistência com Cotações em Super Destaque */}
+                <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-3 shadow-xl">
+                  <div className="flex items-center justify-between border-b border-neutral-800/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      <span className="text-xs font-black text-white uppercase tracking-wider">
+                        REGIÃO DE SUPORTE & RESISTÊNCIA
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300">
+                      Taxas Reais
+                    </span>
+                  </div>
+
+                  {/* CARD RESISTÊNCIA 1 (TETO / VENDA) */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/70 via-rose-900/20 to-black border-2 border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.25)] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                        <span className="text-[11px] font-black text-rose-300 uppercase tracking-wider">
+                          🔴 RESISTÊNCIA 1 (TETO PRINCIPAL)
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]">
+                        ZONA DE VENDA / REJEIÇÃO
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between pt-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-black font-mono text-white tracking-wider">
+                          {srLevels.r1.toFixed(srLevels.decimals)}
+                        </span>
+                        <span className="text-[10px] font-bold text-rose-400">
+                          +{srLevels.distR1Pips.toFixed(1)} pips acima
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-semibold">
+                        Pullback / Retração
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* POSIÇÃO ATUAL NO CANAL ENTRE SUPORTE E RESISTÊNCIA */}
+                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-emerald-400 font-bold">Piso: {srLevels.s1.toFixed(srLevels.decimals)}</span>
+                      <span className="text-neutral-400 font-bold">
+                        Posição no Canal: <strong className="text-cyan-300">{srLevels.rangePosition.toFixed(0)}%</strong>
+                      </span>
+                      <span className="text-rose-400 font-bold">Teto: {srLevels.r1.toFixed(srLevels.decimals)}</span>
+                    </div>
+
+                    {/* Slider visual do preço no canal */}
+                    <div className="w-full bg-neutral-950 rounded-full h-2.5 overflow-hidden p-0.5 border border-neutral-700 relative">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 transition-all duration-300"
+                        style={{ width: `${srLevels.rangePosition}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* CARD SUPORTE 1 (PISO / COMPRA) */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/70 via-emerald-900/20 to-black border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.25)] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider">
+                          🟢 SUPORTE 1 (PISO PRINCIPAL)
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-500 text-black shadow-[0_0_8px_rgba(16,185,129,0.6)]">
+                        ZONA DE COMPRA / DEFESA
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between pt-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-black font-mono text-white tracking-wider">
+                          {srLevels.s1.toFixed(srLevels.decimals)}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-400">
+                          -{srLevels.distS1Pips.toFixed(1)} pips abaixo
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 font-semibold">
+                        Bateu-Voltou / Reversão
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* NÍVEIS EXTREMOS SECUNDÁRIOS (R2 e S2) */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="p-2 rounded-xl bg-neutral-900/70 border border-rose-500/40">
+                      <div className="flex items-center justify-between text-[9px] text-neutral-400">
+                        <span className="text-rose-400 font-bold">Resistência 2 (Extrema)</span>
+                        <span>+{srLevels.distR2Pips.toFixed(1)} pips</span>
+                      </div>
+                      <div className="text-xs font-black text-rose-300 mt-0.5 font-mono">
+                        {srLevels.r2.toFixed(srLevels.decimals)}
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-neutral-900/70 border border-emerald-500/40">
+                      <div className="flex items-center justify-between text-[9px] text-neutral-400">
+                        <span className="text-emerald-400 font-bold">Suporte 2 (Extremo)</span>
+                        <span>-{srLevels.distS2Pips.toFixed(1)} pips</span>
+                      </div>
+                      <div className="text-xs font-black text-emerald-300 mt-0.5 font-mono">
+                        {srLevels.s2.toFixed(srLevels.decimals)}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
