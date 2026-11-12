@@ -1320,102 +1320,44 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             {/* TAB EXCLUSIVA 0: PAINEL DE SINAL IA */}
             {activeTab === 'sinal' && (
               <div className="space-y-3 font-mono">
-                {/* 1. CONTROLE PRINCIPAL: INICIAR / PARAR ANÁLISE */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-3 h-3 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'}`} />
+                {/* 1. STATUS BAR DO SCANNER: ATIVO & MODO OPERACIONAL ATIVO */}
+                <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-2xl flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2.5 h-2.5 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-ping' : 'bg-amber-400'}`} />
                     <div>
-                      <span className="text-[11px] font-mono font-black text-white block">
-                        {isAnalyzing ? 'ANÁLISE EM TEMPO REAL: ATIVA' : 'ANÁLISE EM TEMPO REAL: PARADA'}
+                      <span className="text-[10px] font-black text-white block uppercase tracking-wider">
+                        {isAnalyzing ? 'IA SCANNER ATIVO • ' : 'IA PAUSADA • '}
+                        <span className="text-cyan-300">{asset.symbol}</span>
                       </span>
-                      <span className="text-[9px] text-neutral-400 block">
-                        {isAnalyzing ? 'Rastreando 10 indicadores e Order Flow' : 'Pressione Iniciar para monitorar o mercado'}
+                      <span className="text-[9px] text-neutral-400">
+                        Modo: <strong className="text-white">{activeSignalInfo.isSniper ? '🎯 Sniper (>70% Flow)' : '⚡ Alavancagem (>60% Flow)'}</strong>
                       </span>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={onToggleAnalysis}
-                    className={`px-3 py-2 rounded-xl font-mono font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-lg active:scale-95 ${
-                      isAnalyzing
-                        ? 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white border border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.35)]'
-                        : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
-                    }`}
+                    onClick={() => setActiveTab('indicadores')}
+                    className="px-2 py-1 rounded-lg bg-black/60 border border-neutral-700/80 hover:border-cyan-400 text-[9px] font-bold text-cyan-300 flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Acessar painel de 10 indicadores e alternar modo"
                   >
-                    {isAnalyzing ? (
-                      <>
-                        <Square className="w-3.5 h-3.5 fill-current" />
-                        <span>PARAR</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>INICIAR</span>
-                      </>
-                    )}
+                    <span>Indicadores</span>
+                    <ChevronRight className="w-3 h-3" />
                   </button>
                 </div>
 
-                {/* 2. MODO OPERACIONAL (SNIPER / ALAVANCAGEM) */}
-                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Flame className="w-3.5 h-3.5 text-amber-400" />
-                      MODO OPERACIONAL
-                    </label>
-                    <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                      {settings.analysisProfile === 'AGRESSIVA' ? '⚡ ALAVANCAGEM (>60% FLOW)' : '🎯 SNIPER (>70% FLOW)'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA'
-                        ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
-                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                        }`}
-                    >
-                      <div className="text-[11px] font-mono font-black text-cyan-300">🎯 Sniper</div>
-                      <div className="text-[9.5px] font-bold text-white mt-0.5">Order Flow &gt; 70%</div>
-                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Filtro institucional cirúrgico</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
-                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${settings.analysisProfile === 'AGRESSIVA'
-                        ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
-                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-                        }`}
-                    >
-                      <div className="text-[11px] font-mono font-black text-amber-300">⚡ Alavancagem</div>
-                      <div className="text-[9.5px] font-bold text-white mt-0.5">Order Flow &gt; 60%</div>
-                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas dinâmicas de fluxo</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. HERO DISPLAY DO SINAL (PRÉ-ALERTA, CONFIRMADO, CANCELADO OU AGUARDANDO) */}
+                {/* 2. HERO DISPLAY DO SINAL (SINAL CONFIRMADO, PRÉ-ALERTA, CANCELADO OU MONITORAMENTO IA) */}
                 {!isAnalyzing ? (
                   /* Painel quando a análise está parada */
-                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl text-center">
+                  <div className="p-5 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl text-center">
                     <div className="flex items-center justify-center gap-2 text-amber-300">
                       <AlertTriangle className="w-5 h-5 text-amber-400" />
                       <span className="text-sm font-extrabold text-white">
-                        ANÁLISE PAUSADA
+                        ANÁLISE EM TEMPO REAL PAUSADA
                       </span>
                     </div>
-                    <p className="text-[10px] text-neutral-400 max-w-[280px] mx-auto">
-                      O monitoramento em tempo real está desligado. Clique no botão abaixo para ligar o scanner de confluências.
+                    <p className="text-[10.5px] text-neutral-400 max-w-[280px] mx-auto leading-relaxed">
+                      O monitoramento de fluxo institucional e confluências está desligado. Clique no botão abaixo para ativar a IA.
                     </p>
-                    <button
-                      type="button"
-                      onClick={onToggleAnalysis}
-                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>LIGAR ANÁLISE EM TEMPO REAL</span>
-                    </button>
                   </div>
                 ) : activeSignalInfo.stage === 'CONFIRMED' ? (
                   /* SINAL CONFIRMADO (Aos 8s finais com Order Flow atingindo a meta) */
@@ -1615,73 +1557,182 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
                   </div>
                 ) : (
-                  /* MONITORANDO O MERCADO (Buscando confluências de indicadores) */
-                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl">
-                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                        <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
-                          MONITORANDO EM TEMPO REAL
-                        </span>
-                      </div>
-                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-                        {activeSignalInfo.modeName} (&gt;{activeSignalInfo.requiredOrderFlow}% Flow)
-                      </span>
+                  /* PAINEL TECNOLÓGICO DE MONITORAMENTO IA (FUTURISTA & ANIMADO) */
+                  <div className="relative p-4 rounded-2xl border-2 border-cyan-500/40 bg-gradient-to-b from-[#0b1324] via-[#070d18] to-black space-y-3.5 shadow-[0_0_30px_rgba(6,182,212,0.25)] overflow-hidden">
+                    {/* Efeito Cyber Laser Scanline em Loop Contínuo */}
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                      <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_rgba(6,182,212,1)] animate-scanline" />
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="py-1 text-center space-y-1">
-                        <div className="flex items-center justify-center gap-2 text-neutral-300">
-                          <Activity className="w-4 h-4 text-cyan-400 animate-spin" />
-                          <span className="text-sm font-extrabold text-white">
-                            ANALISANDO INDICADORES: {activeSignalInfo.dominantCount}/10 EM {activeSignalInfo.dominantDirection}
+                    {/* Header do Scanner com Radar Neon */}
+                    <div className="flex items-center justify-between pb-2 border-b border-cyan-500/20 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-4 h-4 flex items-center justify-center">
+                          <span className="absolute inset-0 rounded-full border border-cyan-400 animate-ping opacity-60" />
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 block">
+                            CLANDEX-IA • RADAR INSTITUCIONAL
+                          </span>
+                          <span className="text-[8.5px] text-cyan-400/80">
+                            VARREDURA MULTI-INDICADOR 1:1
                           </span>
                         </div>
-                        <p className="text-[10px] text-neutral-400">
-                          Aguardando confluência mínima de {activeSignalInfo.minIndicatorCount} indicadores para pré-alerta
-                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 animate-pulse">
+                          {activeSignalInfo.modeName}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* O GRANDE PAINEL HOLOGRÁFICO DE TEMPO DA VELA */}
+                    <div className="p-3 rounded-xl bg-black/70 border border-cyan-500/30 text-center relative overflow-hidden group">
+                      <div className="flex items-center justify-between text-[9px] text-neutral-400 uppercase tracking-widest pb-1 border-b border-white/5">
+                        <span className="flex items-center gap-1 text-cyan-400 font-bold">
+                          <Clock className="w-3 h-3 animate-spin" />
+                          CONTAGEM DA VELA ({timeframe})
+                        </span>
+                        <span className="text-amber-300 font-bold">
+                          {remainingSeconds > 8 ? `PRÉ-ALERTA EM ${Math.max(0, remainingSeconds - 8)}s` : 'VALIDAÇÃO EM 00:08'}
+                        </span>
                       </div>
 
-                      {/* Medidor de Order Flow */}
-                      <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-emerald-400 font-bold">
-                            ▲ Compra: {technicalData.delta.buyerPercent}%
-                          </span>
-                          <span className="text-rose-400 font-bold">
-                            ▼ Venda: {technicalData.delta.sellerPercent}%
-                          </span>
+                      {/* Relógio Digital Holográfico Gigante */}
+                      <div className="py-2.5 flex items-center justify-center gap-3">
+                        <div className="text-4xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_18px_rgba(6,182,212,0.8)]">
+                          {formattedCountdown}
                         </div>
-                        <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden flex">
-                          <div
-                            className="bg-emerald-500 h-full transition-all duration-300"
-                            style={{ width: `${technicalData.delta.buyerPercent}%` }}
-                          />
-                          <div
-                            className="bg-rose-500 h-full transition-all duration-300"
-                            style={{ width: `${technicalData.delta.sellerPercent}%` }}
-                          />
+                        <div className="text-left text-[9px] text-neutral-400 leading-tight border-l border-cyan-500/30 pl-2.5">
+                          <span className="text-white font-bold block">EXPIRAÇÃO</span>
+                          <span>{timeframe} Oficial</span>
+                          <span className="text-cyan-400 font-mono block">{(srLevels.curPrice).toFixed(srLevels.decimals)}</span>
                         </div>
                       </div>
 
-                      {/* Métricas Rápidas */}
-                      <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
-                        <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                          <span className="text-neutral-500 block uppercase">Confluência Atual</span>
-                          <span className={`font-black ${activeSignalInfo.dominantDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {activeSignalInfo.callCount} CALL vs {activeSignalInfo.putCount} PUT
-                          </span>
-                        </div>
-                        <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                          <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
-                          <span className="font-black text-amber-300 font-mono">
-                            {formattedCountdown}
-                          </span>
-                        </div>
+                      {/* Barra de Progresso Temporal da Vela com Laser */}
+                      <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden p-0.5 border border-cyan-500/30">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300"
+                          style={{ width: `${Math.max(3, Math.min(100, (remainingSeconds / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
+                        />
                       </div>
+
+                      {/* Equalizador de Telemetria Animado */}
+                      <div className="flex items-center justify-center gap-1 pt-2 h-4">
+                        {[8, 14, 18, 10, 16, 22, 12, 20, 15, 9, 17, 21, 11, 19, 13].map((baseH, idx) => {
+                          const dynamicH = Math.max(3, Math.min(16, ((baseH + (remainingSeconds % 7) * 3) % 16) + 4));
+                          return (
+                            <span
+                              key={idx}
+                              className="w-1 rounded-full bg-gradient-to-t from-cyan-500 to-emerald-400 transition-all duration-150"
+                              style={{ height: `${dynamicH}px` }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Matriz Neural dos 10 Indicadores em Tempo Real */}
+                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-neutral-300 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                          MATRIZ DE 10 INDICADORES
+                        </span>
+                        <span className="text-cyan-400 font-bold">
+                          {indicatorConsensus.callCount} CALL vs {indicatorConsensus.putCount} PUT
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1 pt-1">
+                        {indicatorConsensus.indicators.map((ind, i) => {
+                          const isCall = ind.signal === 'ALTA' || ind.signal === 'COMPRA';
+                          const isPut = ind.signal === 'BAIXA' || ind.signal === 'VENDA';
+                          return (
+                            <div
+                              key={i}
+                              className={`p-1 rounded-lg text-center border text-[8.5px] font-mono font-bold transition-all ${
+                                isCall
+                                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
+                                  : isPut
+                                    ? 'bg-rose-950/60 border-rose-500/50 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.2)]'
+                                    : 'bg-black/50 border-neutral-800 text-neutral-400'
+                              }`}
+                            >
+                              <div className="truncate text-[8px] opacity-75">{ind.name.split(' ')[0]}</div>
+                              <div className="font-black text-[9px] mt-0.5">
+                                {isCall ? '▲ CALL' : isPut ? '▼ PUT' : '● SCAN'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Medidor de Order Flow Delta */}
+                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-emerald-400 font-bold">
+                          ▲ Compradores: {technicalData.delta.buyerPercent}%
+                        </span>
+                        <span className="text-rose-400 font-bold">
+                          ▼ Vendedores: {technicalData.delta.sellerPercent}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden flex border border-neutral-800">
+                        <div
+                          className="bg-emerald-500 h-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+                          style={{ width: `${technicalData.delta.buyerPercent}%` }}
+                        />
+                        <div
+                          className="bg-rose-500 h-full transition-all duration-300 shadow-[0_0_8px_rgba(244,63,94,0.7)]"
+                          style={{ width: `${technicalData.delta.sellerPercent}%` }}
+                        />
+                      </div>
+                      <p className="text-[9px] text-neutral-400 text-center">
+                        Meta de Confirmação: Order Flow &gt; <strong className="text-cyan-300">{activeSignalInfo.requiredOrderFlow}%</strong> aos 00:08
+                      </p>
                     </div>
                   </div>
                 )}
+
+                {/* 3. BOTÃO PRINCIPAL INICIAR / PARAR (GRANDE, EM DESTAQUE NA PARTE DE BAIXO) */}
+                <div className="pt-2 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={onToggleAnalysis}
+                    className={`w-full py-4 px-4 rounded-2xl font-mono font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-[0.98] shadow-2xl group ${
+                      isAnalyzing
+                        ? 'bg-gradient-to-r from-rose-600 via-rose-700 to-rose-600 hover:from-rose-500 hover:to-rose-600 text-white border-2 border-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.5)]'
+                        : 'bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 border-2 border-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.5)]'
+                    }`}
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <Square className="w-5 h-5 fill-current animate-pulse text-white group-hover:scale-110 transition-transform" />
+                        <span>PARAR ANÁLISE EM TEMPO REAL</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-5 h-5 fill-current text-neutral-950 group-hover:scale-110 transition-transform" />
+                        <span>INICIAR ANÁLISE EM TEMPO REAL</span>
+                      </>
+                    )}
+                  </button>
+                  <div className="text-center text-[9px] font-mono text-neutral-400">
+                    {isAnalyzing ? (
+                      <span className="text-emerald-400 flex items-center justify-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        Scanner ativo monitorando fluxo institucional e pré-alerta
+                      </span>
+                    ) : (
+                      <span className="text-amber-400">
+                        ● Scanner pausado • Clique no botão acima para iniciar
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             

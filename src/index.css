@@ -52,3 +52,36 @@
 .glow-alert {
   box-shadow: 0 0 20px -2px rgba(245, 158, 11, 0.4), 0 0 8px -2px rgba(245, 158, 11, 0.25);
 }
+
+/* Cyber AI Scanner Animations */
+@keyframes cyberScanline {
+  0% { transform: translateY(-100%); opacity: 0; }
+  25% { opacity: 0.6; }
+  75% { opacity: 0.6; }
+  100% { transform: translateY(400%); opacity: 0; }
+}
+
+@keyframes radarSweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes cyberGlitch {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  20% { opacity: 0.85; transform: translateX(-1px); }
+  40% { opacity: 0.95; transform: translateX(1px); }
+  60% { opacity: 0.9; transform: translateX(-0.5px); }
+  80% { opacity: 1; transform: translateX(0.5px); }
+}
+
+.animate-scanline {
+  animation: cyberScanline 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-radar-sweep {
+  animation: radarSweep 4s linear infinite;
+}
+
+.animate-cyber-glitch {
+  animation: cyberGlitch 1.5s ease-in-out infinite;
+}
