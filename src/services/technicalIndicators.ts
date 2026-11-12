@@ -521,66 +521,64 @@ export function computeTechnicalOverview(
   else if (atrPips < 5) atrStatus = 'BAIXA';
   else atrStatus = 'NEUTRO';
 
-  // --- TENDÊNCIA MAIOR DE ACORDO COM O TIMEFRAME SELECIONADO ---
+  // --- TENDÊNCIA MAIOR DE ACORDO COM OS INDICADORES TÉCNICOS NO TIMEFRAME ATIVO ---
+  let bullPoints = 0;
+  let bearPoints = 0;
+
+  // 1. Médias Rápidas (EMA 9 / EMA 21)
+  if (maShortStatus === 'ALTA') bullPoints += 2.5;
+  else if (maShortStatus === 'BAIXA') bearPoints += 2.5;
+
+  // 2. Médias Longas (SMA 50 / SMA 200)
+  if (maLongStatus === 'ALTA') bullPoints += 3;
+  else if (maLongStatus === 'BAIXA') bearPoints += 3;
+
+  // 3. Posição em Relação às Bandas de Bollinger
+  if (currentPrice > bbMiddle) bullPoints += 1.5;
+  else bearPoints += 1.5;
+
+  // 4. MACD Institucional
+  if (macdStatus === 'ALTA') bullPoints += 2;
+  else if (macdStatus === 'BAIXA') bearPoints += 2;
+
+  // 5. Delta de Volume / Pressão Compradora vs Vendedora
+  if (deltaStatus === 'ALTA') bullPoints += 2;
+  else if (deltaStatus === 'BAIXA') bearPoints += 2;
+
+  // 6. ADX Força da Tendência
+  if (adxStatus === 'ALTA') bullPoints += 1.5;
+  else if (adxStatus === 'BAIXA') bearPoints += 1.5;
+
+  // 7. TradingView Scanner (Se disponível, adiciona peso ao consenso)
+  if (tvData && tvData.recommendation) {
+    if (tvData.recommendation.includes('COMPRA')) {
+      bullPoints += tvData.recommendation.startsWith('FORTE') ? 3 : 1.5;
+    } else if (tvData.recommendation.includes('VENDA')) {
+      bearPoints += tvData.recommendation.startsWith('FORTE') ? 3 : 1.5;
+    }
+  }
+
+  // 8. Vela recente
+  if (latest.close > prev.close) bullPoints += 1;
+  else if (latest.close < prev.close) bearPoints += 1;
+
+  const scoreDiff = bullPoints - bearPoints;
   let majorTrendStatus: 'ALTA' | 'BAIXA' | 'LATERAL' = 'LATERAL';
   let majorStrength: 'FORTE' | 'MODERADA' | 'FRACA' = 'MODERADA';
   let majorDesc = 'Consolidação e equilíbrio entre forças';
 
-  if (tvData && tvData.recommendation) {
-    if (tvData.recommendation.includes('COMPRA')) {
-      majorTrendStatus = 'ALTA';
-      majorStrength = tvData.recommendation.startsWith('FORTE') ? 'FORTE' : 'MODERADA';
-      majorDesc = `Consenso TradingView (${tvData.recommendation}) em ${timeframe}: Compradores no comando`;
-    } else if (tvData.recommendation.includes('VENDA')) {
-      majorTrendStatus = 'BAIXA';
-      majorStrength = tvData.recommendation.startsWith('FORTE') ? 'FORTE' : 'MODERADA';
-      majorDesc = `Consenso TradingView (${tvData.recommendation}) em ${timeframe}: Vendedores no comando`;
-    } else {
-      majorTrendStatus = 'LATERAL';
-      majorStrength = 'FRACA';
-      majorDesc = `Consenso TradingView (NEUTRO) em ${timeframe}: Mercado lateral/sem viés único`;
-    }
+  if (scoreDiff >= 4.0) {
+    majorTrendStatus = 'ALTA';
+    majorStrength = scoreDiff >= 7.0 ? 'FORTE' : 'MODERADA';
+    majorDesc = `Tendência Maior dos Indicadores (${timeframe}): Compradores no controle (+${scoreDiff.toFixed(1)} pts)`;
+  } else if (scoreDiff <= -4.0) {
+    majorTrendStatus = 'BAIXA';
+    majorStrength = scoreDiff <= -7.0 ? 'FORTE' : 'MODERADA';
+    majorDesc = `Tendência Maior dos Indicadores (${timeframe}): Vendedores no controle (${scoreDiff.toFixed(1)} pts)`;
   } else {
-    let bullPoints = 0;
-    let bearPoints = 0;
-
-    if (maShortStatus === 'ALTA') bullPoints += 2;
-    else if (maShortStatus === 'BAIXA') bearPoints += 2;
-
-    if (maLongStatus === 'ALTA') bullPoints += 3;
-    else if (maLongStatus === 'BAIXA') bearPoints += 3;
-
-    if (currentPrice > bbMiddle) bullPoints += 1;
-    else bearPoints += 1;
-
-    if (macdStatus === 'ALTA') bullPoints += 1.5;
-    else if (macdStatus === 'BAIXA') bearPoints += 1.5;
-
-    if (adxStatus === 'ALTA') bullPoints += 1.5;
-    else if (adxStatus === 'BAIXA') bearPoints += 1.5;
-
-    if (timeframe === 'M1' || timeframe === 'M5') {
-      if (latest.close > prev.close) bullPoints += 1;
-      else bearPoints += 1;
-    } else {
-      if (currentPrice > sma50) bullPoints += 2;
-      else bearPoints += 2;
-    }
-
-    const scoreDiff = bullPoints - bearPoints;
-    if (scoreDiff >= 2.5) {
-      majorTrendStatus = 'ALTA';
-      majorStrength = scoreDiff >= 5 ? 'FORTE' : 'MODERADA';
-      majorDesc = `Tendência Maior em ${timeframe}: Compradores no controle`;
-    } else if (scoreDiff <= -2.5) {
-      majorTrendStatus = 'BAIXA';
-      majorStrength = scoreDiff <= -5 ? 'FORTE' : 'MODERADA';
-      majorDesc = `Tendência Maior em ${timeframe}: Vendedores no controle`;
-    } else {
-      majorTrendStatus = 'LATERAL';
-      majorStrength = 'MODERADA';
-      majorDesc = `Tendência Maior em ${timeframe}: Movimento em faixa/consolidação`;
-    }
+    majorTrendStatus = 'LATERAL';
+    majorStrength = 'MODERADA';
+    majorDesc = `Indicadores em Faixa/Consolidação em ${timeframe}: Oportunidades em ambas as direções`;
   }
 
   return {

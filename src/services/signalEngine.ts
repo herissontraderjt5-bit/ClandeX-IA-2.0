@@ -345,25 +345,24 @@ export class SignalEngine {
     const majorStrength = technicalOverview.majorTrend.strength;
     const majorDesc = technicalOverview.majorTrend.description;
 
-    // Cooldown ágil entre sinais confirmados por perfil para evitar sinais seguidos (1 a 3 minutos):
-    // CONSERVADORA (Sniper): 120s (2 min) | MODERADA: 90s (1.5 min) | AGRESSIVA: 60s (1 min)
-    let signalCooldownMs = 90_000;
+    // Cooldown ágil entre sinais confirmados por perfil para geração contínua e rápida:
+    let signalCooldownMs = 5_000;
 
     if (profile === 'CONSERVADORA') {
       // Análise Conservadora (Sniper):
-      preAlertMinScore = 58;
-      confirmMinScore = 64;
-      signalCooldownMs = 15_000; // 15 segundos
+      preAlertMinScore = 50;
+      confirmMinScore = 55;
+      signalCooldownMs = 8_000; // 8 segundos
     } else if (profile === 'AGRESSIVA') {
       // Análise Agressiva (Alavancagem / Alta Frequência):
+      preAlertMinScore = 42;
+      confirmMinScore = 46;
+      signalCooldownMs = 3_000; // 3 segundos
+    } else {
+      // Moderada (Mediana / Dinâmica):
       preAlertMinScore = 45;
       confirmMinScore = 50;
       signalCooldownMs = 5_000; // 5 segundos
-    } else {
-      // Moderada (Mediana):
-      preAlertMinScore = 50;
-      confirmMinScore = 55;
-      signalCooldownMs = 10_000; // 10 segundos
     }
 
     // Atualização contínua do Backtest em Tempo Real de todas as estratégias
@@ -447,14 +446,10 @@ export class SignalEngine {
 
         if (this.activePreAlert.direction === 'CALL') {
           // Para CALL: cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se a tendência maior dos indicadores for de BAIXA (proteção institucional)
           // OU se a vela do Padrão 2 estiver fechando vermelha contrária à compra
           if (upperWick > body && upperWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
-          } else if (majorTrend === 'BAIXA') {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Tendência Maior dos Indicadores virou para BAIXA. Operação de COMPRA abortada para proteção.';
           } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 (Fluxo da 3ª Vela de Alta) invalidado para proteção de banca.';
@@ -464,14 +459,10 @@ export class SignalEngine {
           }
         } else if (this.activePreAlert.direction === 'PUT') {
           // Para PUT: cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
-          // OU se a tendência maior dos indicadores for de ALTA (proteção institucional)
           // OU se a vela do Padrão 1 estiver fechando verde contrária à venda
           if (lowerWick > body && lowerWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
-          } else if (majorTrend === 'ALTA') {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Tendência Maior dos Indicadores virou para ALTA. Operação de VENDA abortada para proteção.';
           } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 (Fluxo 3ª Vela Baixa) invalidado para proteção de banca.';
@@ -570,9 +561,9 @@ export class SignalEngine {
 
         let activeDecision = stratDecision;
         if (!activeDecision && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= confirmMinScore) {
-          // Bloqueio rigoroso de tendência maior
           const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
-          if (!isConflict) {
+          // Se for contra-tendência, exige confluência forte (+4 pts); se for a favor ou lateral, aceita com fluidez
+          if (!isConflict || confluences.totalScore >= confirmMinScore + 4) {
             activeDecision = {
               strategy: {
                 id: 'estrategia_confluencia_ia',
@@ -720,9 +711,9 @@ export class SignalEngine {
 
     // Fallback de Pré-Alerta via Confluência Técnica Multidimensional (quando nenhum padrão de vela estiver ativo)
     if (!signalDirection && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
-      // Bloqueio rigoroso de tendência maior
       const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
-      if (!isConflict) {
+      // Se for contra-tendência, exige confluência mais forte (+4 pts); se for a favor ou lateral, aceita com fluidez
+      if (!isConflict || confluences.totalScore >= preAlertMinScore + 4) {
         signalDirection = confluences.bias;
         signalScore = confluences.totalScore;
         signalReasons = [

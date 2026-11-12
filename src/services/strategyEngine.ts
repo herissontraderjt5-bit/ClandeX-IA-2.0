@@ -158,21 +158,19 @@ export function evaluateSingleStrategy(
     // PADRÃO 1: Fluxo 3ª Vela Baixa (VENDA / PUT)
     // Regra do Usuário: Entrada de VENDA (PUT) na 3ª vela vermelha.
     // Formação: Vela 1 Vermelha + Vela 2 Vermelha confirmadas
-    // Filtro de Tendência Maior: NUNCA vender contra tendência de ALTA!
+    // Prioriza e potencializa quando a Tendência Maior dos Indicadores for de BAIXA.
     // ----------------------------------------------------
     case 'padrao_1_fluxo_put': {
-      if (majorTrend === 'ALTA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (isRed(prev1) && isRed(current)) {
+        const isTrendAligned = majorTrend === 'BAIXA';
         return {
           direction: 'PUT',
-          score: majorTrend === 'BAIXA' ? 98 : 94,
+          score: isTrendAligned ? 98 : (majorTrend === 'LATERAL' ? 95 : 90),
           reasons: [
             'Padrão 1: Fluxo 3ª Vela Baixa',
             'Vela 1 Vermelha ➔ Vela 2 Vermelha confirmadas',
             'Entrada de VENDA (PUT) na 3ª vela vermelha do fluxo',
-            ...(majorTrend === 'BAIXA' ? ['Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
+            ...(isTrendAligned ? ['Confluência Máxima: Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
           ],
         };
       }
@@ -183,21 +181,19 @@ export function evaluateSingleStrategy(
     // PADRÃO 2: Fluxo da 3ª Vela de Alta (COMPRA / CALL)
     // Regra do Usuário: Entrada de COMPRA (CALL) na 3ª vela verde.
     // Formação: Vela 1 Verde + Vela 2 Verde confirmadas
-    // Filtro de Tendência Maior: NUNCA comprar contra tendência de BAIXA!
+    // Prioriza e potencializa quando a Tendência Maior dos Indicadores for de ALTA.
     // ----------------------------------------------------
     case 'padrao_2_fluxo_call': {
-      if (majorTrend === 'BAIXA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (isGreen(prev1) && isGreen(current)) {
+        const isTrendAligned = majorTrend === 'ALTA';
         return {
           direction: 'CALL',
-          score: majorTrend === 'ALTA' ? 98 : 94,
+          score: isTrendAligned ? 98 : (majorTrend === 'LATERAL' ? 95 : 90),
           reasons: [
             'Padrão 2: Fluxo da 3ª Vela de Alta',
             'Vela 1 Verde ➔ Vela 2 Verde confirmadas',
             'Entrada de COMPRA (CALL) na 3ª vela verde do fluxo',
-            ...(majorTrend === 'ALTA' ? ['Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
+            ...(isTrendAligned ? ['Confluência Máxima: Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
           ],
         };
       }
@@ -210,9 +206,6 @@ export function evaluateSingleStrategy(
     // Entrada oficial de COMPRA (CALL) na próxima vela.
     // ----------------------------------------------------
     case 'padrao_3_correcao_50_call': {
-      if (majorTrend === 'BAIXA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (prev1) {
         const forceBody = prev1.close - prev1.open;
         if (isGreen(prev1) && forceBody > 0.00001) {
@@ -220,14 +213,15 @@ export function evaluateSingleStrategy(
           const isRedCorr = isRed(current);
           const closedAbove50 = current.close >= mid50;
           if (isRedCorr && closedAbove50) {
+            const isTrendAligned = majorTrend === 'ALTA';
             return {
               direction: 'CALL',
-              score: majorTrend === 'ALTA' ? 98 : 94,
+              score: isTrendAligned ? 98 : 94,
               reasons: [
                 'Padrão 3: Vela de Descanso Alta',
                 `Vela de descanso vermelha respeitou e fechou acima dos 50% (${mid50.toFixed(5)})`,
                 'Entrada de COMPRA (CALL) na retomada do fluxo de alta',
-                ...(majorTrend === 'ALTA' ? ['Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
+                ...(isTrendAligned ? ['Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
               ],
             };
           }
@@ -242,9 +236,6 @@ export function evaluateSingleStrategy(
     // Entrada oficial de VENDA (PUT) na próxima vela.
     // ----------------------------------------------------
     case 'padrao_4_correcao_50_put': {
-      if (majorTrend === 'ALTA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (prev1) {
         const forceBody = prev1.open - prev1.close;
         if (isRed(prev1) && forceBody > 0.00001) {
@@ -252,14 +243,15 @@ export function evaluateSingleStrategy(
           const isGreenCorr = isGreen(current);
           const closedBelow50 = current.close <= mid50;
           if (isGreenCorr && closedBelow50) {
+            const isTrendAligned = majorTrend === 'BAIXA';
             return {
               direction: 'PUT',
-              score: majorTrend === 'BAIXA' ? 98 : 94,
+              score: isTrendAligned ? 98 : 94,
               reasons: [
                 'Padrão 4: Vela de Descanso Baixa',
                 `Vela de descanso verde respeitou e fechou abaixo dos 50% (${mid50.toFixed(5)})`,
                 'Entrada de VENDA (PUT) na retomada do fluxo de baixa',
-                ...(majorTrend === 'BAIXA' ? ['Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
+                ...(isTrendAligned ? ['Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
               ],
             };
           }
@@ -272,22 +264,19 @@ export function evaluateSingleStrategy(
     // PADRÃO 5: Consolidação de Alta (COMPRA / CALL)
     // Regra do Usuário: Alternância de 4 velas (1: Verde, 2: Vermelha, 3: Verde, 4: Vermelha).
     // Entrada oficial de COMPRA (CALL) na 5ª vela verde (na mesma direção da Vela 1).
-    // Filtro de Tendência Maior: NUNCA comprar contra tendência de BAIXA!
     // ----------------------------------------------------
     case 'padrao_5_consolidacao_call': {
-      if (majorTrend === 'BAIXA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (prev3 && prev2 && prev1) {
         if (isGreen(prev3) && isRed(prev2) && isGreen(prev1) && isRed(current)) {
+          const isTrendAligned = majorTrend === 'ALTA';
           return {
             direction: 'CALL',
-            score: 95,
+            score: isTrendAligned ? 98 : 94,
             reasons: [
               'Padrão 5: Consolidação de Alta',
               'Alternância de 4 velas confirmada (Verde, Vermelha, Verde, Vermelha)',
               'Entrada de COMPRA (CALL) na 5ª vela na direção da Vela 1',
-              ...(majorTrend === 'ALTA' ? ['Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
+              ...(isTrendAligned ? ['Alinhado à Tendência Maior de ALTA dos Indicadores'] : []),
             ],
           };
         }
@@ -299,22 +288,19 @@ export function evaluateSingleStrategy(
     // PADRÃO 6: Consolidação de Baixa (VENDA / PUT)
     // Regra do Usuário: Alternância de 4 velas (1: Vermelha, 2: Verde, 3: Vermelha, 4: Verde).
     // Entrada oficial de VENDA (PUT) na 5ª vela vermelha (na mesma direção da Vela 1).
-    // Filtro de Tendência Maior: NUNCA vender contra tendência de ALTA!
     // ----------------------------------------------------
     case 'padrao_6_consolidacao_put': {
-      if (majorTrend === 'ALTA') {
-        return { direction: null, score: 0, reasons: [] };
-      }
       if (prev3 && prev2 && prev1) {
         if (isRed(prev3) && isGreen(prev2) && isRed(prev1) && isGreen(current)) {
+          const isTrendAligned = majorTrend === 'BAIXA';
           return {
             direction: 'PUT',
-            score: 95,
+            score: isTrendAligned ? 98 : 94,
             reasons: [
               'Padrão 6: Consolidação de Baixa',
               'Alternância de 4 velas confirmada (Vermelha, Verde, Vermelha, Verde)',
               'Entrada de VENDA (PUT) na 5ª vela na direção da Vela 1',
-              ...(majorTrend === 'BAIXA' ? ['Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
+              ...(isTrendAligned ? ['Alinhado à Tendência Maior de BAIXA dos Indicadores'] : []),
             ],
           };
         }
@@ -677,20 +663,23 @@ export function getBestActiveStrategySignal(
 
     const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex, majorTrend);
     if (evalRes && evalRes.direction) {
-      // FILTRO MANDATÓRIO DE TENDÊNCIA MAIOR: NUNCA operar contra a tendência maior dos indicadores!
-      if (majorTrend === 'ALTA' && evalRes.direction === 'PUT') continue;
-      if (majorTrend === 'BAIXA' && evalRes.direction === 'CALL') continue;
+      // Priorização inteligente: Estratégias alinhadas à tendência maior ganham bônus de score (+15 pts)
+      const isTrendAligned =
+        (majorTrend === 'ALTA' && evalRes.direction === 'CALL') ||
+        (majorTrend === 'BAIXA' && evalRes.direction === 'PUT');
+
+      const finalScore = isTrendAligned ? Math.min(100, evalRes.score + 10) : evalRes.score;
 
       decisions.push({
         strategy: strat,
         direction: evalRes.direction,
-        score: evalRes.score,
+        score: finalScore,
         reasons: evalRes.reasons,
       });
     }
   }
 
-  // Fallback de segurança: se o auto-filtro bloqueou todas as estratégias, reavalia respeitando sempre a tendência maior
+  // Fallback de segurança: se o auto-filtro bloqueou estratégias, reavalia para nunca paralisar o robô
   if (decisions.length === 0 && safeActiveIds.length > 0) {
     for (const stratId of safeActiveIds) {
       const strat = AVAILABLE_STRATEGIES.find((s) => s.id === stratId);
@@ -698,9 +687,6 @@ export function getBestActiveStrategySignal(
       if (profile === 'CONSERVADORA' && strat.minProfile === 'AGRESSIVA') continue;
       const evalRes = evaluateSingleStrategy(stratId, candles, lastIndex, majorTrend);
       if (evalRes && evalRes.direction) {
-        if (majorTrend === 'ALTA' && evalRes.direction === 'PUT') continue;
-        if (majorTrend === 'BAIXA' && evalRes.direction === 'CALL') continue;
-
         decisions.push({
           strategy: strat,
           direction: evalRes.direction,
