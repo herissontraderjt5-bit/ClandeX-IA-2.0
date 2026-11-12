@@ -471,8 +471,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [isDragging, position]);
 
-  // HUD Tabs: 'indicadores', 'grafico' e 'voz'
-  const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
+  // HUD Tabs: 'sinal', 'indicadores', 'grafico' e 'voz'
+  const [activeTab, setActiveTab] = useState<'sinal' | 'indicadores' | 'grafico' | 'voz'>('sinal');
   const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('NATIVE_SR');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
@@ -786,6 +786,82 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [activeCandles, asset]);
 
+  // Avaliação de Confluências e Sinal IA em Tempo Real por Perfil (Sniper / Alavancagem)
+  const aiConfluences = useMemo(() => {
+    return evaluateAiConfluences(technicalData);
+  }, [technicalData]);
+
+  const activeSignalInfo = useMemo(() => {
+    const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
+    const minThreshold = isSniper ? 70 : 55;
+    const score = aiConfluences.score;
+    const isSignalActive = score >= minThreshold;
+    const direction = aiConfluences.direction;
+
+    const triggers: { label: string; active: boolean }[] = [
+      {
+        label: `Tendência Macro (${technicalData.majorTrend.status})`,
+        active: technicalData.majorTrend.status === direction,
+      },
+      {
+        label: `RSI ${technicalData.rsi.value} pts (${direction === 'CALL' ? 'Sobrevenda / Alta' : 'Sobrecompra / Baixa'})`,
+        active: direction === 'CALL' ? technicalData.rsi.signal === 'ALTA' || technicalData.rsi.condition === 'SOBREVENDIDO' : technicalData.rsi.signal === 'BAIXA' || technicalData.rsi.condition === 'SOBRECOMPRADO',
+      },
+      {
+        label: `MACD Histograma (${direction === 'CALL' ? 'Positivo' : 'Negativo'})`,
+        active: direction === 'CALL' ? technicalData.macd.histogram > 0 : technicalData.macd.histogram < 0,
+      },
+      {
+        label: `Médias EMA 9/21 (${direction === 'CALL' ? '9 acima da 21' : '9 abaixo da 21'})`,
+        active: technicalData.maShort.status === direction,
+      },
+      {
+        label: `Bandas de Bollinger (${direction === 'CALL' ? 'Banda Inferior' : 'Banda Superior'})`,
+        active: direction === 'CALL' ? technicalData.bollingerBands.percentB < 0.25 : technicalData.bollingerBands.percentB > 0.75,
+      },
+      {
+        label: `Delta de Volume (${direction === 'CALL' ? `${technicalData.delta.buyerPercent}% Comprador` : `${technicalData.delta.sellerPercent}% Vendedor`})`,
+        active: direction === 'CALL' ? technicalData.delta.buyerPercent >= 51 : technicalData.delta.sellerPercent >= 51,
+      },
+      {
+        label: `Proximidade de ${direction === 'CALL' ? `Fundo Real (${srLevels.fundo})` : `Topo Real (${srLevels.topo})`}`,
+        active: direction === 'CALL' ? srLevels.distFundoPips <= 20 : srLevels.distTopoPips <= 20,
+      },
+    ];
+
+    const activeCount = triggers.filter((t) => t.active).length;
+
+    return {
+      isSniper,
+      minThreshold,
+      score,
+      isSignalActive,
+      direction: isSignalActive ? direction : 'NEUTRO',
+      targetDirection: direction,
+      triggers,
+      activeCount,
+      reasons: aiConfluences.reasons,
+    };
+  }, [aiConfluences, technicalData, srLevels, settings.analysisProfile]);
+
+  // Alerta sonoro automático ao confirmar sinal (se habilitado nas configurações)
+  const prevSignalStateRef = useRef<{ active: boolean; dir: string }>({ active: false, dir: 'NEUTRO' });
+  useEffect(() => {
+    if (activeSignalInfo.isSignalActive && (!prevSignalStateRef.current.active || prevSignalStateRef.current.dir !== activeSignalInfo.direction)) {
+      if (settings.confirmedSound) {
+        if (activeSignalInfo.direction === 'CALL') {
+          audioAlerts.playCallSignal();
+        } else if (activeSignalInfo.direction === 'PUT') {
+          audioAlerts.playPutSignal();
+        }
+      }
+    }
+    prevSignalStateRef.current = {
+      active: activeSignalInfo.isSignalActive,
+      dir: activeSignalInfo.direction,
+    };
+  }, [activeSignalInfo.isSignalActive, activeSignalInfo.direction, settings.confirmedSound]);
+
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
   const secs = remainingSeconds % 60;
@@ -1061,45 +1137,53 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       ) : (
         /* Expanded HUD Content with Clean Separate Tabs */
         <div>
-          {/* Navigation Tabs Bar - INDICADORES, GRÁFICO & VOZ 3D */}
+          {/* Navigation Tabs Bar - SINAL IA, INDICADORES, GRÁFICO & VOZ 3D */}
           <div className="flex items-center px-2 pt-2 pb-1.5 border-b border-neutral-800/80 bg-neutral-950/70 gap-1.5">
             <button
+              onClick={() => setActiveTab('sinal')}
+              className={`flex-1 py-2 px-1.5 rounded-xl font-mono text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'sinal'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+                }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Sinal IA</span>
+              {activeSignalInfo.isSignalActive && (
+                <span className={`w-2 h-2 rounded-full animate-ping shrink-0 ${activeSignalInfo.direction === 'CALL' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              )}
+            </button>
+
+            <button
               onClick={() => setActiveTab('indicadores')}
-              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'indicadores'
+              className={`flex-1 py-2 px-1.5 rounded-xl font-mono text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'indicadores'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Indicadores</span>
-              {indicatorConsensus.verdict.includes('COMPRA') && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
-              )}
-              {indicatorConsensus.verdict.includes('VENDA') && (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0" />
-              )}
             </button>
 
             <button
               onClick={() => setActiveTab('grafico')}
-              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'grafico'
+              className={`flex-1 py-2 px-1.5 rounded-xl font-mono text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'grafico'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Gráfico & Níveis</span>
+              <span>Gráfico</span>
             </button>
 
             <button
               onClick={() => setActiveTab('voz')}
-              className={`flex-1 py-2 px-2 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
+              className={`flex-1 py-2 px-1.5 rounded-xl font-mono text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap min-w-0 ${activeTab === 'voz'
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
                 }`}
             >
               <Mic className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span>IA Voz 3D</span>
+              <span>Voz 3D</span>
               {liveVoice && liveVoice.status !== 'idle' ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
               ) : (
@@ -1170,6 +1254,311 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           )}
 
           <div className="p-3.5 space-y-3 text-xs max-h-[76vh] overflow-y-auto custom-scrollbar">
+            
+            {/* TAB EXCLUSIVA 0: PAINEL DE SINAL IA */}
+            {activeTab === 'sinal' && (
+              <div className="space-y-3 font-mono">
+                {/* 1. SELEÇÃO DE ATIVO E TIMEFRAME */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-lg">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <SlidersHorizontal className="w-3 h-3 text-cyan-400" />
+                        ATIVO MONITORADO
+                      </label>
+                      <span className="text-[9px] font-mono text-cyan-300 font-bold">
+                        {asset.category === 'FOREX' ? '🌐 Mercado Forex' : '⚡ Bybit Cripto (24/7)'}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={asset.symbol}
+                        onChange={(e) => onSelectAsset(e.target.value)}
+                        className="w-full bg-black/60 border border-neutral-700/80 hover:border-cyan-500/60 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold appearance-none focus:outline-none transition-colors cursor-pointer"
+                      >
+                        <optgroup label="🌐 MERCADO FOREX (Pares Globais)">
+                          {assetsList
+                            .filter((a) => a.category === 'FOREX')
+                            .map((a) => (
+                              <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                                {!isForexOpen ? '🔴 [FECHADO] ' : '🟢 '}{a.symbol} — {a.name}
+                              </option>
+                            ))}
+                        </optgroup>
+                        <optgroup label="⚡ CRIPTOMOEDAS (Bybit 24/7)">
+                          {assetsList
+                            .filter((a) => a.category === 'CRYPTO')
+                            .map((a) => (
+                              <option key={a.symbol} value={a.symbol} className="bg-neutral-950 text-white font-mono">
+                                🟢 {a.symbol} — {a.name} (24/7)
+                              </option>
+                            ))}
+                        </optgroup>
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-2.5 text-xs text-cyan-400">▼</span>
+                    </div>
+                  </div>
+
+                  {/* Timeframe Selector */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock className="w-3 h-3 text-cyan-400" />
+                        TIMEFRAME
+                      </label>
+                      <span className="text-[9px] font-mono text-neutral-400">
+                        Vela: <strong className="text-white">{timeframe}</strong> • Fecha em: <strong className="text-cyan-300">{formattedCountdown}</strong>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                      {(['M1', 'M2', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'] as TimeFrame[]).map((tf) => {
+                        const isSelected = timeframe === tf;
+                        return (
+                          <button
+                            key={tf}
+                            onClick={() => onSelectTimeframe(tf)}
+                            className={`py-1.5 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer text-center ${isSelected
+                              ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                              : 'bg-neutral-950/80 text-neutral-400 border border-neutral-800 hover:text-white hover:border-neutral-700'
+                              }`}
+                          >
+                            {tf}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. MODO OPERACIONAL (SNIPER / ALAVANCAGEM) */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold font-mono text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      MODO OPERACIONAL
+                    </label>
+                    <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+                      {settings.analysisProfile === 'AGRESSIVA' ? 'AGRESSIVA' : 'CONSERVADORA'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${(settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA'
+                        ? 'bg-gradient-to-b from-cyan-950/70 to-black border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                    >
+                      <div className="text-[11px] font-mono font-black text-cyan-300">🎯 Sniper</div>
+                      <div className="text-[9.5px] font-bold text-white mt-0.5">Conservadora (70%+)</div>
+                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas cirúrgicas em S/R</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${settings.analysisProfile === 'AGRESSIVA'
+                        ? 'bg-gradient-to-b from-amber-950/70 to-black border-amber-400 text-white shadow-[0_0_15px_rgba(245,158,11,0.35)]'
+                        : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                    >
+                      <div className="text-[11px] font-mono font-black text-amber-300">⚡ Alavancagem</div>
+                      <div className="text-[9.5px] font-bold text-white mt-0.5">Agressiva (55%+)</div>
+                      <div className="text-[8.5px] text-neutral-400 mt-0.5">Entradas rápidas no fluxo</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. HERO DISPLAY: O GRANDE PAINEL DE SINAL AO VIVO */}
+                {activeSignalInfo.isSignalActive ? (
+                  <div
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
+                      activeSignalInfo.direction === 'CALL'
+                        ? 'bg-gradient-to-br from-emerald-950/90 via-[#062419] to-black border-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.4)]'
+                        : 'bg-gradient-to-br from-rose-950/90 via-[#260a12] to-black border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)]'
+                    }`}
+                  >
+                    {/* Header do Sinal */}
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full animate-ping ${activeSignalInfo.direction === 'CALL' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-white">
+                          SINAL CONFIRMADO • {activeSignalInfo.isSniper ? 'SNIPER' : 'ALAVANCAGEM'}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        activeSignalInfo.direction === 'CALL'
+                          ? 'bg-emerald-500 text-neutral-950 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                          : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)]'
+                      }`}>
+                        {activeSignalInfo.score}% ASSERTIVIDADE
+                      </span>
+                    </div>
+
+                    {/* Direção Gigante */}
+                    <div className="py-4 text-center space-y-1">
+                      <div className="flex items-center justify-center gap-3">
+                        {activeSignalInfo.direction === 'CALL' ? (
+                          <>
+                            <TrendingUp className="w-10 h-10 text-emerald-400 animate-bounce" />
+                            <span className="text-3xl font-black tracking-tight text-emerald-300 drop-shadow-[0_0_16px_rgba(16,185,129,0.8)]">
+                              COMPRA (CALL)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-10 h-10 text-rose-400 animate-bounce" />
+                            <span className="text-3xl font-black tracking-tight text-rose-300 drop-shadow-[0_0_16px_rgba(244,63,94,0.8)]">
+                              VENDA (PUT)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-300 font-bold">
+                        {asset.symbol} • Entrar no fim da vela atual ou retração da taxa
+                      </p>
+                    </div>
+
+                    {/* Métricas Operacionais */}
+                    <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-white/10 text-center">
+                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                        <span className="text-[9px] text-neutral-400 block uppercase">Cotação Atual</span>
+                        <span className="text-xs font-black font-mono text-white">
+                          {srLevels.curPrice.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                        <span className="text-[9px] text-neutral-400 block uppercase">Expiração</span>
+                        <span className="text-xs font-black font-mono text-cyan-300">
+                          {timeframe}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                        <span className="text-[9px] text-neutral-400 block uppercase">Fechamento</span>
+                        <span className="text-xs font-black font-mono text-amber-300">
+                          {formattedCountdown}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Painel de Monitoramento / Aguardando Confluência */
+                  <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl">
+                    <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
+                          MONITORAMENTO EM TEMPO REAL
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                        {activeSignalInfo.isSniper ? 'Filtro Sniper (70%+)' : 'Filtro Alavancagem (55%+)'}
+                      </span>
+                    </div>
+
+                    <div className="py-2 text-center space-y-1">
+                      <div className="flex items-center justify-center gap-2 text-neutral-300">
+                        <Activity className="w-5 h-5 text-cyan-400 animate-spin" />
+                        <span className="text-base font-extrabold text-white">
+                          AGUARDANDO OPORTUNIDADE
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-neutral-400">
+                        Rastreando os 10 indicadores e as taxas de Suporte e Resistência
+                      </p>
+                    </div>
+
+                    {/* Barra de Confluência Atual */}
+                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-neutral-400">
+                          Confluência Atual: <strong className="text-white">{activeSignalInfo.score}%</strong>
+                        </span>
+                        <span className="text-cyan-400 font-bold">
+                          Mínimo: {activeSignalInfo.minThreshold}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-cyan-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, Math.round((activeSignalInfo.score / activeSignalInfo.minThreshold) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Métricas Rápidas */}
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                        <span className="text-neutral-500 block uppercase">Viés Mais Próximo</span>
+                        <span className={`font-black ${activeSignalInfo.targetDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {activeSignalInfo.targetDirection === 'CALL' ? '▲ COMPRA (CALL)' : '▼ VENDA (PUT)'} ({activeSignalInfo.activeCount}/7 gatilhos)
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                        <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
+                        <span className="font-black text-amber-300 font-mono">
+                          {formattedCountdown}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. CHECKLIST DAS CONFLUÊNCIAS TÉCNICAS */}
+                <div className="p-3 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-1.5">
+                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      GATILHOS CONFLUENTES ({activeSignalInfo.activeCount}/7)
+                    </span>
+                    <span className="text-[9px] text-neutral-400">
+                      Cotação: <strong className="text-white">{srLevels.curPrice.toFixed(srLevels.decimals)}</strong>
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {activeSignalInfo.triggers.map((trig, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-2 rounded-xl border flex items-center justify-between text-[10.5px] transition-colors ${
+                          trig.active
+                            ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-200'
+                            : 'bg-black/30 border-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${trig.active ? 'text-emerald-400' : 'text-neutral-600'}`} />
+                          <span className={trig.active ? 'font-bold text-white' : ''}>{trig.label}</span>
+                        </div>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                          trig.active ? 'bg-emerald-500/20 text-emerald-300' : 'text-neutral-600'
+                        }`}>
+                          {trig.active ? 'ALINHADO' : 'AGUARDANDO'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. TAXAS CRÍTICAS DE SUPORTE & RESISTÊNCIA */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2.5 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[9px] text-rose-400 font-bold block">🔴 TOPO (RESISTÊNCIA)</span>
+                      <span className="text-xs font-black text-white">{srLevels.topo.toFixed(srLevels.decimals)}</span>
+                    </div>
+                    <span className="text-[9px] font-mono text-rose-300">+{srLevels.distTopoPips.toFixed(1)} p</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[9px] text-emerald-400 font-bold block">🟢 FUNDO (SUPORTE)</span>
+                      <span className="text-xs font-black text-white">{srLevels.fundo.toFixed(srLevels.decimals)}</span>
+                    </div>
+                    <span className="text-[9px] font-mono text-emerald-300">-{srLevels.distFundoPips.toFixed(1)} p</span>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* TAB EXCLUSIVA 1: INDICADORES TÉCNICOS & ANÁLISE INSTITUCIONAL */}
             {activeTab === 'indicadores' && (
@@ -1314,6 +1703,37 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                     </button>
                   </div>
+                </div>
+
+                {/* 2.1 BANNER DE STATUS DO SINAL IA */}
+                <div
+                  onClick={() => setActiveTab('sinal')}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                    activeSignalInfo.isSignalActive
+                      ? activeSignalInfo.direction === 'CALL'
+                        ? 'bg-emerald-950/70 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                        : 'bg-rose-950/70 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
+                      : 'bg-black/60 border-neutral-800 hover:border-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className={`w-4 h-4 ${activeSignalInfo.isSignalActive ? (activeSignalInfo.direction === 'CALL' ? 'text-emerald-400' : 'text-rose-400') : 'text-neutral-500'}`} />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">
+                        {activeSignalInfo.isSignalActive
+                          ? `SINAL ATIVO: ${activeSignalInfo.direction === 'CALL' ? '🟢 COMPRA (CALL)' : '🔴 VENDA (PUT)'}`
+                          : 'PAINEL DE SINAL IA • AGUARDANDO CONFLUÊNCIA'}
+                      </span>
+                      <span className="text-[9px] text-neutral-400">
+                        {activeSignalInfo.isSignalActive
+                          ? `${activeSignalInfo.score}% Assertividade • Toque para abrir painel completo`
+                          : `${activeSignalInfo.score}% de confluência no momento • Toque para abrir`}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold text-cyan-300 flex items-center gap-0.5">
+                    Abrir <ChevronRight className="w-3 h-3" />
+                  </span>
                 </div>
 
                 {/* 1. Header Compacto */}
