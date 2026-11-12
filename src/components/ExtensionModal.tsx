@@ -121,22 +121,20 @@ COMO INSTALAR NO GOOGLE CHROME (30 Segundos):
         <div className="flex items-center gap-1 px-5 pt-3 border-b border-neutral-800/80 bg-neutral-900/40 text-xs font-mono">
           <button
             onClick={() => setActiveTab('INSTRUCOES')}
-            className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === 'INSTRUCOES'
+            className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${activeTab === 'INSTRUCOES'
                 ? 'border-emerald-400 text-emerald-300'
                 : 'border-transparent text-neutral-400 hover:text-white'
-            }`}
+              }`}
           >
             <Zap className="w-3.5 h-3.5" />
             <span>Passo a Passo Rápido</span>
           </button>
           <button
             onClick={() => setActiveTab('MANIFEST')}
-            className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === 'MANIFEST'
+            className={`px-3 py-2 border-b-2 font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${activeTab === 'MANIFEST'
                 ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-neutral-400 hover:text-white'
-            }`}
+              }`}
           >
             <Layers className="w-3.5 h-3.5" />
             <span>manifest.json</span>

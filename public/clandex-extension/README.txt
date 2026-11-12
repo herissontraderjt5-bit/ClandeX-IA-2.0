@@ -21,3 +21,4 @@ COMO INSTALAR NO GOOGLE CHROME / BRAVE / EDGE / OPERA (Menos de 1 minuto):
 6. Pronto! A extensão ClandeX-IA estará ativa.
 7. Abra a Hiove (ou recarregue a página do ClandeX-IA). Um badge verde "CLANDEX-IA: 0ms" confirmará a sincronização!
 ========================================================================
+

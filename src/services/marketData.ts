@@ -339,7 +339,7 @@ export class MarketDataManager {
     // Ressincronização contínua a cada 45 segundos para manter precisão atômica com a Hiove
     if (typeof window !== 'undefined') {
       window.setInterval(() => {
-        this.syncServerTime().catch(() => {});
+        this.syncServerTime().catch(() => { });
       }, 45000);
 
       // Ponte de integração direta com a Extensão Chrome ClandeX (Cotação oficial da Corretora Hiove)
@@ -359,7 +359,7 @@ export class MarketDataManager {
               this.updateFromHiove(price, ticker, time);
             }
           };
-        } catch {}
+        } catch { }
       }
     }
 
@@ -652,7 +652,7 @@ export class MarketDataManager {
         console.log(`[MarketData] Relógio atômico sincronizado com Binance/Hiove. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
         return;
       }
-    } catch {}
+    } catch { }
 
     // 2. Fallback: Bybit Server Time (CORS aberto)
     try {
@@ -670,7 +670,7 @@ export class MarketDataManager {
           return;
         }
       }
-    } catch {}
+    } catch { }
 
     // 2. Fallback: Endpoint próprio /api/time
     try {
@@ -685,7 +685,7 @@ export class MarketDataManager {
         console.log(`[MarketData] Relógio atômico sincronizado via /api/time. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
         return;
       }
-    } catch {}
+    } catch { }
 
     // 3. Fallback: WorldTimeAPI
     try {
@@ -699,7 +699,7 @@ export class MarketDataManager {
         this.serverOffsetMs = estimatedServerMs - Date.now();
         console.log(`[MarketData] Relógio sincronizado via WorldTime. Offset: ${this.serverOffsetMs}ms`);
       }
-    } catch {}
+    } catch { }
   }
 
   public getCandles(): Candle[] {
@@ -787,7 +787,7 @@ export class MarketDataManager {
               op: 'subscribe',
               args: [`kline.${bybitInterval}.${pair}`],
             }));
-          } catch {}
+          } catch { }
         };
 
         this.cryptoWs.onmessage = (event) => {
@@ -807,7 +807,7 @@ export class MarketDataManager {
                 });
               }
             }
-          } catch {}
+          } catch { }
         };
 
         this.cryptoWs.onerror = () => {
@@ -826,10 +826,10 @@ export class MarketDataManager {
                     this.updateCurrentCandle(cPrice, bData.k);
                   }
                 }
-              } catch {}
+              } catch { }
             };
             this.cryptoWs = bWs;
-          } catch {}
+          } catch { }
           this.notifySource();
         };
       } catch {

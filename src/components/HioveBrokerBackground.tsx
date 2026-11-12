@@ -28,6 +28,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Chrome,
 } from 'lucide-react';
 import { isForexMarketOpen } from '../services/marketData';
 import { TradingViewWidget } from './TradingViewWidget';
