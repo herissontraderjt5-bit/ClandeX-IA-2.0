@@ -29,6 +29,7 @@ import {
   mapRowToSignal,
 } from './supabaseClient';
 import { notificationService } from './notificationService';
+import { computeTechnicalOverview } from './technicalIndicators';
 
 export function getExpirationForTimeframe(tf: TimeFrame): ExpirationTime {
   switch (tf) {
@@ -331,6 +332,19 @@ export class SignalEngine {
     let preAlertMinScore = 52;
     let confirmMinScore = 58;
 
+    // 0.1 Calcula indicadores técnicos institucionais e a TENDÊNCIA MAIOR em tempo real
+    const liveTv = marketDataManager.getLiveTradingViewData(timeframe);
+    const currentAsset = marketDataManager.getCurrentAsset();
+    const technicalOverview = computeTechnicalOverview(
+      allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
+      timeframe,
+      currentAsset,
+      liveTv
+    );
+    const majorTrend = technicalOverview.majorTrend.status; // 'ALTA' | 'BAIXA' | 'LATERAL'
+    const majorStrength = technicalOverview.majorTrend.strength;
+    const majorDesc = technicalOverview.majorTrend.description;
+
     // Cooldown ágil entre sinais confirmados por perfil para evitar sinais seguidos (1 a 3 minutos):
     // CONSERVADORA (Sniper): 120s (2 min) | MODERADA: 90s (1.5 min) | AGRESSIVA: 60s (1 min)
     let signalCooldownMs = 90_000;
@@ -433,10 +447,14 @@ export class SignalEngine {
 
         if (this.activePreAlert.direction === 'CALL') {
           // Para CALL: cancela se houver pavio SUPERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // OU se a tendência maior dos indicadores for de BAIXA (proteção institucional)
           // OU se a vela do Padrão 2 estiver fechando vermelha contrária à compra
           if (upperWick > body && upperWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (majorTrend === 'BAIXA') {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Tendência Maior dos Indicadores virou para BAIXA. Operação de COMPRA abortada para proteção.';
           } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 (Fluxo da 3ª Vela de Alta) invalidado para proteção de banca.';
@@ -446,10 +464,14 @@ export class SignalEngine {
           }
         } else if (this.activePreAlert.direction === 'PUT') {
           // Para PUT: cancela se houver pavio INFERIOR de rejeição estritamente MAIOR que o corpo da vela
+          // OU se a tendência maior dos indicadores for de ALTA (proteção institucional)
           // OU se a vela do Padrão 1 estiver fechando verde contrária à venda
           if (lowerWick > body && lowerWick > 0.00001) {
             hasOpposingRejectionWick = true;
             cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+          } else if (majorTrend === 'ALTA') {
+            hasOpposingRejectionWick = true;
+            cancelReason = 'Tendência Maior dos Indicadores virou para ALTA. Operação de VENDA abortada para proteção.';
           } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
             hasOpposingRejectionWick = true;
             cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 (Fluxo 3ª Vela Baixa) invalidado para proteção de banca.';
@@ -542,24 +564,29 @@ export class SignalEngine {
           allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
           activeStrategies.length > 0 ? activeStrategies : getStoredActiveStrategies(),
           this.backtestResults,
-          profile
+          profile,
+          majorTrend
         );
 
         let activeDecision = stratDecision;
         if (!activeDecision && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= confirmMinScore) {
-          activeDecision = {
-            strategy: {
-              id: 'estrategia_confluencia_ia',
-              name: 'IA Confluência Técnica Avançada',
-              badge: `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`,
-              category: 'ALGORITMICA',
-              description: 'Confluência múltipla TradingView (RSI, MACD, Estocástico, Bollinger)',
-              minProfile: 'MODERADA',
-            },
-            direction: confluences.bias,
-            score: confluences.totalScore,
-            reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'],
-          };
+          // Bloqueio rigoroso de tendência maior
+          const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
+          if (!isConflict) {
+            activeDecision = {
+              strategy: {
+                id: 'estrategia_confluencia_ia',
+                name: 'IA Confluência Técnica Avançada',
+                badge: `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`,
+                category: 'ALGORITMICA',
+                description: 'Confluência múltipla TradingView (RSI, MACD, Estocástico, Bollinger)',
+                minProfile: 'MODERADA',
+              },
+              direction: confluences.bias,
+              score: confluences.totalScore,
+              reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'],
+            };
+          }
         }
 
         if (activeDecision) {
@@ -655,7 +682,8 @@ export class SignalEngine {
       allCandles && allCandles.length > 0 ? allCandles : [currentCandle],
       activeStrategies.length > 0 ? activeStrategies : getStoredActiveStrategies(),
       this.backtestResults,
-      profile
+      profile,
+      majorTrend
     );
 
     let signalDirection: SignalDirection | null = null;
@@ -678,7 +706,10 @@ export class SignalEngine {
       if (!isHardResistanceBlock && !isHardSupportBlock) {
         signalDirection = stratDecision.direction;
         signalScore = stratDecision.score;
-        signalReasons = [...stratDecision.reasons];
+        signalReasons = [
+          ...stratDecision.reasons,
+          `Tendência Maior dos Indicadores: ${majorTrend} (${majorStrength})`,
+        ];
         stratId = stratDecision.strategy.id;
         stratName = stratDecision.strategy.name;
         stratBadge = stratDecision.strategy.badge;
@@ -689,13 +720,20 @@ export class SignalEngine {
 
     // Fallback de Pré-Alerta via Confluência Técnica Multidimensional (quando nenhum padrão de vela estiver ativo)
     if (!signalDirection && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
-      signalDirection = confluences.bias;
-      signalScore = confluences.totalScore;
-      signalReasons = confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'];
-      stratId = 'estrategia_confluencia_ia';
-      stratName = 'IA Confluência Técnica Avançada';
-      stratBadge = `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`;
-      stratWinRate = Math.min(94, Math.max(72, confluences.totalScore));
+      // Bloqueio rigoroso de tendência maior
+      const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
+      if (!isConflict) {
+        signalDirection = confluences.bias;
+        signalScore = confluences.totalScore;
+        signalReasons = [
+          ...(confluences.reasons.length > 0 ? confluences.reasons : ['Confluência Técnica Múltipla TradingView']),
+          `Tendência Maior dos Indicadores: ${majorTrend} (${majorStrength})`,
+        ];
+        stratId = 'estrategia_confluencia_ia';
+        stratName = 'IA Confluência Técnica Avançada';
+        stratBadge = `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`;
+        stratWinRate = Math.min(94, Math.max(72, confluences.totalScore));
+      }
     }
 
     if (

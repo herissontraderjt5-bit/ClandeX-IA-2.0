@@ -1108,8 +1108,34 @@ DIRETRIZES:
             </span>
           ) : (
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[10px] text-cyan-300 font-mono font-bold bg-cyan-950/70 px-1.5 py-0.5 rounded border border-cyan-500/40 whitespace-nowrap">
-                {asset.symbol} • {timeframe}
+              <div className="relative inline-flex items-center">
+                <select
+                  value={asset.symbol}
+                  onChange={(e) => onSelectAsset(e.target.value)}
+                  className="bg-cyan-950/80 hover:bg-cyan-900/90 text-[10px] text-cyan-300 font-mono font-bold px-1.5 py-0.5 rounded border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none pr-4"
+                  title="Clique para alternar o par oficial monitorado pela IA"
+                >
+                  <optgroup label="Cripto 24/7 (Bybit / Binance)">
+                    <option value="BTC/USD">BTC/USD (Bitcoin)</option>
+                    <option value="ETH/USD">ETH/USD (Ethereum)</option>
+                    <option value="SOL/USD">SOL/USD (Solana)</option>
+                    <option value="BNB/USD">BNB/USD (BNB)</option>
+                    <option value="XRP/USD">XRP/USD (Ripple)</option>
+                  </optgroup>
+                  <optgroup label="Forex (TradingView OANDA)">
+                    <option value="EUR/USD">EUR/USD</option>
+                    <option value="GBP/USD">GBP/USD</option>
+                    <option value="USD/JPY">USD/JPY</option>
+                    <option value="AUD/USD">AUD/USD</option>
+                    <option value="USD/CAD">USD/CAD</option>
+                    <option value="EUR/JPY">EUR/JPY</option>
+                    <option value="GBP/JPY">GBP/JPY</option>
+                  </optgroup>
+                </select>
+                <span className="pointer-events-none absolute right-1 text-[8px] text-cyan-400">▼</span>
+              </div>
+              <span className="text-[10px] text-cyan-300/80 font-mono font-bold bg-black/40 px-1 py-0.5 rounded border border-cyan-500/30 whitespace-nowrap">
+                {timeframe}
               </span>
               <span
                 title="Horário Oficial de Brasília (BRT - UTC-3)"
@@ -1711,6 +1737,25 @@ DIRETRIZES:
                         </div>
                       )}
 
+                      {/* Tendência Maior dos Indicadores */}
+                      <div className="p-2 bg-black/60 rounded-xl border border-cyan-500/30 flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-neutral-400">Tendência Maior:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-bold ${technicalData.majorTrend.status === 'ALTA' ? 'text-emerald-400' : technicalData.majorTrend.status === 'BAIXA' ? 'text-rose-400' : 'text-neutral-400'}`}>
+                            {technicalData.majorTrend.status === 'ALTA' ? '▲ ALTA (COMPRA)' : technicalData.majorTrend.status === 'BAIXA' ? '▼ BAIXA (VENDA)' : '◆ LATERAL'}
+                          </span>
+                          <span className="text-[9px] text-cyan-300 bg-cyan-950/70 px-1.5 py-0.5 rounded border border-cyan-500/40">
+                            {technicalData.majorTrend.strength}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Alerta de Ativo da Corretora */}
+                      <div className="px-2 py-1 bg-amber-950/40 border border-amber-500/30 rounded-lg flex items-center justify-between text-[9.5px] font-mono text-amber-300">
+                        <span>Par Oficial em Análise:</span>
+                        <strong className="text-white bg-black/60 px-1.5 py-0.5 rounded border border-amber-500/40">{activeTrade.asset || asset.symbol}</strong>
+                      </div>
+
                       {/* Cronômetro de Expiração Tecnológico */}
                       <div className="p-2.5 bg-black/70 rounded-xl border border-cyan-500/50 text-center space-y-0.5 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]">
                         <div className="flex items-center justify-center gap-1.5 text-[9px] font-mono text-cyan-400 uppercase tracking-wider font-bold">
@@ -1988,6 +2033,25 @@ DIRETRIZES:
                           </div>
                         </div>
                       )}
+
+                      {/* Tendência Maior dos Indicadores no Pré-Alerta */}
+                      <div className="p-2 bg-black/70 rounded-xl border border-amber-500/40 flex items-center justify-between text-[10px] font-mono shadow-sm">
+                        <span className="text-neutral-400 font-medium">Tendência Maior:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-bold ${technicalData.majorTrend.status === 'ALTA' ? 'text-emerald-400' : technicalData.majorTrend.status === 'BAIXA' ? 'text-rose-400' : 'text-neutral-400'}`}>
+                            {technicalData.majorTrend.status === 'ALTA' ? '▲ ALTA (COMPRA)' : technicalData.majorTrend.status === 'BAIXA' ? '▼ BAIXA (VENDA)' : '◆ LATERAL'}
+                          </span>
+                          <span className="text-[9px] text-amber-300 bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/50 font-black">
+                            {technicalData.majorTrend.strength}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Aviso de Paridade para o Usuário */}
+                      <div className="px-2 py-1 bg-amber-950/40 border border-amber-500/30 rounded-lg flex items-center justify-between text-[9.5px] font-mono text-amber-300">
+                        <span>Par Oficial em Análise:</span>
+                        <strong className="text-white bg-black/60 px-1.5 py-0.5 rounded border border-amber-500/40">{activePreAlert.asset || asset.symbol}</strong>
+                      </div>
 
                       {/* Contagem regressiva até a confirmação nos 10s finais */}
                       <div className="p-2.5 bg-black/80 border border-amber-500/50 rounded-xl text-center space-y-1 shadow-[inset_0_0_15px_rgba(245,158,11,0.15)]">
