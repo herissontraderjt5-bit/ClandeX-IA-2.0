@@ -308,17 +308,41 @@ export class SignalEngine {
       let updatedEntry = false;
       this.pendingTrades.forEach((trade) => {
         // Quando a vela do sinal abre (segundo 00:00 da vela oficial de entrada):
-        // Trava a taxa oficial de abertura com o preço REAL do tick
+        // Trava a taxa oficial de abertura com o preço REAL da abertura da vela (candle.open)
         if (!trade.isEntered) {
           if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
             trade.isEntered = true;
-            // Trava taxa atômica de abertura
-            const openRate = currentPrice > 0 ? currentPrice : (currentCandle?.open || trade.entryPrice);
-            trade.entryPrice = openRate;
-            trade.candleOpenPrice = openRate;
+
+            // 1. Busca a vela oficial da operação em allCandles
+            const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
+
+            // 2. Prioridade máxima absoluta: candle.open oficial da vela aberta no gráfico
+            let officialOpen = 0;
+            if (matchingCandle && matchingCandle.open > 0) {
+              officialOpen = matchingCandle.open;
+            } else if (currentCandle && Math.abs(currentCandle.time - trade.entryTimestamp!) < 2 && currentCandle.open > 0) {
+              officialOpen = currentCandle.open;
+            } else if (currentPrice > 0) {
+              officialOpen = currentPrice;
+            } else {
+              officialOpen = trade.entryPrice;
+            }
+
+            trade.entryPrice = officialOpen;
+            trade.candleOpenPrice = officialOpen;
             updatedEntry = true;
           }
         } else {
+          // Se já entrou, mas por algum motivo candleOpenPrice ainda for 0 ou se allCandles tiver o open oficial:
+          if ((!trade.candleOpenPrice || trade.candleOpenPrice <= 0) && trade.entryTimestamp) {
+            const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
+            if (matchingCandle && matchingCandle.open > 0) {
+              trade.entryPrice = matchingCandle.open;
+              trade.candleOpenPrice = matchingCandle.open;
+              updatedEntry = true;
+            }
+          }
+
           // Enquanto a vela está em andamento (antes da expiração), registra a cotação ao vivo
           if (!trade.expirationTimestamp || nowSec < trade.expirationTimestamp) {
             trade.candleClosePrice = currentPrice;
@@ -887,15 +911,32 @@ export class SignalEngine {
       }
 
       // 3. APURAÇÃO DEFINITIVA NO FECHAMENTO DA VELA
-      // Taxa oficial de abertura: travada no momento em que a vela abriu
-      const officialOpen = (trade.candleOpenPrice && trade.candleOpenPrice > 0)
-        ? trade.candleOpenPrice
-        : (trade.entryPrice > 0 ? trade.entryPrice : currentPrice);
+      // Busca a vela oficial exata da operação que acabou de fechar em allCandles
+      const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
 
-      // Taxa oficial de fechamento: preço no término da vela
-      const officialClose = (currentPrice > 0)
-        ? currentPrice
-        : ((trade.candleClosePrice && trade.candleClosePrice > 0) ? trade.candleClosePrice : officialOpen);
+      // Taxa oficial de abertura da vela: prioriza o candle.open real da vela oficial
+      let officialOpen = 0;
+      if (matchingCandle && matchingCandle.open > 0) {
+        officialOpen = matchingCandle.open;
+      } else if (trade.candleOpenPrice && trade.candleOpenPrice > 0) {
+        officialOpen = trade.candleOpenPrice;
+      } else if (trade.entryPrice && trade.entryPrice > 0) {
+        officialOpen = trade.entryPrice;
+      } else {
+        officialOpen = currentPrice;
+      }
+
+      // Taxa oficial de fechamento da vela: prioriza o candle.close real da vela que fechou
+      let officialClose = 0;
+      if (matchingCandle && matchingCandle.close > 0) {
+        officialClose = matchingCandle.close;
+      } else if (trade.candleClosePrice && trade.candleClosePrice > 0) {
+        officialClose = trade.candleClosePrice;
+      } else if (currentPrice > 0) {
+        officialClose = currentPrice;
+      } else {
+        officialClose = officialOpen;
+      }
 
       const diff = officialClose - officialOpen;
       const EPSILON = 1e-8;
