@@ -670,7 +670,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   );
 
   useEffect(() => {
-    const cached = tradingViewScanner.getCached(asset.symbol, timeframe);
+    const cached = tradingViewScanner.getLatest ? tradingViewScanner.getLatest(asset.symbol, timeframe) : null;
     setLiveTvData(cached ? { ...cached } : null);
     const unsubscribe = tradingViewScanner.subscribe((data) => {
       if (data.symbol === asset.symbol) {

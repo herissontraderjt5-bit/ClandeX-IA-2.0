@@ -84,6 +84,13 @@ class TradingViewScannerService {
     return this.cache.get(symbol) || null;
   }
 
+  /**
+   * Alias para getLatest
+   */
+  public getCached(symbol: string, timeframe?: TimeFrame): LiveTradingViewData | null {
+    return this.getLatest(symbol, timeframe);
+  }
+
   public subscribe(cb: TradingViewUpdateCallback): () => void {
     this.listeners.push(cb);
     return () => {
