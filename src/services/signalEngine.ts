@@ -494,30 +494,42 @@ export class SignalEngine {
         let cancelReason = '';
 
         if (this.activePreAlert.direction === 'CALL') {
-          // Para CALL: cancela se houver pavio SUPERIOR de rejeição real maior que o corpo da vela
-          const isUpperRejection = isTrueRejectionWick(upperWick, body, candleRange, currentCandle.close, 'UPPER', currentCandle);
-          if (isUpperRejection) {
+          // REGRA DE OURO DO USUÁRIO: ZERO SINAIS CONTRA A TENDÊNCIA A NÃO SER QUE ESTEJA EM NEUTRO/LATERAL!
+          if (majorTrend === 'BAIXA') {
             hasOpposingRejectionWick = true;
-            cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
-          } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 (Fluxo da 3ª Vela de Alta) invalidado para proteção de banca.';
-          } else if (profile === 'CONSERVADORA' && currentCandle.close < currentCandle.open) {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
+            cancelReason = 'Mercado em Tendência de BAIXA dos Indicadores. Operação de COMPRA abortada (contra-tendência).';
+          } else {
+            // Para CALL: cancela se houver pavio SUPERIOR de rejeição real maior que o corpo da vela
+            const isUpperRejection = isTrueRejectionWick(upperWick, body, candleRange, currentCandle.close, 'UPPER', currentCandle);
+            if (isUpperRejection) {
+              hasOpposingRejectionWick = true;
+              cancelReason = `Pavio superior de rejeição (${upperWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+            } else if (this.activePreAlert.strategyId === 'padrao_2_fluxo_call' && currentCandle.close < currentCandle.open) {
+              hasOpposingRejectionWick = true;
+              cancelReason = 'Vela vermelha contrária ao fluxo de alta. Padrão 2 (Fluxo da 3ª Vela de Alta) invalidado para proteção de banca.';
+            } else if (profile === 'CONSERVADORA' && currentCandle.close < currentCandle.open) {
+              hasOpposingRejectionWick = true;
+              cancelReason = 'Modo Sniper: Vela vermelha contrária à compra (CALL). Entrada abortada para proteção cirúrgica.';
+            }
           }
         } else if (this.activePreAlert.direction === 'PUT') {
-          // Para PUT: cancela se houver pavio INFERIOR de rejeição real maior que o corpo da vela
-          const isLowerRejection = isTrueRejectionWick(lowerWick, body, candleRange, currentCandle.close, 'LOWER', currentCandle);
-          if (isLowerRejection) {
+          // REGRA DE OURO DO USUÁRIO: ZERO SINAIS CONTRA A TENDÊNCIA A NÃO SER QUE ESTEJA EM NEUTRO/LATERAL!
+          if (majorTrend === 'ALTA') {
             hasOpposingRejectionWick = true;
-            cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
-          } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 (Fluxo 3ª Vela Baixa) invalidado para proteção de banca.';
-          } else if (profile === 'CONSERVADORA' && currentCandle.close > currentCandle.open) {
-            hasOpposingRejectionWick = true;
-            cancelReason = 'Modo Sniper: Vela verde contrária à venda (PUT). Entrada abortada para proteção cirúrgica.';
+            cancelReason = 'Mercado em Tendência de ALTA dos Indicadores. Operação de VENDA abortada (contra-tendência).';
+          } else {
+            // Para PUT: cancela se houver pavio INFERIOR de rejeição real maior que o corpo da vela
+            const isLowerRejection = isTrueRejectionWick(lowerWick, body, candleRange, currentCandle.close, 'LOWER', currentCandle);
+            if (isLowerRejection) {
+              hasOpposingRejectionWick = true;
+              cancelReason = `Pavio inferior de rejeição (${lowerWick.toFixed(5)}) maior que o corpo da vela (${body.toFixed(5)}). Entrada abortada.`;
+            } else if (this.activePreAlert.strategyId === 'padrao_1_fluxo_put' && currentCandle.close > currentCandle.open) {
+              hasOpposingRejectionWick = true;
+              cancelReason = 'Vela verde contrária ao fluxo de baixa. Padrão 1 (Fluxo 3ª Vela Baixa) invalidado para proteção de banca.';
+            } else if (profile === 'CONSERVADORA' && currentCandle.close > currentCandle.open) {
+              hasOpposingRejectionWick = true;
+              cancelReason = 'Modo Sniper: Vela verde contrária à venda (PUT). Entrada abortada para proteção cirúrgica.';
+            }
           }
         }
 
@@ -611,8 +623,8 @@ export class SignalEngine {
         let activeDecision = stratDecision;
         if (!activeDecision && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= confirmMinScore) {
           const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
-          // Se for contra-tendência, exige confluência forte (+4 pts); se for a favor ou lateral, aceita com fluidez
-          if (!isConflict || confluences.totalScore >= confirmMinScore + 4) {
+          // REGRA DE OURO DO USUÁRIO: ZERO SINAIS CONTRA A TENDÊNCIA A NÃO SER QUE O MERCADO ESTEJA EM NEUTRO / LATERAL!
+          if (!isConflict) {
             activeDecision = {
               strategy: {
                 id: 'estrategia_confluencia_ia',
@@ -627,6 +639,12 @@ export class SignalEngine {
               reasons: confluences.reasons.length > 0 ? [...confluences.reasons] : ['Confluência Técnica Múltipla TradingView'],
             };
           }
+        }
+
+        if (activeDecision) {
+          // REGRA DE OURO DO USUÁRIO: ZERO SINAIS CONTRA A TENDÊNCIA A NÃO SER QUE O MERCADO ESTEJA EM NEUTRO / LATERAL!
+          if (majorTrend === 'ALTA' && activeDecision.direction === 'PUT') activeDecision = null;
+          if (majorTrend === 'BAIXA' && activeDecision.direction === 'CALL') activeDecision = null;
         }
 
         if (activeDecision) {
@@ -763,8 +781,8 @@ export class SignalEngine {
     // Fallback de Pré-Alerta via Confluência Técnica Multidimensional (quando nenhum padrão de vela estiver ativo)
     if (!signalDirection && confluences && confluences.bias && confluences.bias !== 'NEUTRO' && confluences.totalScore >= preAlertMinScore) {
       const isConflict = (majorTrend === 'ALTA' && confluences.bias === 'PUT') || (majorTrend === 'BAIXA' && confluences.bias === 'CALL');
-      // Se for contra-tendência, exige confluência mais forte (+4 pts); se for a favor ou lateral, aceita com fluidez
-      if (!isConflict || confluences.totalScore >= preAlertMinScore + 4) {
+      // REGRA DE OURO DO USUÁRIO: ZERO SINAIS CONTRA A TENDÊNCIA A NÃO SER QUE O MERCADO ESTEJA EM NEUTRO / LATERAL!
+      if (!isConflict) {
         signalDirection = confluences.bias;
         signalScore = confluences.totalScore;
         signalReasons = [
@@ -776,6 +794,14 @@ export class SignalEngine {
         stratBadge = `IA ${confluences.bias === 'CALL' ? 'ALTA' : 'BAIXA'}`;
         stratWinRate = Math.min(94, Math.max(72, confluences.totalScore));
       }
+    }
+
+    // REGRA DE OURO DO USUÁRIO: NUNCA GERAR SINAL CONTRA A TENDÊNCIA A NÃO SER QUE O MERCADO ESTEJA EM NEUTRO / LATERAL!
+    if (majorTrend === 'ALTA' && signalDirection === 'PUT') {
+      signalDirection = null;
+    }
+    if (majorTrend === 'BAIXA' && signalDirection === 'CALL') {
+      signalDirection = null;
     }
 
     if (
