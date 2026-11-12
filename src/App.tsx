@@ -75,7 +75,7 @@ export default function App() {
     return list.length > 0 ? list[list.length - 1] : null;
   });
   const [remainingSeconds, setRemainingSeconds] = useState<number>(60);
-  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(true);
 
   // Signals state
   const [activePreAlert, setActivePreAlert] = useState<SignalRecord | null>(null);

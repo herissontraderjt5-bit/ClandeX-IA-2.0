@@ -787,45 +787,46 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   }, [activeCandles, asset]);
 
   // Avaliação de Confluências e Sinal IA em Tempo Real por Perfil (Sniper / Alavancagem)
-  const aiConfluences = useMemo(() => {
-    return evaluateAiConfluences(technicalData);
-  }, [technicalData]);
-
   const activeSignalInfo = useMemo(() => {
+    const dominantCount = indicatorConsensus.callCount >= indicatorConsensus.putCount
+      ? indicatorConsensus.callCount
+      : indicatorConsensus.putCount;
+    const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
+
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
+    const minCount = isSniper ? 5 : 4;
     const minThreshold = isSniper ? 70 : 55;
-    const score = aiConfluences.score;
-    const isSignalActive = score >= minThreshold;
-    const direction = aiConfluences.direction;
+    const isSignalActive = isAnalyzing && (dominantCount >= minCount);
+    const score = Math.max(65, Math.min(96, dominantCount * 10 + (isSniper ? 20 : 15)));
 
     const triggers: { label: string; active: boolean }[] = [
       {
-        label: `Tendência Macro (${technicalData.majorTrend.status})`,
-        active: technicalData.majorTrend.status === direction,
+        label: `Tendência Maior (${technicalData.majorTrend.status})`,
+        active: (dominantDirection === 'CALL' && technicalData.majorTrend.status === 'ALTA') || (dominantDirection === 'PUT' && technicalData.majorTrend.status === 'BAIXA'),
       },
       {
-        label: `RSI ${technicalData.rsi.value} pts (${direction === 'CALL' ? 'Sobrevenda / Alta' : 'Sobrecompra / Baixa'})`,
-        active: direction === 'CALL' ? technicalData.rsi.signal === 'ALTA' || technicalData.rsi.condition === 'SOBREVENDIDO' : technicalData.rsi.signal === 'BAIXA' || technicalData.rsi.condition === 'SOBRECOMPRADO',
+        label: `RSI (14): ${technicalData.rsi.value} pts (${technicalData.rsi.statusLabel})`,
+        active: (dominantDirection === 'CALL' && (technicalData.rsi.signal === 'ALTA' || technicalData.rsi.condition === 'SOBREVENDIDO')) || (dominantDirection === 'PUT' && (technicalData.rsi.signal === 'BAIXA' || technicalData.rsi.condition === 'SOBRECOMPRADO')),
       },
       {
-        label: `MACD Histograma (${direction === 'CALL' ? 'Positivo' : 'Negativo'})`,
-        active: direction === 'CALL' ? technicalData.macd.histogram > 0 : technicalData.macd.histogram < 0,
+        label: `MACD Histograma (${technicalData.macd.status})`,
+        active: (dominantDirection === 'CALL' && (technicalData.macd.status === 'ALTA' || technicalData.macd.histogram > 0)) || (dominantDirection === 'PUT' && (technicalData.macd.status === 'BAIXA' || technicalData.macd.histogram < 0)),
       },
       {
-        label: `Médias EMA 9/21 (${direction === 'CALL' ? '9 acima da 21' : '9 abaixo da 21'})`,
-        active: technicalData.maShort.status === direction,
+        label: `Médias Rápidas EMA 9/21 (${technicalData.maShort.status})`,
+        active: (dominantDirection === 'CALL' && technicalData.maShort.status === 'ALTA') || (dominantDirection === 'PUT' && technicalData.maShort.status === 'BAIXA'),
       },
       {
-        label: `Bandas de Bollinger (${direction === 'CALL' ? 'Banda Inferior' : 'Banda Superior'})`,
-        active: direction === 'CALL' ? technicalData.bollingerBands.percentB < 0.25 : technicalData.bollingerBands.percentB > 0.75,
+        label: `Bandas de Bollinger (${technicalData.bollingerBands.status})`,
+        active: (dominantDirection === 'CALL' && (technicalData.bollingerBands.status === 'ALTA' || technicalData.bollingerBands.percentB < 0.30)) || (dominantDirection === 'PUT' && (technicalData.bollingerBands.status === 'BAIXA' || technicalData.bollingerBands.percentB > 0.70)),
       },
       {
-        label: `Delta de Volume (${direction === 'CALL' ? `${technicalData.delta.buyerPercent}% Comprador` : `${technicalData.delta.sellerPercent}% Vendedor`})`,
-        active: direction === 'CALL' ? technicalData.delta.buyerPercent >= 51 : technicalData.delta.sellerPercent >= 51,
+        label: `Delta de Volume (${dominantDirection === 'CALL' ? `${technicalData.delta.buyerPercent}% Comp.` : `${technicalData.delta.sellerPercent}% Vend.`})`,
+        active: (dominantDirection === 'CALL' && technicalData.delta.buyerPercent >= 50) || (dominantDirection === 'PUT' && technicalData.delta.sellerPercent >= 50),
       },
       {
-        label: `Proximidade de ${direction === 'CALL' ? `Fundo Real (${srLevels.fundo})` : `Topo Real (${srLevels.topo})`}`,
-        active: direction === 'CALL' ? srLevels.distFundoPips <= 20 : srLevels.distTopoPips <= 20,
+        label: `Região de Pavio Real (${dominantDirection === 'CALL' ? `Fundo: ${srLevels.fundo}` : `Topo: ${srLevels.topo}`})`,
+        active: (dominantDirection === 'CALL' && srLevels.distFundoPips <= 30) || (dominantDirection === 'PUT' && srLevels.distTopoPips <= 30),
       },
     ];
 
@@ -833,16 +834,19 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
     return {
       isSniper,
+      minCount,
       minThreshold,
       score,
       isSignalActive,
-      direction: isSignalActive ? direction : 'NEUTRO',
-      targetDirection: direction,
+      dominantCount,
+      direction: isSignalActive ? dominantDirection : 'NEUTRO',
+      targetDirection: dominantDirection,
       triggers,
       activeCount,
-      reasons: aiConfluences.reasons,
+      callCount: indicatorConsensus.callCount,
+      putCount: indicatorConsensus.putCount,
     };
-  }, [aiConfluences, technicalData, srLevels, settings.analysisProfile]);
+  }, [indicatorConsensus, technicalData, srLevels, settings.analysisProfile, isAnalyzing]);
 
   // Alerta sonoro automático ao confirmar sinal (se habilitado nas configurações)
   const prevSignalStateRef = useRef<{ active: boolean; dir: string }>({ active: false, dir: 'NEUTRO' });
@@ -944,6 +948,22 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0 text-neutral-400">
+          {/* Botão Liga/Pausa Análise em Tempo Real */}
+          {!isDepositLocked && (
+            <button
+              onClick={onToggleAnalysis}
+              title={isAnalyzing ? 'Análise Ativa em Tempo Real (Clique para Pausar)' : 'Análise Pausada (Clique para Iniciar)'}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold border transition-all cursor-pointer select-none ${
+                isAnalyzing
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-500/60 animate-pulse'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+              <span>{isAnalyzing ? 'ANALISANDO' : 'PAUSADO'}</span>
+            </button>
+          )}
+
           {/* Botão rápido para Voltar ao Login */}
           {isDepositLocked && (
             <button
@@ -1446,9 +1466,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   <div className="p-4 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl">
                     <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        <span className={`w-2 h-2 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
                         <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
-                          MONITORAMENTO EM TEMPO REAL
+                          {isAnalyzing ? 'MONITORAMENTO EM TEMPO REAL' : 'SISTEMA EM PAUSA'}
                         </span>
                       </div>
                       <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
@@ -1456,51 +1476,75 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </span>
                     </div>
 
-                    <div className="py-2 text-center space-y-1">
-                      <div className="flex items-center justify-center gap-2 text-neutral-300">
-                        <Activity className="w-5 h-5 text-cyan-400 animate-spin" />
-                        <span className="text-base font-extrabold text-white">
-                          AGUARDANDO OPORTUNIDADE
-                        </span>
+                    {!isAnalyzing ? (
+                      <div className="py-2 text-center space-y-2.5">
+                        <div className="flex items-center justify-center gap-2 text-amber-300">
+                          <AlertTriangle className="w-5 h-5 text-amber-400" />
+                          <span className="text-base font-extrabold text-white">
+                            ANÁLISE PAUSADA
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-400">
+                          A análise em tempo real está pausada. Clique no botão abaixo para ligar o scanner.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={onToggleAnalysis}
+                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
+                        >
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>LIGAR ANÁLISE EM TEMPO REAL</span>
+                        </button>
                       </div>
-                      <p className="text-[10px] text-neutral-400">
-                        Rastreando os 10 indicadores e as taxas de Suporte e Resistência
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="py-1 text-center space-y-1">
+                          <div className="flex items-center justify-center gap-2 text-neutral-300">
+                            <Activity className="w-4 h-4 text-cyan-400 animate-spin" />
+                            <span className="text-sm font-extrabold text-white">
+                              ANALISANDO ATIVO: {activeSignalInfo.dominantCount} GATILHOS
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-neutral-400">
+                            Aguardando alinhamento de {activeSignalInfo.minCount} ou mais indicadores confluentes
+                          </p>
+                        </div>
 
-                    {/* Barra de Confluência Atual */}
-                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-neutral-400">
-                          Confluência Atual: <strong className="text-white">{activeSignalInfo.score}%</strong>
-                        </span>
-                        <span className="text-cyan-400 font-bold">
-                          Mínimo: {activeSignalInfo.minThreshold}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-cyan-500 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, Math.round((activeSignalInfo.score / activeSignalInfo.minThreshold) * 100))}%` }}
-                        />
-                      </div>
-                    </div>
+                        {/* Barra de Confluência Atual */}
+                        <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800/80 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-neutral-400">
+                              Confluência: <strong className="text-white">{activeSignalInfo.score}%</strong> ({activeSignalInfo.callCount} CALL vs {activeSignalInfo.putCount} PUT)
+                            </span>
+                            <span className="text-cyan-400 font-bold">
+                              Meta: {activeSignalInfo.minThreshold}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-cyan-500 h-full rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(100, Math.round((activeSignalInfo.score / activeSignalInfo.minThreshold) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
 
-                    {/* Métricas Rápidas */}
-                    <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
-                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                        <span className="text-neutral-500 block uppercase">Viés Mais Próximo</span>
-                        <span className={`font-black ${activeSignalInfo.targetDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {activeSignalInfo.targetDirection === 'CALL' ? '▲ COMPRA (CALL)' : '▼ VENDA (PUT)'} ({activeSignalInfo.activeCount}/7 gatilhos)
-                        </span>
+                        {/* Métricas Rápidas */}
+                        <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                          <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                            <span className="text-neutral-500 block uppercase">Maior Pressão</span>
+                            <span className={`font-black ${activeSignalInfo.targetDirection === 'CALL' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {activeSignalInfo.targetDirection === 'CALL' ? '▲ COMPRA (CALL)' : '▼ VENDA (PUT)'} ({activeSignalInfo.activeCount}/7 ativos)
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
+                            <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
+                            <span className="font-black text-amber-300 font-mono">
+                              {formattedCountdown}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                        <span className="text-neutral-500 block uppercase">Próxima Vela em</span>
-                        <span className="font-black text-amber-300 font-mono">
-                          {formattedCountdown}
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
