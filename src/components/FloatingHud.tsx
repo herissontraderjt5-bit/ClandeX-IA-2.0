@@ -77,6 +77,7 @@ import {
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { TradingViewWidget } from './TradingViewWidget';
+import { LiveLevelChart } from './LiveLevelChart';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
   getRelevantEconomicEvents,
@@ -471,6 +472,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
+  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('NATIVE_SR');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
@@ -745,32 +747,77 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [technicalData]);
 
-  // Níveis de Suporte e Resistência com Cotações em Destaque (calculado após technicalData)
+  // Leitura ultra-precisa de Topos Reais (Resistências) e Fundos Reais (Suportes) direto dos pavios das velas recentes
   const srLevels = useMemo(() => {
     const curPrice = currentCandle?.close || technicalData.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
     const decimals = asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5);
 
-    const resistances = (marketAnalysis?.keyLevels || [])
-      .filter((l) => l.type === 'RESISTANCE' && l.price > curPrice)
+    const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-50) : [];
+
+    // 1. Identificar Topos Reais (máximas locais / swing highs) e Fundos Reais (mínimas locais / swing lows)
+    const confirmedTops: { price: number; index: number }[] = [];
+    const confirmedBottoms: { price: number; index: number }[] = [];
+
+    let highestHigh = -Infinity;
+    let lowestLow = Infinity;
+
+    for (let i = 0; i < candleList.length; i++) {
+      const c = candleList[i];
+      if (c.high > highestHigh) highestHigh = c.high;
+      if (c.low < lowestLow) lowestLow = c.low;
+
+      if (i >= 2 && i <= candleList.length - 3) {
+        const prev1 = candleList[i - 1];
+        const prev2 = candleList[i - 2];
+        const next1 = candleList[i + 1];
+        const next2 = candleList[i + 2];
+
+        // Topo real (máxima maior que as 2 vizinhas de cada lado)
+        if (c.high >= prev1.high && c.high >= prev2.high && c.high >= next1.high && c.high >= next2.high) {
+          confirmedTops.push({ price: c.high, index: i });
+        }
+
+        // Fundo real (mínima menor que as 2 vizinhas de cada lado)
+        if (c.low <= prev1.low && c.low <= prev2.low && c.low <= next1.low && c.low <= next2.low) {
+          confirmedBottoms.push({ price: c.low, index: i });
+        }
+      }
+    }
+
+    if (highestHigh > -Infinity) confirmedTops.push({ price: highestHigh, index: candleList.length - 1 });
+    if (lowestLow < Infinity) confirmedBottoms.push({ price: lowestLow, index: candleList.length - 1 });
+
+    // Topos acima do preço atual ordenados do mais próximo para o mais distante (Resistências)
+    const topsAbove = confirmedTops
+      .filter((t) => t.price > curPrice)
       .sort((a, b) => a.price - b.price);
 
-    const supports = (marketAnalysis?.keyLevels || [])
-      .filter((l) => l.type === 'SUPPORT' && l.price < curPrice)
+    // Fundos abaixo do preço atual ordenados do mais próximo para o mais distante (Suportes)
+    const bottomsBelow = confirmedBottoms
+      .filter((b) => b.price < curPrice)
       .sort((a, b) => b.price - a.price);
 
-    const r1 = resistances[0]?.price || (curPrice * 1.0035);
-    const r2 = resistances[1]?.price || (curPrice * 1.0075);
-    const s1 = supports[0]?.price || (curPrice * 0.9965);
-    const s2 = supports[1]?.price || (curPrice * 0.9925);
+    // Nível de Resistência 1: Topo mais próximo acima do preço
+    let r1 = topsAbove.length > 0 ? topsAbove[0].price : (highestHigh > curPrice ? highestHigh : curPrice * 1.002);
+    // Nível de Resistência 2: Topo máximo do período
+    let r2 = topsAbove.length > 1 ? topsAbove[topsAbove.length - 1].price : (highestHigh > r1 ? highestHigh : r1 * 1.004);
+
+    // Nível de Suporte 1: Fundo mais próximo abaixo do preço
+    let s1 = bottomsBelow.length > 0 ? bottomsBelow[0].price : (lowestLow < curPrice ? lowestLow : curPrice * 0.998);
+    // Nível de Suporte 2: Fundo mínimo do período
+    let s2 = bottomsBelow.length > 1 ? bottomsBelow[bottomsBelow.length - 1].price : (lowestLow < s1 ? lowestLow : s1 * 0.996);
+
+    // Arredondar para casas decimais oficiais do ativo
+    r1 = Number(r1.toFixed(decimals));
+    r2 = Number(r2.toFixed(decimals));
+    s1 = Number(s1.toFixed(decimals));
+    s2 = Number(s2.toFixed(decimals));
 
     const distR1Pips = Math.abs((r1 - curPrice) * pipMultiplier);
     const distS1Pips = Math.abs((curPrice - s1) * pipMultiplier);
     const distR2Pips = Math.abs((r2 - curPrice) * pipMultiplier);
     const distS2Pips = Math.abs((curPrice - s2) * pipMultiplier);
-
-    const totalRange = Math.max(0.00001, r1 - s1);
-    const rangePosition = Math.min(100, Math.max(0, ((curPrice - s1) / totalRange) * 100));
 
     return {
       curPrice,
@@ -783,9 +830,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       distS1Pips,
       distR2Pips,
       distS2Pips,
-      rangePosition,
+      tops: confirmedTops,
+      bottoms: confirmedBottoms,
     };
-  }, [marketAnalysis, currentCandle, technicalData.currentPrice, asset]);
+  }, [activeCandles, currentCandle, technicalData.currentPrice, asset]);
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
@@ -1643,157 +1691,149 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             {/* TAB 2: PÁGINA DE GRÁFICO EM TEMPO REAL COM SUPORTE E RESISTÊNCIA DESTACADOS */}
             {activeTab === 'grafico' && (
               <div className="space-y-3 font-mono">
-                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo */}
-                <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl flex items-center justify-between shadow-xl">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-                      <BarChart3 className="w-4 h-4 animate-pulse" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-white tracking-wider">{asset.symbol}</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                          {timeframe}
+                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo + Seletor de Modo de Gráfico */}
+                <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl space-y-2.5 shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+                        <BarChart3 className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-white tracking-wider">{asset.symbol}</span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                            {timeframe}
+                          </span>
+                        </div>
+                        <span className="text-[9.5px] text-neutral-400">
+                          {asset.category === 'CRYPTO' ? '⚡ Bybit Spot (24/7)' : '🌐 OANDA / Forex'}
                         </span>
                       </div>
-                      <span className="text-[9.5px] text-neutral-400">
-                        {asset.category === 'CRYPTO' ? '⚡ Bybit Spot (24/7)' : '🌐 OANDA / Forex'}
-                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        <span className="text-[14px] font-black font-mono text-cyan-300 tracking-wider">
+                          {srLevels.curPrice.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-neutral-400 uppercase">Cotação Atual</span>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                      <span className="text-[14px] font-black font-mono text-cyan-300 tracking-wider">
-                        {srLevels.curPrice.toFixed(srLevels.decimals)}
-                      </span>
-                    </div>
-                    <span className="text-[9px] text-neutral-400 uppercase">Cotação Atual ao Vivo</span>
+                  {/* Botões para alternar o modo do gráfico */}
+                  <div className="flex items-center gap-1.5 p-1 bg-black/70 rounded-xl border border-neutral-800">
+                    <button
+                      onClick={() => setChartMode('NATIVE_SR')}
+                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'NATIVE_SR'
+                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
+                    >
+                      <span>🎯 Gráfico com Marcações S/R</span>
+                    </button>
+                    <button
+                      onClick={() => setChartMode('TRADINGVIEW')}
+                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'TRADINGVIEW'
+                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
+                        : 'text-neutral-400 hover:text-white'
+                        }`}
+                    >
+                      <span>🌐 TradingView</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* 2. Container do Gráfico em Tempo Real (TradingView Advanced Chart) */}
-                <div className="w-full h-[320px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
-                  <TradingViewWidget
-                    symbol={asset.tvSymbol}
+                {/* 2. Container do Gráfico */}
+                {chartMode === 'NATIVE_SR' ? (
+                  <LiveLevelChart
+                    candles={activeCandles}
+                    asset={asset}
                     timeframe={timeframe}
-                    mode="CHART"
-                    className="w-full h-full"
+                    currentPrice={srLevels.curPrice}
+                    resistance1={srLevels.r1}
+                    resistance2={srLevels.r2}
+                    support1={srLevels.s1}
+                    support2={srLevels.s2}
+                    tops={srLevels.tops}
+                    bottoms={srLevels.bottoms}
+                    height={320}
                   />
-                </div>
+                ) : (
+                  <div className="w-full h-[320px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
+                    <TradingViewWidget
+                      symbol={asset.tvSymbol}
+                      timeframe={timeframe}
+                      mode="CHART"
+                      className="w-full h-full"
+                    />
+                  </div>
+                )}
 
-                {/* 3. Região de Suporte e Resistência com Cotações em Super Destaque */}
-                <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-3 shadow-xl">
+                {/* 3. Região de Suporte e Resistência com Cotações Reais de Topos e Fundos */}
+                <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-xl">
                   <div className="flex items-center justify-between border-b border-neutral-800/80 pb-2">
                     <div className="flex items-center gap-2">
                       <Layers className="w-4 h-4 text-cyan-400" />
                       <span className="text-xs font-black text-white uppercase tracking-wider">
-                        REGIÃO DE SUPORTE & RESISTÊNCIA
+                        SUPORTE & RESISTÊNCIA • TOPOS & FUNDOS REAIS
                       </span>
                     </div>
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-neutral-300">
-                      Taxas Reais
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-cyan-300">
+                      Leitura de Pavio 1:1
                     </span>
                   </div>
 
-                  {/* CARD RESISTÊNCIA 1 (TETO / VENDA) */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/70 via-rose-900/20 to-black border-2 border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.25)] space-y-1.5">
+                  {/* CARD RESISTÊNCIA (TOPO REAL) */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/80 via-rose-900/30 to-black border-2 border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.25)] space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
                         <span className="text-[11px] font-black text-rose-300 uppercase tracking-wider">
-                          🔴 RESISTÊNCIA 1 (TETO PRINCIPAL)
+                          🔴 RESISTÊNCIA 1 (TOPO REAL)
                         </span>
                       </div>
                       <span className="text-[9px] font-black px-2 py-0.5 rounded bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)]">
-                        ZONA DE VENDA / REJEIÇÃO
+                        +{srLevels.distR1Pips.toFixed(1)} PIPS ACIMA
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between pt-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black font-mono text-white tracking-wider">
+                        <span className="text-2xl font-black font-mono text-white tracking-wider">
                           {srLevels.r1.toFixed(srLevels.decimals)}
                         </span>
-                        <span className="text-[10px] font-bold text-rose-400">
-                          +{srLevels.distR1Pips.toFixed(1)} pips acima
-                        </span>
                       </div>
-                      <span className="text-[10px] text-neutral-400 font-semibold">
-                        Pullback / Retração
+                      <span className="text-[10px] text-rose-300/80 font-bold">
+                        R2 (Topo Máximo): {srLevels.r2.toFixed(srLevels.decimals)}
                       </span>
                     </div>
                   </div>
 
-                  {/* POSIÇÃO ATUAL NO CANAL ENTRE SUPORTE E RESISTÊNCIA */}
-                  <div className="p-2.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-emerald-400 font-bold">Piso: {srLevels.s1.toFixed(srLevels.decimals)}</span>
-                      <span className="text-neutral-400 font-bold">
-                        Posição no Canal: <strong className="text-cyan-300">{srLevels.rangePosition.toFixed(0)}%</strong>
-                      </span>
-                      <span className="text-rose-400 font-bold">Teto: {srLevels.r1.toFixed(srLevels.decimals)}</span>
-                    </div>
-
-                    {/* Slider visual do preço no canal */}
-                    <div className="w-full bg-neutral-950 rounded-full h-2.5 overflow-hidden p-0.5 border border-neutral-700 relative">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 transition-all duration-300"
-                        style={{ width: `${srLevels.rangePosition}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* CARD SUPORTE 1 (PISO / COMPRA) */}
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/70 via-emerald-900/20 to-black border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.25)] space-y-1.5">
+                  {/* CARD SUPORTE (FUNDO REAL) */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/30 to-black border-2 border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.25)] space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider">
-                          🟢 SUPORTE 1 (PISO PRINCIPAL)
+                          🟢 SUPORTE 1 (FUNDO REAL)
                         </span>
                       </div>
                       <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-500 text-black shadow-[0_0_8px_rgba(16,185,129,0.6)]">
-                        ZONA DE COMPRA / DEFESA
+                        -{srLevels.distS1Pips.toFixed(1)} PIPS ABAIXO
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between pt-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black font-mono text-white tracking-wider">
+                        <span className="text-2xl font-black font-mono text-white tracking-wider">
                           {srLevels.s1.toFixed(srLevels.decimals)}
                         </span>
-                        <span className="text-[10px] font-bold text-emerald-400">
-                          -{srLevels.distS1Pips.toFixed(1)} pips abaixo
-                        </span>
                       </div>
-                      <span className="text-[10px] text-neutral-400 font-semibold">
-                        Bateu-Voltou / Reversão
+                      <span className="text-[10px] text-emerald-300/80 font-bold">
+                        S2 (Fundo Mínimo): {srLevels.s2.toFixed(srLevels.decimals)}
                       </span>
-                    </div>
-                  </div>
-
-                  {/* NÍVEIS EXTREMOS SECUNDÁRIOS (R2 e S2) */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="p-2 rounded-xl bg-neutral-900/70 border border-rose-500/40">
-                      <div className="flex items-center justify-between text-[9px] text-neutral-400">
-                        <span className="text-rose-400 font-bold">Resistência 2 (Extrema)</span>
-                        <span>+{srLevels.distR2Pips.toFixed(1)} pips</span>
-                      </div>
-                      <div className="text-xs font-black text-rose-300 mt-0.5 font-mono">
-                        {srLevels.r2.toFixed(srLevels.decimals)}
-                      </div>
-                    </div>
-
-                    <div className="p-2 rounded-xl bg-neutral-900/70 border border-emerald-500/40">
-                      <div className="flex items-center justify-between text-[9px] text-neutral-400">
-                        <span className="text-emerald-400 font-bold">Suporte 2 (Extremo)</span>
-                        <span>-{srLevels.distS2Pips.toFixed(1)} pips</span>
-                      </div>
-                      <div className="text-xs font-black text-emerald-300 mt-0.5 font-mono">
-                        {srLevels.s2.toFixed(srLevels.decimals)}
-                      </div>
                     </div>
                   </div>
                 </div>

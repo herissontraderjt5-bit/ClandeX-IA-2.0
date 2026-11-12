@@ -200,37 +200,22 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   if (highestHigh > -Infinity) rawPeaks.push({ price: highestHigh, type: 'HIGH' });
   if (lowestLow < Infinity) rawPeaks.push({ price: lowestLow, type: 'LOW' });
 
-  // Cluster nearby levels within 0.25 * ATR, separando Topos (Resistências) e Fundos (Suportes)
+  // Agrupamento de níveis próximos respeitando a máxima do Topo e a mínima do Fundo exatos
   const clusterDistance = Math.max(atr * 0.25, 0.00005);
-  const clusteredLevels: { price: number; touches: number }[] = [];
-  const swingHighs: { price: number; touches: number }[] = [];
-  const swingLows: { price: number; touches: number }[] = [];
+  const clusteredLevels: { price: number; touches: number; type: 'HIGH' | 'LOW' }[] = [];
 
   for (const peak of rawPeaks) {
     const existing = clusteredLevels.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
     if (existing) {
       existing.touches += 1;
-      existing.price = (existing.price * (existing.touches - 1) + peak.price) / existing.touches;
-    } else {
-      clusteredLevels.push({ price: peak.price, touches: 1 });
-    }
-
-    if (peak.type === 'HIGH') {
-      const exH = swingHighs.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
-      if (exH) {
-        exH.touches += 1;
-        exH.price = (exH.price * (exH.touches - 1) + peak.price) / exH.touches;
+      // Para topos (HIGH), preserva a máxima exata; para fundos (LOW), preserva a mínima exata
+      if (peak.type === 'HIGH') {
+        existing.price = Math.max(existing.price, peak.price);
       } else {
-        swingHighs.push({ price: peak.price, touches: 1 });
+        existing.price = Math.min(existing.price, peak.price);
       }
     } else {
-      const exL = swingLows.find((c) => Math.abs(c.price - peak.price) <= clusterDistance);
-      if (exL) {
-        exL.touches += 1;
-        exL.price = (exL.price * (exL.touches - 1) + peak.price) / exL.touches;
-      } else {
-        swingLows.push({ price: peak.price, touches: 1 });
-      }
+      clusteredLevels.push({ price: peak.price, touches: 1, type: peak.type });
     }
   }
 
@@ -238,7 +223,7 @@ export function analyzeMarket(candles: Candle[], tvData?: LiveTradingViewData | 
   // Any level strictly above current price is RESISTANCE.
   // Any level strictly below current price is SUPPORT.
   const currentPrice = latest.close;
-  const deadZone = Math.max(atr * 0.04, 0.00002);
+  const deadZone = Math.max(atr * 0.02, 0.00001);
 
   const rawResistances: SupportResistanceLevel[] = clusteredLevels
     .filter((l) => l.price > currentPrice + deadZone)
