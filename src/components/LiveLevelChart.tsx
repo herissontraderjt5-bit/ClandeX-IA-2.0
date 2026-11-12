@@ -421,3 +421,4 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
     </div>
   );
 };
+

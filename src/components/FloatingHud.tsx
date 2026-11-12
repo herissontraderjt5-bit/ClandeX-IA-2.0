@@ -472,7 +472,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'indicadores' | 'grafico' | 'voz'>('indicadores');
-  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('NATIVE_SR');
+  const [chartMode, setChartMode] = useState<'TRADINGVIEW' | 'NATIVE_SR'>('TRADINGVIEW');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
@@ -1725,28 +1725,42 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   {/* Botões para alternar o modo do gráfico */}
                   <div className="flex items-center gap-1.5 p-1 bg-black/70 rounded-xl border border-neutral-800">
                     <button
-                      onClick={() => setChartMode('NATIVE_SR')}
-                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'NATIVE_SR'
+                      onClick={() => setChartMode('TRADINGVIEW')}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'TRADINGVIEW'
                         ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
                         : 'text-neutral-400 hover:text-white'
                         }`}
                     >
-                      <span>🎯 Gráfico com Marcações S/R</span>
+                      <span>🌐 TradingView (Topos & Fundos S/R)</span>
                     </button>
                     <button
-                      onClick={() => setChartMode('TRADINGVIEW')}
-                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'TRADINGVIEW'
+                      onClick={() => setChartMode('NATIVE_SR')}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'NATIVE_SR'
                         ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
                         : 'text-neutral-400 hover:text-white'
                         }`}
                     >
-                      <span>🌐 TradingView</span>
+                      <span>🎯 Gráfico Linhas S/R</span>
                     </button>
                   </div>
                 </div>
 
                 {/* 2. Container do Gráfico */}
-                {chartMode === 'NATIVE_SR' ? (
+                {chartMode === 'TRADINGVIEW' ? (
+                  <div className="w-full h-[380px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
+                    <TradingViewWidget
+                      symbol={asset.tvSymbol}
+                      timeframe={timeframe}
+                      mode="CHART"
+                      className="w-full h-full"
+                    />
+                    <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
+                      <span className="text-rose-400 font-bold">R1: {srLevels.r1.toFixed(srLevels.decimals)}</span>
+                      <span className="text-neutral-600">|</span>
+                      <span className="text-emerald-400 font-bold">S1: {srLevels.s1.toFixed(srLevels.decimals)}</span>
+                    </div>
+                  </div>
+                ) : (
                   <LiveLevelChart
                     candles={activeCandles}
                     asset={asset}
@@ -1758,17 +1772,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     support2={srLevels.s2}
                     tops={srLevels.tops}
                     bottoms={srLevels.bottoms}
-                    height={320}
+                    height={380}
                   />
-                ) : (
-                  <div className="w-full h-[320px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
-                    <TradingViewWidget
-                      symbol={asset.tvSymbol}
-                      timeframe={timeframe}
-                      mode="CHART"
-                      className="w-full h-full"
-                    />
-                  </div>
                 )}
 
                 {/* 3. Região de Suporte e Resistência com Cotações Reais de Topos e Fundos */}
