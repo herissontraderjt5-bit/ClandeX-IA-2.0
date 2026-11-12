@@ -1866,7 +1866,7 @@ DIRETRIZES:
                       </div>
 
                       <div className="p-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-neutral-300">Preço Ref: <strong className="text-white">{latestConfirmedSignal.entryPrice.toFixed(asset.pipDecimals)}</strong></span>
+                        <span className="text-neutral-300">Preço Ref: <strong className="text-white">{(latestConfirmedSignal.candleOpenPrice || latestConfirmedSignal.entryPrice || currentCandle?.close || asset.currentPrice).toFixed(asset.pipDecimals)}</strong></span>
                         <span className="text-emerald-400 font-bold">Confluência: {latestConfirmedSignal.confluenceScore}%</span>
                       </div>
 

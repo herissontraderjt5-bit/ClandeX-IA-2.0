@@ -615,10 +615,10 @@ export class MarketDataManager {
   }
 
   public async syncServerTime() {
-    // 1. Prioridade máxima: Binance API (referência mundial de tempo atômico com CORS livre)
+    // 1. Prioridade máxima: Binance API aberta (data-api.binance.vision com CORS aberto no navegador)
     try {
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const res = await fetch('https://api.binance.com/api/v3/time', { cache: 'no-store' });
+      const res = await fetch('https://data-api.binance.vision/api/v3/time', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -627,6 +627,24 @@ export class MarketDataManager {
         this.serverOffsetMs = estimatedServerMs - Date.now();
         console.log(`[MarketData] Relógio atômico sincronizado com Binance/Hiove. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
         return;
+      }
+    } catch {}
+
+    // 2. Fallback: Bybit Server Time (CORS aberto)
+    try {
+      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const res = await fetch('https://api.bybit.com/v5/market/time', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const rtt = Math.max(1, t1 - t0);
+        const serverMs = Math.floor(Number(data.result?.timeNano) / 1000000);
+        if (serverMs > 0) {
+          const estimatedServerMs = serverMs + Math.round(rtt / 2);
+          this.serverOffsetMs = estimatedServerMs - Date.now();
+          console.log(`[MarketData] Relógio atômico sincronizado com Bybit. Offset: ${this.serverOffsetMs}ms (RTT: ${Math.round(rtt)}ms)`);
+          return;
+        }
       }
     } catch {}
 

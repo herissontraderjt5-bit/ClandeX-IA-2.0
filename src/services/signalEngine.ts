@@ -307,40 +307,28 @@ export class SignalEngine {
     if (this.pendingTrades.length > 0) {
       let updatedEntry = false;
       this.pendingTrades.forEach((trade) => {
+        // Busca a vela oficial da operação pelo timestamp de entrada
+        const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2)
+          || (currentCandle && Math.abs(currentCandle.time - trade.entryTimestamp!) < 2 ? currentCandle : undefined);
+
         // Quando a vela do sinal abre (segundo 00:00 da vela oficial de entrada):
-        // Trava a taxa oficial de abertura com o preço REAL da abertura da vela (candle.open)
-        if (!trade.isEntered) {
-          if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
+        if (trade.entryTimestamp && nowSec >= trade.entryTimestamp) {
+          if (!trade.isEntered) {
             trade.isEntered = true;
-
-            // 1. Busca a vela oficial da operação em allCandles
-            const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
-
-            // 2. Prioridade máxima absoluta: candle.open oficial da vela aberta no gráfico
-            let officialOpen = 0;
-            if (matchingCandle && matchingCandle.open > 0) {
-              officialOpen = matchingCandle.open;
-            } else if (currentCandle && Math.abs(currentCandle.time - trade.entryTimestamp!) < 2 && currentCandle.open > 0) {
-              officialOpen = currentCandle.open;
-            } else if (currentPrice > 0) {
-              officialOpen = currentPrice;
-            } else {
-              officialOpen = trade.entryPrice;
-            }
-
-            trade.entryPrice = officialOpen;
-            trade.candleOpenPrice = officialOpen;
             updatedEntry = true;
           }
-        } else {
-          // Se já entrou, mas por algum motivo candleOpenPrice ainda for 0 ou se allCandles tiver o open oficial:
-          if ((!trade.candleOpenPrice || trade.candleOpenPrice <= 0) && trade.entryTimestamp) {
-            const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
-            if (matchingCandle && matchingCandle.open > 0) {
+
+          // Se a vela oficial já existe no gráfico com open válido, SEMPRE crava a taxa oficial de abertura da vela
+          if (matchingCandle && matchingCandle.open > 0) {
+            if (trade.candleOpenPrice !== matchingCandle.open) {
               trade.entryPrice = matchingCandle.open;
               trade.candleOpenPrice = matchingCandle.open;
               updatedEntry = true;
             }
+          } else if ((!trade.candleOpenPrice || trade.candleOpenPrice <= 0) && currentPrice > 0) {
+            trade.entryPrice = currentPrice;
+            trade.candleOpenPrice = currentPrice;
+            updatedEntry = true;
           }
 
           // Enquanto a vela está em andamento (antes da expiração), registra a cotação ao vivo
@@ -579,6 +567,7 @@ export class SignalEngine {
         }
 
         // REGRA ESTRITA DO USUÁRIO: Pavio de rejeição não superou o corpo da vela -> CONFIRMAÇÃO PROSSEGUE
+        const currentRefPrice = (currentCandle && currentCandle.close > 0) ? currentCandle.close : 0;
         const confirmed: SignalRecord = {
           ...this.activePreAlert,
           id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -589,8 +578,8 @@ export class SignalEngine {
           expirationTimeFormatted,
           timeframe,
           expiration: activeExpiration,
-          entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
-          candleOpenPrice: 0,
+          entryPrice: currentRefPrice, // Cotação de referência imediata (atualizada para o candle.open oficial no segundo :00)
+          candleOpenPrice: currentRefPrice,
           isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
           confluenceScore: this.activePreAlert.confluenceScore || confluences.totalScore,
           strategyId: this.activePreAlert.strategyId,
@@ -682,6 +671,7 @@ export class SignalEngine {
 
           if (!isHardResistanceBlock && !isHardSupportBlock) {
             const bRes = this.backtestResults.find((b) => b.id === activeDecision!.strategy.id);
+            const currentRefPrice = (currentCandle && currentCandle.close > 0) ? currentCandle.close : 0;
             const confirmed: SignalRecord = {
               id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               timestamp: Date.now(),
@@ -693,8 +683,8 @@ export class SignalEngine {
               expiration: activeExpiration,
               direction: activeDecision.direction,
               stage: 'CONFIRMED',
-              entryPrice: 0, // Será capturado estritamente no segundo :00 na abertura da vela do sinal
-              candleOpenPrice: 0,
+              entryPrice: currentRefPrice, // Cotação de referência imediata (atualizada para o candle.open oficial no segundo :00)
+              candleOpenPrice: currentRefPrice,
               isEntered: false, // Inicia oficialmente no segundo 00 da vela de entrada
               confluenceScore: activeDecision.score,
               strategyId: activeDecision.strategy.id,
@@ -904,15 +894,25 @@ export class SignalEngine {
         return true;
       }
 
-      // 2. Se a vela de expiração ainda não terminou (não atingiu expirationTimestamp), mantém a operação pendente
-      // Não apura antes do fechamento oficial!
-      if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp) {
+      // 2. Se a vela de expiração ainda não terminou (não atingiu expirationTimestamp + 1s de margem atômica), mantém pendente
+      // CRÍTICO: Exige 1 segundo de tolerância após expirationTimestamp (nowSec >= expirationTimestamp + 1)
+      // para garantir que a vela fechou integralmente na corretora / websocket e o fechamento está selado!
+      if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp + 1) {
         return true;
       }
 
       // 3. APURAÇÃO DEFINITIVA NO FECHAMENTO DA VELA
       // Busca a vela oficial exata da operação que acabou de fechar em allCandles
-      const matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
+      let matchingCandle = allCandles?.find((c) => Math.abs(c.time - trade.entryTimestamp!) < 2);
+      if (!matchingCandle && allCandles && allCandles.length >= 2) {
+        // Se a vela já fechou e virou a próxima no array, a vela da operação é a penúltima
+        matchingCandle = allCandles[allCandles.length - 2];
+      }
+
+      // Se a vela ainda não recebeu o evento de fechamento (isClosed) e estamos com menos de 3s de tolerância, aguarda fechar
+      if (matchingCandle && !matchingCandle.isClosed && trade.expirationTimestamp && nowSec < trade.expirationTimestamp + 3) {
+        return true;
+      }
 
       // Taxa oficial de abertura da vela: prioriza o candle.open real da vela oficial
       let officialOpen = 0;
@@ -1018,8 +1018,8 @@ export class SignalEngine {
     if (!trade) return;
     const nowSec = this.getNowSec();
 
-    // Proteção absoluta: nunca apurar antes da expiração oficial da vela
-    if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp) {
+    // Proteção absoluta: nunca apurar antes da expiração oficial da vela (+ 1s de tolerância para fechamento atômico)
+    if (trade.expirationTimestamp && nowSec < trade.expirationTimestamp + 1) {
       return;
     }
 
