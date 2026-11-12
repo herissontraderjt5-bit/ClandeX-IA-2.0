@@ -33,10 +33,15 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleResetStorage = () => {
     try {
-      localStorage.removeItem('clandex_active_strategies');
-      localStorage.removeItem('clandex_settings');
+      localStorage.clear();
+      sessionStorage.clear();
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach((name) => caches.delete(name));
+        });
+      }
     } catch {}
-    window.location.reload();
+    window.location.href = window.location.pathname + '?reset=' + Date.now();
   };
 
   public render() {

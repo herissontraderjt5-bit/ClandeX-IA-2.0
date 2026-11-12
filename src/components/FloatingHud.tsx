@@ -29,6 +29,7 @@ import {
   XCircle,
   AlertTriangle,
   Flame,
+  Trophy,
   MessageSquare,
   Bot,
   User,
@@ -786,19 +787,86 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     };
   }, [activeCandles, asset]);
 
-  // Avaliação de Confluências e Sinal IA em Tempo Real por Perfil (Sniper / Alavancagem)
-  // Lógica: Pré-Alerta (> 8s) para próxima vela, e Confirmação aos 8 segundos (<= 8s)
-  // Alavancagem: Order Flow > 60% (Compra ou Venda)
-  // Sniper: Order Flow > 70% (Compra ou Venda)
-  const activeSignalInfo = useMemo(() => {
-    const dominantCount = indicatorConsensus.callCount >= indicatorConsensus.putCount
-      ? indicatorConsensus.callCount
-      : indicatorConsensus.putCount;
-    const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
+  // Placar Operacional Persistente (WIN / LOSS / EMPATE)
+  const SCOREBOARD_KEY = 'clandex_ia_signal_scoreboard_v3';
+  const getStoredScoreboard = (): { wins: number; losses: number; draws: number } => {
+    try {
+      const raw = localStorage.getItem(SCOREBOARD_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { wins: 0, losses: 0, draws: 0 };
+  };
+
+  const saveStoredScoreboard = (sb: { wins: number; losses: number; draws: number }) => {
+    try {
+      localStorage.setItem(SCOREBOARD_KEY, JSON.stringify(sb));
+    } catch {}
+  };
+
+  const [scoreboard, setScoreboard] = useState(getStoredScoreboard);
+
+  const handleResetScoreboard = useCallback(() => {
+    const fresh = { wins: 0, losses: 0, draws: 0 };
+    setScoreboard(fresh);
+    saveStoredScoreboard(fresh);
+  }, []);
+
+  const totalTrades = scoreboard.wins + scoreboard.losses + scoreboard.draws;
+  const winRate = (scoreboard.wins + scoreboard.losses) > 0
+    ? Math.round((scoreboard.wins / (scoreboard.wins + scoreboard.losses)) * 100)
+    : 100;
+
+  // Interface do Ciclo de Vida do Sinal e Operação
+  interface LiveTradeLifecycle {
+    stage: 'IDLE' | 'PRE_ALERT' | 'CONFIRMED' | 'CANCELLED' | 'IN_PROGRESS' | 'RESULT';
+    direction: 'CALL' | 'PUT';
+    candleTime: number; // timestamp da vela analisada
+    entryPrice?: number;
+    entryTimeFormatted?: string;
+    orderFlowAtLock?: number;
+    score?: number;
+    result?: 'WIN' | 'LOSS' | 'EMPATE' | null;
+    resolvedAt?: number;
+    finalPrice?: number;
+  }
+
+  // Ref síncrono para evitar condições de corrida em micro-ticks
+  const tradeLifecycleRef = useRef<LiveTradeLifecycle>({
+    stage: 'IDLE',
+    direction: 'CALL',
+    candleTime: 0,
+  });
+  const [tradeLifecycle, setTradeLifecycle] = useState<LiveTradeLifecycle>(tradeLifecycleRef.current);
+
+  const updateTradeLifecycle = useCallback((newState: LiveTradeLifecycle) => {
+    tradeLifecycleRef.current = newState;
+    setTradeLifecycle({ ...newState });
+  }, []);
+
+  // Máquina de Estados Travada e Robusta (Sem oscilação nem falso cancelamento a cada tick)
+  useEffect(() => {
+    if (!isAnalyzing) {
+      if (tradeLifecycleRef.current.stage !== 'IDLE' && tradeLifecycleRef.current.stage !== 'IN_PROGRESS') {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          candleTime: 0,
+        });
+      }
+      return;
+    }
+
+    const curCandleTime = currentCandle?.time || Math.floor(Date.now() / 60000) * 60;
+    const current = tradeLifecycleRef.current;
+    const curPrice = currentCandle?.close || technicalData.currentPrice;
+    const tfSec = timeframe === 'M2' ? 120 : timeframe === 'M1' ? 60 : 300;
 
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
     const minIndicatorCount = isSniper ? 5 : 4;
     const requiredOrderFlow = isSniper ? 70 : 60;
+
+    const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
+    const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
 
     const currentOrderFlow = dominantDirection === 'CALL'
       ? technicalData.delta.buyerPercent
@@ -806,55 +874,211 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
     const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
+    const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
-    let stage: 'IDLE' | 'PRE_ALERT' | 'CONFIRMED' | 'CANCELLED' = 'IDLE';
+    // 1. ESTÁGIO: RESULT (Exibindo comemoração do resultado por 8 segundos)
+    if (current.stage === 'RESULT') {
+      if (Date.now() - (current.resolvedAt || 0) > 8000) {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          candleTime: curCandleTime,
+        });
+      }
+      return;
+    }
 
-    if (isAnalyzing && hasIndicatorsDirection) {
-      if (remainingSeconds > 8) {
-        stage = 'PRE_ALERT';
-      } else if (remainingSeconds <= 8 && remainingSeconds >= 0) {
-        stage = hasOrderFlow ? 'CONFIRMED' : 'CANCELLED';
+    // 2. ESTÁGIO: IN_PROGRESS (Operação em andamento durante a vela de entrada)
+    if (current.stage === 'IN_PROGRESS') {
+      // Quando a vela da operação fecha (curCandleTime > current.candleTime ou remainingSeconds <= 1)
+      if (curCandleTime > current.candleTime || (remainingSeconds <= 1 && curCandleTime === current.candleTime)) {
+        const entry = current.entryPrice || curPrice;
+        const finalPrice = curPrice;
+        let result: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
+
+        if (current.direction === 'CALL') {
+          if (finalPrice > entry) result = 'WIN';
+          else if (finalPrice < entry) result = 'LOSS';
+          else result = 'EMPATE';
+        } else {
+          if (finalPrice < entry) result = 'WIN';
+          else if (finalPrice > entry) result = 'LOSS';
+          else result = 'EMPATE';
+        }
+
+        if (settings.confirmedSound) {
+          if (result === 'WIN') audioAlerts.playWin();
+          else if (result === 'LOSS') audioAlerts.playLoss();
+        }
+
+        setScoreboard((prev) => {
+          const next = {
+            wins: prev.wins + (result === 'WIN' ? 1 : 0),
+            losses: prev.losses + (result === 'LOSS' ? 1 : 0),
+            draws: prev.draws + (result === 'EMPATE' ? 1 : 0),
+          };
+          saveStoredScoreboard(next);
+          return next;
+        });
+
+        updateTradeLifecycle({
+          ...current,
+          stage: 'RESULT',
+          result,
+          finalPrice,
+          resolvedAt: Date.now(),
+        });
+      }
+      return;
+    }
+
+    // 3. ESTÁGIO: CONFIRMED (Travado aos 8s, aguardando a abertura da próxima vela)
+    if (current.stage === 'CONFIRMED') {
+      if (curCandleTime > current.candleTime || remainingSeconds === 0) {
+        const entryPrice = currentCandle?.open || curPrice;
+        const entryTimeFormatted = formatBrasiliaTime();
+        updateTradeLifecycle({
+          stage: 'IN_PROGRESS',
+          direction: current.direction,
+          candleTime: curCandleTime,
+          entryPrice,
+          entryTimeFormatted,
+          score: current.score,
+          orderFlowAtLock: current.orderFlowAtLock,
+        });
+      }
+      return;
+    }
+
+    // 4. ESTÁGIO: CANCELLED (Travado aos 8s como rejeitado por Order Flow insuficiente)
+    if (current.stage === 'CANCELLED') {
+      if (curCandleTime > current.candleTime || remainingSeconds === 0) {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          candleTime: curCandleTime,
+        });
+      }
+      return;
+    }
+
+    // 5. ESTÁGIO: PRE_ALERT (Monitorando confluência antes dos 8s finais)
+    if (current.stage === 'PRE_ALERT') {
+      // PONTO CRÍTICO: MARCAÇÃO DEFINITIVA DOS 8 SEGUNDOS FINAIS
+      if (remainingSeconds <= 8 && remainingSeconds >= 0) {
+        if (hasOrderFlow) {
+          if (settings.confirmedSound) {
+            if (current.direction === 'CALL') audioAlerts.playCallSignal();
+            else audioAlerts.playPutSignal();
+          }
+          updateTradeLifecycle({
+            stage: 'CONFIRMED',
+            direction: current.direction,
+            candleTime: curCandleTime,
+            score,
+            orderFlowAtLock: currentOrderFlow,
+            entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
+          });
+        } else {
+          if (settings.confirmedSound) {
+            audioAlerts.playCancelAlert();
+          }
+          updateTradeLifecycle({
+            stage: 'CANCELLED',
+            direction: current.direction,
+            candleTime: curCandleTime,
+            score,
+            orderFlowAtLock: currentOrderFlow,
+            entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
+          });
+        }
+        return;
+      }
+
+      if (curCandleTime > current.candleTime) {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          candleTime: curCandleTime,
+        });
+        return;
+      }
+
+      if (dominantCount < minIndicatorCount - 1) {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          candleTime: curCandleTime,
+        });
+        return;
       }
     }
 
-    const isSignalActive = stage === 'CONFIRMED';
-    const isPreAlert = stage === 'PRE_ALERT';
-    const isCancelled = stage === 'CANCELLED';
+    // 6. ESTÁGIO: IDLE (Scanner buscando confluências nos indicadores)
+    if (current.stage === 'IDLE') {
+      if (remainingSeconds > 8 && hasIndicatorsDirection) {
+        if (settings.confirmedSound) {
+          audioAlerts.playPreAlert();
+        }
+        updateTradeLifecycle({
+          stage: 'PRE_ALERT',
+          direction: dominantDirection,
+          candleTime: curCandleTime,
+          score,
+          orderFlowAtLock: currentOrderFlow,
+          entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
+        });
+      }
+    }
+  }, [
+    remainingSeconds,
+    currentCandle?.time,
+    currentCandle?.open,
+    currentCandle?.close,
+    technicalData.currentPrice,
+    technicalData.delta.buyerPercent,
+    technicalData.delta.sellerPercent,
+    indicatorConsensus.callCount,
+    indicatorConsensus.putCount,
+    settings.analysisProfile,
+    settings.confirmedSound,
+    isAnalyzing,
+    timeframe,
+    updateTradeLifecycle,
+  ]);
 
-    const score = Math.max(65, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
+  // Consolidado activeSignalInfo para consumo seguro da UI
+  const activeSignalInfo = useMemo(() => {
+    const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
+    const minIndicatorCount = isSniper ? 5 : 4;
+    const requiredOrderFlow = isSniper ? 70 : 60;
 
-    const triggers: { label: string; active: boolean }[] = [
-      {
-        label: `Tendência Maior (${technicalData.majorTrend.status})`,
-        active: (dominantDirection === 'CALL' && technicalData.majorTrend.status === 'ALTA') || (dominantDirection === 'PUT' && technicalData.majorTrend.status === 'BAIXA'),
-      },
-      {
-        label: `RSI (14): ${technicalData.rsi.value} pts (${technicalData.rsi.statusLabel})`,
-        active: (dominantDirection === 'CALL' && (technicalData.rsi.signal === 'ALTA' || technicalData.rsi.condition === 'SOBREVENDIDO')) || (dominantDirection === 'PUT' && (technicalData.rsi.signal === 'BAIXA' || technicalData.rsi.condition === 'SOBRECOMPRADO')),
-      },
-      {
-        label: `MACD Histograma (${technicalData.macd.status})`,
-        active: (dominantDirection === 'CALL' && (technicalData.macd.status === 'ALTA' || technicalData.macd.histogram > 0)) || (dominantDirection === 'PUT' && (technicalData.macd.status === 'BAIXA' || technicalData.macd.histogram < 0)),
-      },
-      {
-        label: `Médias Rápidas EMA 9/21 (${technicalData.maShort.status})`,
-        active: (dominantDirection === 'CALL' && technicalData.maShort.status === 'ALTA') || (dominantDirection === 'PUT' && technicalData.maShort.status === 'BAIXA'),
-      },
-      {
-        label: `Bandas de Bollinger (${technicalData.bollingerBands.status})`,
-        active: (dominantDirection === 'CALL' && (technicalData.bollingerBands.status === 'ALTA' || technicalData.bollingerBands.percentB < 0.30)) || (dominantDirection === 'PUT' && (technicalData.bollingerBands.status === 'BAIXA' || technicalData.bollingerBands.percentB > 0.70)),
-      },
-      {
-        label: `Delta de Volume (${dominantDirection === 'CALL' ? `${technicalData.delta.buyerPercent}% Comp.` : `${technicalData.delta.sellerPercent}% Vend.`})`,
-        active: (dominantDirection === 'CALL' && technicalData.delta.buyerPercent >= requiredOrderFlow) || (dominantDirection === 'PUT' && technicalData.delta.sellerPercent >= requiredOrderFlow),
-      },
-      {
-        label: `Região de Pavio Real (${dominantDirection === 'CALL' ? `Fundo: ${srLevels.fundo}` : `Topo: ${srLevels.topo}`})`,
-        active: (dominantDirection === 'CALL' && srLevels.distFundoPips <= 30) || (dominantDirection === 'PUT' && srLevels.distTopoPips <= 30),
-      },
-    ];
+    const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
+    const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
 
-    const activeCount = triggers.filter((t) => t.active).length;
+    const currentOrderFlow = dominantDirection === 'CALL'
+      ? technicalData.delta.buyerPercent
+      : technicalData.delta.sellerPercent;
+
+    const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
+    const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
+    const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
+
+    const curPrice = currentCandle?.close || technicalData.currentPrice;
+    const entryPrice = tradeLifecycle.entryPrice || curPrice;
+    const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
+    const diffPips = Math.abs((curPrice - entryPrice) * pipMultiplier).toFixed(1);
+
+    let liveStatus: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
+    if (tradeLifecycle.direction === 'CALL') {
+      if (curPrice > entryPrice) liveStatus = 'WIN';
+      else if (curPrice < entryPrice) liveStatus = 'LOSS';
+      else liveStatus = 'EMPATE';
+    } else {
+      if (curPrice < entryPrice) liveStatus = 'WIN';
+      else if (curPrice > entryPrice) liveStatus = 'LOSS';
+      else liveStatus = 'EMPATE';
+    }
 
     return {
       isSniper,
@@ -865,45 +1089,32 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       currentOrderFlow,
       dominantCount,
       dominantDirection,
-      stage,
-      isSignalActive,
-      isPreAlert,
-      isCancelled,
+      stage: tradeLifecycle.stage,
+      direction: tradeLifecycle.direction,
+      entryPrice: tradeLifecycle.entryPrice,
+      entryTimeFormatted: tradeLifecycle.entryTimeFormatted,
+      result: tradeLifecycle.result,
+      finalPrice: tradeLifecycle.finalPrice,
+      curPrice,
+      diffPips,
+      liveStatus,
+      score: tradeLifecycle.score || score,
+      orderFlowAtLock: tradeLifecycle.orderFlowAtLock || currentOrderFlow,
       hasIndicatorsDirection,
       hasOrderFlow,
-      direction: isSignalActive ? dominantDirection : 'NEUTRO',
-      targetDirection: dominantDirection,
-      triggers,
-      activeCount,
-      score,
-      minThreshold: requiredOrderFlow,
       callCount: indicatorConsensus.callCount,
       putCount: indicatorConsensus.putCount,
       remainingSeconds,
     };
-  }, [indicatorConsensus, technicalData, srLevels, settings.analysisProfile, isAnalyzing, remainingSeconds]);
-
-  // Alerta sonoro automático de transição de estágios (Pré-Alerta, Confirmação, Cancelado)
-  const prevSignalStageRef = useRef<{ stage: string; dir: string }>({ stage: 'IDLE', dir: 'NEUTRO' });
-  useEffect(() => {
-    if (settings.confirmedSound && isAnalyzing) {
-      if (activeSignalInfo.stage === 'PRE_ALERT' && prevSignalStageRef.current.stage !== 'PRE_ALERT') {
-        audioAlerts.playPreAlert();
-      } else if (activeSignalInfo.stage === 'CONFIRMED' && prevSignalStageRef.current.stage !== 'CONFIRMED') {
-        if (activeSignalInfo.dominantDirection === 'CALL') {
-          audioAlerts.playCallSignal();
-        } else if (activeSignalInfo.dominantDirection === 'PUT') {
-          audioAlerts.playPutSignal();
-        }
-      } else if (activeSignalInfo.stage === 'CANCELLED' && prevSignalStageRef.current.stage !== 'CANCELLED') {
-        audioAlerts.playCancelAlert();
-      }
-    }
-    prevSignalStageRef.current = {
-      stage: activeSignalInfo.stage,
-      dir: activeSignalInfo.dominantDirection,
-    };
-  }, [activeSignalInfo.stage, activeSignalInfo.dominantDirection, settings.confirmedSound, isAnalyzing]);
+  }, [
+    settings.analysisProfile,
+    indicatorConsensus,
+    technicalData,
+    currentCandle,
+    tradeLifecycle,
+    asset,
+    remainingSeconds,
+  ]);
 
   // Format candle countdown string MM:SS
   const mins = Math.floor(remainingSeconds / 60);
@@ -1320,7 +1531,61 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             {/* TAB EXCLUSIVA 0: PAINEL DE SINAL IA */}
             {activeTab === 'sinal' && (
               <div className="space-y-3 font-mono">
-                {/* 1. STATUS BAR DO SCANNER: ATIVO & MODO OPERACIONAL ATIVO */}
+                {/* 1. PLACAR OPERACIONAL NO TOPO (WIN / LOSS / EMPATE / ASSERTIVIDADE) */}
+                <div className="p-3 bg-gradient-to-b from-neutral-900 via-[#0d131f] to-black border border-neutral-800 rounded-2xl shadow-xl space-y-2">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <Trophy className="w-4 h-4 text-amber-400" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-neutral-200">
+                        PLACAR OPERACIONAL IA
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-neutral-400">Total: <strong className="text-white">{totalTrades}</strong></span>
+                      <button
+                        type="button"
+                        onClick={handleResetScoreboard}
+                        className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer border border-neutral-700/60"
+                        title="Zerar placar operacional"
+                      >
+                        ZERAR
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5 text-center">
+                    {/* WINS */}
+                    <div className="p-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40">
+                      <span className="text-[8.5px] font-bold text-emerald-400 block uppercase">WIN</span>
+                      <span className="text-base font-black text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                        {scoreboard.wins}
+                      </span>
+                    </div>
+                    {/* LOSS */}
+                    <div className="p-1.5 rounded-xl bg-rose-950/50 border border-rose-500/40">
+                      <span className="text-[8.5px] font-bold text-rose-400 block uppercase">LOSS</span>
+                      <span className="text-base font-black text-rose-300 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">
+                        {scoreboard.losses}
+                      </span>
+                    </div>
+                    {/* EMPATE */}
+                    <div className="p-1.5 rounded-xl bg-amber-950/50 border border-amber-500/40">
+                      <span className="text-[8.5px] font-bold text-amber-400 block uppercase">EMPATE</span>
+                      <span className="text-base font-black text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">
+                        {scoreboard.draws}
+                      </span>
+                    </div>
+                    {/* TAXA DE ASSERTIVIDADE */}
+                    <div className="p-1.5 rounded-xl bg-cyan-950/50 border border-cyan-500/40">
+                      <span className="text-[8.5px] font-bold text-cyan-400 block uppercase">TAXA</span>
+                      <span className="text-base font-black text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
+                        {winRate}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. STATUS BAR DO SCANNER: ATIVO & MODO OPERACIONAL ATIVO */}
                 <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-2xl flex items-center justify-between shadow-lg">
                   <div className="flex items-center gap-2">
                     <div className={`w-2.5 h-2.5 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-ping' : 'bg-amber-400'}`} />
@@ -1345,7 +1610,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </button>
                 </div>
 
-                {/* 2. HERO DISPLAY DO SINAL (SINAL CONFIRMADO, PRÉ-ALERTA, CANCELADO OU MONITORAMENTO IA) */}
+                {/* 3. HERO DISPLAY DO CICLO DE SINAL (OPERANDO, RESULTADO, CONFIRMADO, PRÉ-ALERTA, REJEITADO OU RADAR) */}
                 {!isAnalyzing ? (
                   /* Painel quando a análise está parada */
                   <div className="p-5 rounded-2xl border border-neutral-800 bg-gradient-to-b from-neutral-900/90 to-black space-y-3 shadow-xl text-center">
@@ -1356,11 +1621,162 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </span>
                     </div>
                     <p className="text-[10.5px] text-neutral-400 max-w-[280px] mx-auto leading-relaxed">
-                      O monitoramento de fluxo institucional e confluências está desligado. Clique no botão abaixo para ativar a IA.
+                      O monitoramento de fluxo institucional e confluências está desligado. Clique no botão abaixo para iniciar a IA.
                     </p>
                   </div>
+                ) : activeSignalInfo.stage === 'IN_PROGRESS' ? (
+                  /* ESTÁGIO 1: ENTRADA EM ANDAMENTO (Durante a vela da operação) */
+                  <div
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
+                      activeSignalInfo.liveStatus === 'WIN'
+                        ? 'bg-gradient-to-br from-emerald-950/95 via-[#062419] to-black border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.45)]'
+                        : activeSignalInfo.liveStatus === 'LOSS'
+                          ? 'bg-gradient-to-br from-rose-950/95 via-[#2b0811] to-black border-rose-500 shadow-[0_0_35px_rgba(244,63,94,0.45)]'
+                          : 'bg-gradient-to-br from-amber-950/95 via-[#231706] to-black border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.45)]'
+                    }`}
+                  >
+                    {/* Header Operação em Andamento */}
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full animate-ping ${
+                          activeSignalInfo.liveStatus === 'WIN' ? 'bg-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'bg-rose-400' : 'bg-amber-400'
+                        }`} />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-white">
+                          🟢 OPERAÇÃO EM ANDAMENTO
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                        activeSignalInfo.liveStatus === 'WIN'
+                          ? 'bg-emerald-500/30 text-emerald-300 border-emerald-400/60 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                          : activeSignalInfo.liveStatus === 'LOSS'
+                            ? 'bg-rose-500/30 text-rose-300 border-rose-400/60 shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                            : 'bg-amber-500/30 text-amber-300 border-amber-400/60'
+                      }`}>
+                        {activeSignalInfo.liveStatus === 'WIN' ? `WIN AO VIVO (+${activeSignalInfo.diffPips} p)` : activeSignalInfo.liveStatus === 'LOSS' ? `LOSS AO VIVO (-${activeSignalInfo.diffPips} p)` : 'EMPATE (0.0 p)'}
+                      </span>
+                    </div>
+
+                    {/* Direção e Horário de Entrada Resumidos */}
+                    <div className="py-2.5 text-center space-y-1">
+                      <div className="flex items-center justify-center gap-2.5">
+                        {activeSignalInfo.direction === 'CALL' ? (
+                          <>
+                            <TrendingUp className="w-8 h-8 text-emerald-400 animate-bounce" />
+                            <span className="text-3xl font-black text-emerald-300 tracking-tight drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]">
+                              CALL (COMPRA)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-8 h-8 text-rose-400 animate-bounce" />
+                            <span className="text-3xl font-black text-rose-300 tracking-tight drop-shadow-[0_0_15px_rgba(244,63,94,0.8)]">
+                              PUT (VENDA)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-neutral-300 font-bold">
+                        Horário de Entrada: <span className="text-amber-300 font-mono">{activeSignalInfo.entryTimeFormatted || 'Na abertura da vela'}</span>
+                      </div>
+                    </div>
+
+                    {/* CRONÔMETRO GIGANTE DE FECHAMENTO DA OPERAÇÃO */}
+                    <div className="p-3 rounded-xl bg-black/60 border border-white/10 text-center space-y-1">
+                      <span className="text-[9px] uppercase tracking-widest text-neutral-400 block font-bold">
+                        TEMPO RESTANTE DA OPERAÇÃO ({timeframe})
+                      </span>
+                      <div className="text-5xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_20px_rgba(6,182,212,0.9)]">
+                        {formattedCountdown}
+                      </div>
+                      <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300"
+                          style={{ width: `${Math.max(3, Math.min(100, (remainingSeconds / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Comparativo de Taxas Operacionais */}
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-2 border-t border-white/10">
+                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                        <span className="text-neutral-400 block uppercase">Taxa de Entrada</span>
+                        <span className="font-mono font-bold text-white text-xs">
+                          {activeSignalInfo.entryPrice?.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                        <span className="text-neutral-400 block uppercase">Cotação Atual</span>
+                        <span className={`font-mono font-black text-xs ${
+                          activeSignalInfo.liveStatus === 'WIN' ? 'text-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'text-rose-400' : 'text-amber-300'
+                        }`}>
+                          {activeSignalInfo.curPrice.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : activeSignalInfo.stage === 'RESULT' ? (
+                  /* ESTÁGIO 2: RESULTADO FINAL COMPUTADO (WIN / LOSS / EMPATE) */
+                  <div
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
+                      activeSignalInfo.result === 'WIN'
+                        ? 'bg-gradient-to-br from-emerald-950/95 via-[#062419] to-black border-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.5)]'
+                        : activeSignalInfo.result === 'LOSS'
+                          ? 'bg-gradient-to-br from-rose-950/95 via-[#2b0811] to-black border-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.5)]'
+                          : 'bg-gradient-to-br from-amber-950/95 via-[#231706] to-black border-amber-400 shadow-[0_0_40px_rgba(245,158,11,0.5)]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center gap-2">
+                        <Trophy className={`w-4 h-4 ${
+                          activeSignalInfo.result === 'WIN' ? 'text-emerald-400 animate-bounce' : activeSignalInfo.result === 'LOSS' ? 'text-rose-400' : 'text-amber-400'
+                        }`} />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-white">
+                          OPERAÇÃO FINALIZADA
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                        activeSignalInfo.result === 'WIN'
+                          ? 'bg-emerald-500 text-neutral-950 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
+                          : activeSignalInfo.result === 'LOSS'
+                            ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)]'
+                            : 'bg-amber-500 text-neutral-950'
+                      }`}>
+                        {activeSignalInfo.result}
+                      </span>
+                    </div>
+
+                    <div className="py-3 text-center space-y-1.5">
+                      <span className={`text-4xl font-black block tracking-tight ${
+                        activeSignalInfo.result === 'WIN' ? 'text-emerald-300 drop-shadow-[0_0_18px_rgba(16,185,129,0.9)]' : activeSignalInfo.result === 'LOSS' ? 'text-rose-300 drop-shadow-[0_0_18px_rgba(244,63,94,0.9)]' : 'text-amber-300'
+                      }`}>
+                        {activeSignalInfo.result === 'WIN' ? '🏆 VITÓRIA (WIN)!' : activeSignalInfo.result === 'LOSS' ? '🛑 LOSS REGISTRADO' : '⚖️ EMPATE DEVOLVIDO'}
+                      </span>
+                      <p className="text-[10.5px] text-neutral-300">
+                        {activeSignalInfo.result === 'WIN'
+                          ? 'Operação vencedora! O resultado foi somado ao seu placar operacional.'
+                          : activeSignalInfo.result === 'LOSS'
+                            ? 'Gestão de banca mantida. A IA segue filtrando a melhor oportunidade.'
+                            : 'Capital restituído pela corretora sem variação de banca.'}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-1">
+                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                        <span className="text-neutral-400 block uppercase">Taxa Entrada</span>
+                        <span className="font-mono font-bold text-white">
+                          {activeSignalInfo.entryPrice?.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                        <span className="text-neutral-400 block uppercase">Taxa Fechamento</span>
+                        <span className="font-mono font-bold text-cyan-300">
+                          {activeSignalInfo.finalPrice?.toFixed(srLevels.decimals)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 ) : activeSignalInfo.stage === 'CONFIRMED' ? (
-                  /* SINAL CONFIRMADO (Aos 8s finais com Order Flow atingindo a meta) */
+                  /* ESTÁGIO 3: SINAL CONFIRMADO (Travado aos 8s finais da vela) */
                   <div
                     className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
                       activeSignalInfo.direction === 'CALL'
@@ -1385,8 +1801,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </span>
                     </div>
 
-                    {/* Direção Gigante */}
-                    <div className="py-3 text-center space-y-1">
+                    {/* Direção e Horário de Entrada Resumidos */}
+                    <div className="py-2.5 text-center space-y-1">
                       <div className="flex items-center justify-center gap-3">
                         {activeSignalInfo.direction === 'CALL' ? (
                           <>
@@ -1404,20 +1820,28 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           </>
                         )}
                       </div>
-                      <div className="p-2 rounded-xl bg-black/60 border border-white/10 mt-1">
-                        <span className="text-xs font-black text-amber-300 block">
-                          👉 ENTRAR NA ABERTURA DA PRÓXIMA VELA
-                        </span>
-                        <span className="text-[9.5px] text-neutral-300">
-                          Vela atual encerra em <strong>00:0{activeSignalInfo.remainingSeconds}s</strong>
-                        </span>
+                      <div className="text-[11px] text-neutral-300 font-bold">
+                        Horário de Entrada: <span className="text-amber-300 font-mono">{activeSignalInfo.entryTimeFormatted}</span>
                       </div>
                     </div>
 
+                    {/* CRONÔMETRO GIGANTE DE CONTAGEM REGRESSIVA DOS 8 SEGUNDOS */}
+                    <div className="p-3 rounded-xl bg-black/60 border border-white/10 text-center space-y-1">
+                      <span className="text-[9.5px] uppercase tracking-widest text-amber-300 block font-black">
+                        👉 ENTRAR NA ABERTURA DA PRÓXIMA VELA
+                      </span>
+                      <div className="text-5xl font-mono font-black text-amber-300 tracking-wider drop-shadow-[0_0_20px_rgba(245,158,11,0.9)] animate-pulse">
+                        00:0{activeSignalInfo.remainingSeconds}
+                      </div>
+                      <span className="text-[9px] text-neutral-400 block">
+                        Faltam {activeSignalInfo.remainingSeconds} segundos para a virada de vela
+                      </span>
+                    </div>
+
                     {/* Order Flow Validado */}
-                    <div className="p-2 rounded-xl bg-black/40 border border-white/10 mb-2 flex items-center justify-between text-[10px]">
+                    <div className="p-2 rounded-xl bg-black/40 border border-white/10 mt-2 flex items-center justify-between text-[10px]">
                       <span className="text-neutral-300">
-                        Order Flow Confirmado: <strong className="text-emerald-400 font-black">{activeSignalInfo.currentOrderFlow}%</strong>
+                        Order Flow Confirmado: <strong className="text-emerald-400 font-black">{activeSignalInfo.orderFlowAtLock}%</strong>
                       </span>
                       <span className="text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
                         ✓ Meta (&gt;{activeSignalInfo.requiredOrderFlow}%) Atingida
@@ -1425,7 +1849,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
 
                     {/* Métricas Operacionais */}
-                    <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-white/10 text-center">
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 text-center">
                       <div className="p-2 rounded-xl bg-black/50 border border-white/10">
                         <span className="text-[9px] text-neutral-400 block uppercase">Cotação Atual</span>
                         <span className="text-xs font-black font-mono text-white">
@@ -1435,19 +1859,13 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       <div className="p-2 rounded-xl bg-black/50 border border-white/10">
                         <span className="text-[9px] text-neutral-400 block uppercase">Expiração</span>
                         <span className="text-xs font-black font-mono text-cyan-300">
-                          {timeframe}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
-                        <span className="text-[9px] text-neutral-400 block uppercase">Fechamento</span>
-                        <span className="text-xs font-black font-mono text-amber-300">
-                          {formattedCountdown}
+                          {timeframe} Oficial
                         </span>
                       </div>
                     </div>
                   </div>
                 ) : activeSignalInfo.stage === 'PRE_ALERT' ? (
-                  /* PRÉ-ALERTA (Vela acima de 8s com direção dos indicadores alinhada) */
+                  /* ESTÁGIO 4: PRÉ-ALERTA (Vela acima de 8s com direção dos indicadores alinhada) */
                   <div className="p-4 rounded-2xl border-2 border-amber-400/90 bg-gradient-to-br from-amber-950/80 via-[#261b0a] to-black space-y-3 shadow-[0_0_25px_rgba(245,158,11,0.35)] relative overflow-hidden">
                     <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
                       <div className="flex items-center gap-2">
@@ -1461,6 +1879,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </span>
                     </div>
 
+                    {/* Direção e Horário Previsto Resumidos */}
                     <div className="py-2 text-center space-y-1">
                       <div className="flex items-center justify-center gap-2.5">
                         {activeSignalInfo.dominantDirection === 'CALL' ? (
@@ -1479,9 +1898,25 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           </>
                         )}
                       </div>
-                      <p className="text-[10px] text-neutral-300">
-                        {activeSignalInfo.dominantCount}/10 indicadores a favor • Faltam <strong>{Math.max(0, activeSignalInfo.remainingSeconds - 8)}s</strong> para a validação dos 00:08
+                      <div className="text-[11px] text-neutral-300 font-bold">
+                        Horário Previsto: <span className="text-amber-300 font-mono">{activeSignalInfo.entryTimeFormatted}</span>
+                      </div>
+                      <p className="text-[10px] text-neutral-400">
+                        {activeSignalInfo.dominantCount}/10 indicadores a favor • Confirmação ou Rejeição aos 00:08
                       </p>
+                    </div>
+
+                    {/* CRONÔMETRO GIGANTE ATÉ A CONFIRMAÇÃO DOS 00:08 */}
+                    <div className="p-3 rounded-xl bg-black/60 border border-amber-500/30 text-center space-y-1">
+                      <span className="text-[9px] uppercase tracking-widest text-neutral-400 block font-bold">
+                        TEMPO RESTANTE DA VELA ATUAL
+                      </span>
+                      <div className="text-5xl font-mono font-black text-amber-300 tracking-wider drop-shadow-[0_0_20px_rgba(245,158,11,0.8)]">
+                        {formattedCountdown}
+                      </div>
+                      <span className="text-[9px] text-neutral-400 block">
+                        Faltam <strong className="text-cyan-300">{Math.max(0, activeSignalInfo.remainingSeconds - 8)}s</strong> para a avaliação dos 00:08
+                      </span>
                     </div>
 
                     {/* Rastreador de Order Flow do Pré-Alerta */}
@@ -1508,56 +1943,46 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           : `⏳ Faltam ${Math.max(0, activeSignalInfo.requiredOrderFlow - activeSignalInfo.currentOrderFlow)}% de força para validar aos 00:08 no modo ${activeSignalInfo.modeName}.`}
                       </p>
                     </div>
-
-                    {/* Métricas */}
-                    <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-1">
-                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                        <span className="text-neutral-500 block uppercase">Cotação Atual</span>
-                        <span className="font-mono font-bold text-white">
-                          {srLevels.curPrice.toFixed(srLevels.decimals)}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-black/40 border border-neutral-800">
-                        <span className="text-neutral-500 block uppercase">Vela Fecha Em</span>
-                        <span className="font-mono font-bold text-amber-300">
-                          {formattedCountdown}
-                        </span>
-                      </div>
-                    </div>
                   </div>
                 ) : activeSignalInfo.stage === 'CANCELLED' ? (
-                  /* SINAL CANCELADO (Aos 8s finais mas Order Flow < meta) */
+                  /* ESTÁGIO 5: SINAL REJEITADO (Aos 8s finais sem Order Flow suficiente) */
                   <div className="p-4 rounded-2xl border-2 border-rose-500/80 bg-gradient-to-br from-rose-950/80 via-[#260a12] to-black space-y-3 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
                     <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
                       <div className="flex items-center gap-2">
                         <XCircle className="w-4 h-4 text-rose-400" />
                         <span className="text-[11px] font-black uppercase tracking-wider text-rose-300">
-                          🛑 SINAL CANCELADO • PROTEÇÃO DE CAPITAL
+                          🛑 SINAL REJEITADO • PROTEÇÃO DE CAPITAL
                         </span>
                       </div>
                       <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-300 border border-rose-500/40">
-                        SEM ORDER FLOW
+                        SEM FLUXO AOS 00:08
                       </span>
                     </div>
 
                     <div className="py-2 text-center space-y-1">
-                      <span className="text-lg font-black text-white block">
+                      <span className="text-xl font-black text-white block">
                         ENTRADA ABORTADA
                       </span>
-                      <p className="text-[10px] text-neutral-300 leading-relaxed">
-                        Os indicadores apontavam <strong>{activeSignalInfo.dominantDirection}</strong>, porém a força {activeSignalInfo.dominantDirection === 'CALL' ? 'compradora' : 'vendedora'} atingiu apenas <strong className="text-rose-400">{activeSignalInfo.currentOrderFlow}%</strong> aos 8s (mínimo necessário no modo {activeSignalInfo.modeName}: <strong className="text-white">&gt;{activeSignalInfo.requiredOrderFlow}%</strong>).
+                      <p className="text-[10.5px] text-neutral-300 leading-relaxed">
+                        Os indicadores apontavam <strong className="text-white">{activeSignalInfo.dominantDirection}</strong>, porém a força {activeSignalInfo.dominantDirection === 'CALL' ? 'compradora' : 'vendedora'} atingiu apenas <strong className="text-rose-400">{activeSignalInfo.orderFlowAtLock}%</strong> aos 8s (meta no modo {activeSignalInfo.modeName}: <strong className="text-white">&gt;{activeSignalInfo.requiredOrderFlow}%</strong>).
                       </p>
                       <p className="text-[9.5px] text-neutral-400 italic">
                         O sinal foi cancelado pela IA para proteger sua banca contra consolidação ou rompimento falso.
                       </p>
                     </div>
 
-                    <div className="p-2 rounded-xl bg-black/50 border border-neutral-800 text-center text-[10px] text-neutral-400">
-                      Nova oportunidade na próxima vela em <strong className="text-amber-300 font-mono">00:0{activeSignalInfo.remainingSeconds}s</strong>
+                    {/* CRONÔMETRO ATÉ A PRÓXIMA VELA */}
+                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800 text-center space-y-1">
+                      <span className="text-[8.5px] uppercase tracking-wider text-neutral-400 block">
+                        NOVA AVALIAÇÃO NA PRÓXIMA VELA EM
+                      </span>
+                      <div className="text-3xl font-mono font-black text-amber-300">
+                        00:0{activeSignalInfo.remainingSeconds}
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  /* PAINEL TECNOLÓGICO DE MONITORAMENTO IA (FUTURISTA & ANIMADO) */
+                  /* ESTÁGIO 0: PAINEL TECNOLÓGICO DE MONITORAMENTO IA (FUTURISTA & ANIMADO) */
                   <div className="relative p-4 rounded-2xl border-2 border-cyan-500/40 bg-gradient-to-b from-[#0b1324] via-[#070d18] to-black space-y-3.5 shadow-[0_0_30px_rgba(6,182,212,0.25)] overflow-hidden">
                     {/* Efeito Cyber Laser Scanline em Loop Contínuo */}
                     <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -1601,7 +2026,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
                       {/* Relógio Digital Holográfico Gigante */}
                       <div className="py-2.5 flex items-center justify-center gap-3">
-                        <div className="text-4xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_18px_rgba(6,182,212,0.8)]">
+                        <div className="text-5xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_20px_rgba(6,182,212,0.85)]">
                           {formattedCountdown}
                         </div>
                         <div className="text-left text-[9px] text-neutral-400 leading-tight border-l border-cyan-500/30 pl-2.5">
@@ -1697,7 +2122,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 )}
 
-                {/* 3. BOTÃO PRINCIPAL INICIAR / PARAR (GRANDE, EM DESTAQUE NA PARTE DE BAIXO) */}
+                {/* 4. BOTÃO PRINCIPAL INICIAR / PARAR (GRANDE, EM DESTAQUE NA PARTE DE BAIXO) */}
                 <div className="pt-2 space-y-1.5">
                   <button
                     type="button"
