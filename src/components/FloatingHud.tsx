@@ -474,7 +474,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'sinal', 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'sinal' | 'indicadores' | 'grafico' | 'voz'>('sinal');
-  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('NATIVE_SR');
+  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('TRADINGVIEW');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
@@ -793,14 +793,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     try {
       const raw = localStorage.getItem(SCOREBOARD_KEY);
       if (raw) return JSON.parse(raw);
-    } catch {}
+    } catch { }
     return { wins: 0, losses: 0, draws: 0 };
   };
 
   const saveStoredScoreboard = (sb: { wins: number; losses: number; draws: number }) => {
     try {
       localStorage.setItem(SCOREBOARD_KEY, JSON.stringify(sb));
-    } catch {}
+    } catch { }
   };
 
   const [scoreboard, setScoreboard] = useState(getStoredScoreboard);
@@ -926,6 +926,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     if (current.stage === 'IN_PROGRESS') {
       const now = Date.now();
       const elapsedSeconds = Math.floor((now - (current.entryTimestamp || now)) / 1000);
+
+      // Sincronização de abertura: se a nova vela oficial chegou ao feed nos primeiros 4 segundos da operação,
+      // ajusta o entryPrice para o open oficial dessa vela caso esteja coerente com o mercado.
+      if (elapsedSeconds <= 4 && curCandleTime > current.signalCandleTime && currentCandle?.open) {
+        const currentEntry = current.entryPrice || 0;
+        if (Math.abs(currentEntry - currentCandle.open) > 0.000001 && Math.abs(currentEntry - currentCandle.open) < (currentCandle.open * 0.02)) {
+          current.entryPrice = currentCandle.open;
+        }
+      }
+
       // REGRA DE OURO: A operação NÃO PODE encerrar prematuramente!
       // Para M1 (60s), precisa ter passado pelo menos 55s de operação real da vela!
       const minRequiredDuration = Math.max(10, tfSec - 5);
@@ -934,17 +944,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
       if (isTimeExpired || isCandleClosing) {
         const entry = current.entryPrice || curPrice;
-        const finalPrice = curPrice;
-        let result: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
+        let finalPrice = curPrice;
 
-        if (current.direction === 'CALL') {
-          if (finalPrice > entry) result = 'WIN';
-          else if (finalPrice < entry) result = 'LOSS';
-          else result = 'EMPATE';
+        // Se a vela da operação acabou de fechar e o feed avançou para a seguinte,
+        // o fechamento oficial da operação é o close da vela que acabou de encerrar!
+        const candles = technicalData?.candles || [];
+        if (current.tradeCandleTime && curCandleTime > current.tradeCandleTime && candles.length >= 2) {
+          finalPrice = candles[candles.length - 2].close;
+        } else if (currentCandle?.close) {
+          finalPrice = curPrice > 0 ? curPrice : currentCandle.close;
+        }
+
+        let result: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
+        const pipDiff = Math.abs(finalPrice - entry);
+        const threshold = asset.category === 'CRYPTO' ? 0.0001 : 0.00001;
+
+        if (pipDiff < threshold) {
+          result = 'EMPATE';
+        } else if (current.direction === 'CALL') {
+          result = finalPrice > entry ? 'WIN' : 'LOSS';
         } else {
-          if (finalPrice < entry) result = 'WIN';
-          else if (finalPrice > entry) result = 'LOSS';
-          else result = 'EMPATE';
+          result = finalPrice < entry ? 'WIN' : 'LOSS';
         }
 
         if (settings.confirmedSound) {
@@ -978,14 +998,21 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     if (current.stage === 'CONFIRMED') {
       const isCandleTurn = curCandleTime > current.signalCandleTime || remainingSeconds === 0;
       if (isCandleTurn) {
-        const openPrice = currentCandle?.open || curPrice;
+        // Se a nova vela já iniciou na API/feed (curCandleTime > signalCandleTime), usamos o open dela.
+        // Se ainda está no segundo 00:00 da virada, o preço exato de entrada é a cotação ao vivo (curPrice),
+        // JAMAIS o open da vela anterior que iniciou 60 segundos atrás!
+        const isNewCandle = curCandleTime > current.signalCandleTime;
+        const exactEntryPrice = (isNewCandle && currentCandle?.open)
+          ? currentCandle.open
+          : (curPrice > 0 ? curPrice : (currentCandle?.close || currentCandle?.open || 0));
+
         const now = Date.now();
         updateTradeLifecycle({
           stage: 'IN_PROGRESS',
           direction: current.direction,
           signalCandleTime: current.signalCandleTime,
-          tradeCandleTime: curCandleTime > current.signalCandleTime ? curCandleTime : current.signalCandleTime + tfSec,
-          entryPrice: openPrice,
+          tradeCandleTime: isNewCandle ? curCandleTime : current.signalCandleTime + tfSec,
+          entryPrice: exactEntryPrice,
           entryTimeFormatted: formatBrasiliaTime(),
           entryTimestamp: now,
           tradeExpiryTimestamp: now + tfSec * 1000,
@@ -1282,11 +1309,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             <button
               onClick={onToggleAnalysis}
               title={isAnalyzing ? 'Scanner Ativo (Clique para Pausar)' : 'Scanner Pausado (Clique para Iniciar)'}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${
-                isAnalyzing
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${isAnalyzing
                   ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50 shadow-[0_0_6px_rgba(16,185,129,0.3)]'
                   : 'bg-amber-950/70 text-amber-300 border-amber-500/50'
-              }`}
+                }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
               <span className="hidden sm:inline">{isAnalyzing ? 'ATIVO' : 'PAUSA'}</span>
@@ -1617,7 +1643,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           )}
 
           <div className="p-3.5 space-y-3 text-xs max-h-[76vh] overflow-y-auto custom-scrollbar">
-            
+
             {/* TAB EXCLUSIVA 0: PAINEL DE SINAL IA */}
             {activeTab === 'sinal' && (
               <div className="space-y-3 font-mono">
@@ -1703,11 +1729,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <button
                       type="button"
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
-                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${
-                        activeSignalInfo.isSniper
+                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${activeSignalInfo.isSniper
                           ? 'bg-cyan-950/80 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)] font-black'
                           : 'bg-black/50 border-neutral-800 text-neutral-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       <div className="text-[10px] font-bold">🎯 Sniper</div>
                       <div className="text-[8px] opacity-80">Order Flow &gt; 70%</div>
@@ -1715,11 +1740,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <button
                       type="button"
                       onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
-                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${
-                        !activeSignalInfo.isSniper
+                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${!activeSignalInfo.isSniper
                           ? 'bg-amber-950/80 border-amber-400 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)] font-black'
                           : 'bg-black/50 border-neutral-800 text-neutral-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       <div className="text-[10px] font-bold">⚡ Alavancagem</div>
                       <div className="text-[8px] opacity-80">Order Flow &gt; 60%</div>
@@ -1744,31 +1768,28 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 ) : activeSignalInfo.stage === 'IN_PROGRESS' ? (
                   /* ESTÁGIO 1: ENTRADA EM ANDAMENTO (Durante a vela da operação) */
                   <div
-                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
-                      activeSignalInfo.liveStatus === 'WIN'
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${activeSignalInfo.liveStatus === 'WIN'
                         ? 'bg-gradient-to-br from-emerald-950/95 via-[#062419] to-black border-emerald-400 shadow-[0_0_35px_rgba(16,185,129,0.45)]'
                         : activeSignalInfo.liveStatus === 'LOSS'
                           ? 'bg-gradient-to-br from-rose-950/95 via-[#2b0811] to-black border-rose-500 shadow-[0_0_35px_rgba(244,63,94,0.45)]'
                           : 'bg-gradient-to-br from-amber-950/95 via-[#231706] to-black border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.45)]'
-                    }`}
+                      }`}
                   >
                     {/* Header Operação em Andamento */}
                     <div className="flex items-center justify-between pb-2 border-b border-white/10">
                       <div className="flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full animate-ping ${
-                          activeSignalInfo.liveStatus === 'WIN' ? 'bg-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'bg-rose-400' : 'bg-amber-400'
-                        }`} />
+                        <span className={`w-3 h-3 rounded-full animate-ping ${activeSignalInfo.liveStatus === 'WIN' ? 'bg-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'bg-rose-400' : 'bg-amber-400'
+                          }`} />
                         <span className="text-[11px] font-black uppercase tracking-wider text-white">
                           🟢 OPERAÇÃO EM ANDAMENTO
                         </span>
                       </div>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                        activeSignalInfo.liveStatus === 'WIN'
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${activeSignalInfo.liveStatus === 'WIN'
                           ? 'bg-emerald-500/30 text-emerald-300 border-emerald-400/60 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                           : activeSignalInfo.liveStatus === 'LOSS'
                             ? 'bg-rose-500/30 text-rose-300 border-rose-400/60 shadow-[0_0_10px_rgba(244,63,94,0.5)]'
                             : 'bg-amber-500/30 text-amber-300 border-amber-400/60'
-                      }`}>
+                        }`}>
                         {activeSignalInfo.liveStatus === 'WIN' ? `WIN AO VIVO (+${activeSignalInfo.diffPips} p)` : activeSignalInfo.liveStatus === 'LOSS' ? `LOSS AO VIVO (-${activeSignalInfo.diffPips} p)` : 'EMPATE (0.0 p)'}
                       </span>
                     </div>
@@ -1823,9 +1844,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                       <div className="p-2 rounded-xl bg-black/40 border border-white/10">
                         <span className="text-neutral-400 block uppercase">Cotação Atual</span>
-                        <span className={`font-mono font-black text-xs ${
-                          activeSignalInfo.liveStatus === 'WIN' ? 'text-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'text-rose-400' : 'text-amber-300'
-                        }`}>
+                        <span className={`font-mono font-black text-xs ${activeSignalInfo.liveStatus === 'WIN' ? 'text-emerald-400' : activeSignalInfo.liveStatus === 'LOSS' ? 'text-rose-400' : 'text-amber-300'
+                          }`}>
                           {activeSignalInfo.curPrice.toFixed(srLevels.decimals)}
                         </span>
                       </div>
@@ -1834,38 +1854,34 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 ) : activeSignalInfo.stage === 'RESULT' ? (
                   /* ESTÁGIO 2: RESULTADO FINAL COMPUTADO (WIN / LOSS / EMPATE) */
                   <div
-                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
-                      activeSignalInfo.result === 'WIN'
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${activeSignalInfo.result === 'WIN'
                         ? 'bg-gradient-to-br from-emerald-950/95 via-[#062419] to-black border-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.5)]'
                         : activeSignalInfo.result === 'LOSS'
                           ? 'bg-gradient-to-br from-rose-950/95 via-[#2b0811] to-black border-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.5)]'
                           : 'bg-gradient-to-br from-amber-950/95 via-[#231706] to-black border-amber-400 shadow-[0_0_40px_rgba(245,158,11,0.5)]'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-white/10">
                       <div className="flex items-center gap-2">
-                        <Trophy className={`w-4 h-4 ${
-                          activeSignalInfo.result === 'WIN' ? 'text-emerald-400 animate-bounce' : activeSignalInfo.result === 'LOSS' ? 'text-rose-400' : 'text-amber-400'
-                        }`} />
+                        <Trophy className={`w-4 h-4 ${activeSignalInfo.result === 'WIN' ? 'text-emerald-400 animate-bounce' : activeSignalInfo.result === 'LOSS' ? 'text-rose-400' : 'text-amber-400'
+                          }`} />
                         <span className="text-[11px] font-black uppercase tracking-wider text-white">
                           OPERAÇÃO FINALIZADA
                         </span>
                       </div>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-                        activeSignalInfo.result === 'WIN'
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${activeSignalInfo.result === 'WIN'
                           ? 'bg-emerald-500 text-neutral-950 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
                           : activeSignalInfo.result === 'LOSS'
                             ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)]'
                             : 'bg-amber-500 text-neutral-950'
-                      }`}>
+                        }`}>
                         {activeSignalInfo.result}
                       </span>
                     </div>
 
                     <div className="py-3 text-center space-y-1.5">
-                      <span className={`text-4xl font-black block tracking-tight ${
-                        activeSignalInfo.result === 'WIN' ? 'text-emerald-300 drop-shadow-[0_0_18px_rgba(16,185,129,0.9)]' : activeSignalInfo.result === 'LOSS' ? 'text-rose-300 drop-shadow-[0_0_18px_rgba(244,63,94,0.9)]' : 'text-amber-300'
-                      }`}>
+                      <span className={`text-4xl font-black block tracking-tight ${activeSignalInfo.result === 'WIN' ? 'text-emerald-300 drop-shadow-[0_0_18px_rgba(16,185,129,0.9)]' : activeSignalInfo.result === 'LOSS' ? 'text-rose-300 drop-shadow-[0_0_18px_rgba(244,63,94,0.9)]' : 'text-amber-300'
+                        }`}>
                         {activeSignalInfo.result === 'WIN' ? '🏆 VITÓRIA (WIN)!' : activeSignalInfo.result === 'LOSS' ? '🛑 LOSS REGISTRADO' : '⚖️ EMPATE DEVOLVIDO'}
                       </span>
                       <p className="text-[10.5px] text-neutral-300">
@@ -1875,6 +1891,37 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                             ? 'Gestão de banca mantida. A IA segue filtrando a melhor oportunidade.'
                             : 'Capital restituído pela corretora sem variação de banca.'}
                       </p>
+                    </div>
+
+                    {/* DIREÇÃO OPERADA E DELTA DE PREÇO */}
+                    <div className="flex items-center justify-center gap-2 py-1 flex-wrap">
+                      <span className={`text-[11px] font-black px-3 py-1 rounded-lg border flex items-center gap-1.5 ${activeSignalInfo.direction === 'CALL'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                          : 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
+                        }`}>
+                        {activeSignalInfo.direction === 'CALL' ? (
+                          <>
+                            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                            DIREÇÃO: COMPRA (CALL)
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
+                            DIREÇÃO: VENDA (PUT)
+                          </>
+                        )}
+                      </span>
+                      {activeSignalInfo.entryPrice && activeSignalInfo.finalPrice && (
+                        <span className={`text-[10px] font-mono font-bold px-2 py-1 rounded-lg border ${activeSignalInfo.result === 'WIN'
+                            ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                            : activeSignalInfo.result === 'LOSS'
+                              ? 'bg-rose-950/70 text-rose-300 border-rose-500/40'
+                              : 'bg-neutral-900 text-neutral-300 border-neutral-700'
+                          }`}>
+                          Δ {(activeSignalInfo.finalPrice - activeSignalInfo.entryPrice) >= 0 ? '+' : ''}
+                          {(activeSignalInfo.finalPrice - activeSignalInfo.entryPrice).toFixed(srLevels.decimals)}
+                        </span>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-1">
@@ -1895,11 +1942,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 ) : activeSignalInfo.stage === 'CONFIRMED' ? (
                   /* ESTÁGIO 3: SINAL CONFIRMADO (Travado aos 8s finais da vela) */
                   <div
-                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${
-                      activeSignalInfo.direction === 'CALL'
+                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${activeSignalInfo.direction === 'CALL'
                         ? 'bg-gradient-to-br from-emerald-950/90 via-[#062419] to-black border-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.4)]'
                         : 'bg-gradient-to-br from-rose-950/90 via-[#260a12] to-black border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)]'
-                    }`}
+                      }`}
                   >
                     {/* Header do Sinal */}
                     <div className="flex items-center justify-between pb-2 border-b border-white/10">
@@ -1909,11 +1955,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           SINAL CONFIRMADO • {activeSignalInfo.modeName}
                         </span>
                       </div>
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                        activeSignalInfo.direction === 'CALL'
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${activeSignalInfo.direction === 'CALL'
                           ? 'bg-emerald-500 text-neutral-950 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
                           : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)]'
-                      }`}>
+                        }`}>
                         {activeSignalInfo.score}% ASSERTIVIDADE
                       </span>
                     </div>
@@ -2048,9 +2093,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                       <div className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden relative">
                         <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            activeSignalInfo.hasOrderFlow ? 'bg-emerald-400' : 'bg-amber-400'
-                          }`}
+                          className={`h-full rounded-full transition-all duration-300 ${activeSignalInfo.hasOrderFlow ? 'bg-emerald-400' : 'bg-amber-400'
+                            }`}
                           style={{ width: `${Math.min(100, activeSignalInfo.currentOrderFlow)}%` }}
                         />
                       </div>
@@ -2194,13 +2238,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                           return (
                             <div
                               key={i}
-                              className={`p-1 rounded-lg text-center border text-[8.5px] font-mono font-bold transition-all ${
-                                isCall
+                              className={`p-1 rounded-lg text-center border text-[8.5px] font-mono font-bold transition-all ${isCall
                                   ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
                                   : isPut
                                     ? 'bg-rose-950/60 border-rose-500/50 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.2)]'
                                     : 'bg-black/50 border-neutral-800 text-neutral-400'
-                              }`}
+                                }`}
                             >
                               <div className="truncate text-[8px] opacity-75">{ind.name.split(' ')[0]}</div>
                               <div className="font-black text-[9px] mt-0.5">
@@ -2244,11 +2287,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   <button
                     type="button"
                     onClick={onToggleAnalysis}
-                    className={`w-full py-4 px-4 rounded-2xl font-mono font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-[0.98] shadow-2xl group ${
-                      isAnalyzing
+                    className={`w-full py-4 px-4 rounded-2xl font-mono font-black text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-[0.98] shadow-2xl group ${isAnalyzing
                         ? 'bg-gradient-to-r from-rose-600 via-rose-700 to-rose-600 hover:from-rose-500 hover:to-rose-600 text-white border-2 border-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.5)]'
                         : 'bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-500 hover:from-emerald-400 hover:to-cyan-400 text-neutral-950 border-2 border-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.5)]'
-                    }`}
+                      }`}
                   >
                     {isAnalyzing ? (
                       <>
@@ -2277,7 +2319,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 </div>
               </div>
             )}
-            
+
             {/* TAB EXCLUSIVA 1: INDICADORES TÉCNICOS & ANÁLISE INSTITUCIONAL */}
             {activeTab === 'indicadores' && (
               <div className="space-y-3 font-mono">
@@ -2426,8 +2468,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 {/* 2.1 BANNER DE STATUS DO SINAL IA */}
                 <div
                   onClick={() => setActiveTab('sinal')}
-                  className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                    activeSignalInfo.stage === 'CONFIRMED'
+                  className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${activeSignalInfo.stage === 'CONFIRMED'
                       ? activeSignalInfo.direction === 'CALL'
                         ? 'bg-emerald-950/70 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                         : 'bg-rose-950/70 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
@@ -2436,16 +2477,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         : activeSignalInfo.stage === 'CANCELLED'
                           ? 'bg-rose-950/40 border-rose-500/50'
                           : 'bg-black/60 border-neutral-800 hover:border-neutral-700'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Zap className={`w-4 h-4 ${
-                      activeSignalInfo.stage === 'CONFIRMED'
+                    <Zap className={`w-4 h-4 ${activeSignalInfo.stage === 'CONFIRMED'
                         ? activeSignalInfo.direction === 'CALL' ? 'text-emerald-400' : 'text-rose-400'
                         : activeSignalInfo.stage === 'PRE_ALERT'
                           ? 'text-amber-400 animate-pulse'
                           : 'text-neutral-500'
-                    }`} />
+                      }`} />
                     <div>
                       <span className="text-[10px] font-bold text-white block">
                         {activeSignalInfo.stage === 'CONFIRMED'
@@ -3000,7 +3040,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             )}
 
 
-{/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo (ETAPAS 2, 3, 4, 5, 6, 7) */}
+            {/* TAB 3: IA VOZ 3D - Conversa Normal ao Vivo (ETAPAS 2, 3, 4, 5, 6, 7) */}
             {activeTab === 'voz' && (
               <div className="space-y-3">
                 {/* Voz 3D Top Banner */}
@@ -3316,7 +3356,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
           </div>
-</div>
+        </div>
       )}
 
       {/* MODAL DE DESBLOQUEIO POR DEPÓSITO MÍNIMO ($10 NA HIOVE) */}
