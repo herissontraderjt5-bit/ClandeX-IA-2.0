@@ -1142,34 +1142,35 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       style={{ left: `${position.x}px`, top: `${position.y}px` }}
       className={`fixed z-40 w-[390px] sm:w-[410px] md:w-[420px] max-w-[98vw] bg-neutral-950/95 backdrop-blur-xl border rounded-2xl shadow-2xl transition-shadow duration-300 select-none overflow-hidden ${glowBorderClass}`}
     >
-      {/* HUD Draggable Titlebar - Ajustado com precisão milimétrica, sem estourar para fora */}
+      {/* HUD Draggable Titlebar - Garantia de 100% visibilidade com botões de controle fixados à direita */}
       <div
         onMouseDown={handleMouseDown}
-        className="flex items-center justify-between px-3 py-2 bg-neutral-900/90 border-b border-neutral-800/80 rounded-t-2xl cursor-grab active:cursor-grabbing gap-2 select-none"
+        className="flex items-center justify-between px-3 py-2 bg-neutral-900/95 border-b border-neutral-800/90 rounded-t-2xl cursor-grab active:cursor-grabbing gap-1.5 select-none"
       >
-        <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+        {/* Lado Esquerdo: Identificador e Ativo Atual (Flexível para nunca empurrar os botões da direita) */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
           <div className={`w-2 h-2 rounded-full shrink-0 ${isDepositLocked ? 'bg-amber-400 animate-pulse' : 'bg-cyan-400 animate-ping'}`} />
-          <span className="font-extrabold tracking-wider text-xs text-white whitespace-nowrap">CLANDEX-IA</span>
+          <span className="font-extrabold tracking-wider text-xs text-white shrink-0">CLANDEX-IA</span>
           {isDepositLocked ? (
-            <span className="text-[10px] text-amber-300 font-mono font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1 whitespace-nowrap">
+            <span className="text-[10px] text-amber-300 font-mono font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1 truncate">
               <Lock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-              <span>DEPÓSITO PENDENTE</span>
+              <span className="truncate">DEPÓSITO</span>
             </span>
           ) : (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="relative inline-flex items-center">
+            <div className="flex items-center gap-1 min-w-0 truncate">
+              <div className="relative inline-flex items-center min-w-0">
                 <select
                   value={asset.symbol}
                   onChange={(e) => onSelectAsset(e.target.value)}
-                  className="bg-cyan-950/80 hover:bg-cyan-900/90 text-[10px] text-cyan-300 font-mono font-bold px-1.5 py-0.5 rounded border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none pr-4"
+                  className="bg-cyan-950/80 hover:bg-cyan-900/90 text-[10px] text-cyan-300 font-mono font-bold px-1.5 py-0.5 rounded border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none pr-4 max-w-[95px] truncate"
                   title="Clique para alternar o par oficial monitorado pela IA"
                 >
                   <optgroup label="Cripto 24/7 (Bybit)">
-                    <option value="BTC/USD">BTC/USD (Bitcoin)</option>
-                    <option value="ETH/USD">ETH/USD (Ethereum)</option>
-                    <option value="SOL/USD">SOL/USD (Solana)</option>
-                    <option value="BNB/USD">BNB/USD (BNB)</option>
-                    <option value="XRP/USD">XRP/USD (Ripple)</option>
+                    <option value="BTC/USD">BTC/USD</option>
+                    <option value="ETH/USD">ETH/USD</option>
+                    <option value="SOL/USD">SOL/USD</option>
+                    <option value="BNB/USD">BNB/USD</option>
+                    <option value="XRP/USD">XRP/USD</option>
                   </optgroup>
                   <optgroup label="Forex (TradingView OANDA)">
                     <option value="EUR/USD">EUR/USD</option>
@@ -1183,38 +1184,32 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                 </select>
                 <span className="pointer-events-none absolute right-1 text-[8px] text-cyan-400">▼</span>
               </div>
-              <span className="text-[10px] text-cyan-300/80 font-mono font-bold bg-black/40 px-1 py-0.5 rounded border border-cyan-500/30 whitespace-nowrap">
+              <span className="text-[10px] text-cyan-300/90 font-mono font-bold bg-black/50 px-1 py-0.5 rounded border border-cyan-500/30 shrink-0">
                 {timeframe}
-              </span>
-              <span
-                title="Horário Oficial de Brasília (BRT - UTC-3)"
-                className="hidden xs:inline-flex sm:inline-flex items-center gap-1 text-[10px] text-cyan-200 font-mono font-bold bg-black/60 px-1.5 py-0.5 rounded border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)] whitespace-nowrap"
-              >
-                <Clock className="w-2.5 h-2.5 text-cyan-400 animate-pulse shrink-0" />
-                <span>{currentBrasiliaClock} BRT</span>
               </span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 text-neutral-400">
-          {/* Botão Liga/Pausa Análise em Tempo Real */}
+        {/* Lado Direito: Controles de Janela e Notificações (Sempre visíveis, shrink-0, nunca cortados) */}
+        <div className="flex items-center gap-1 shrink-0 ml-auto text-neutral-400">
+          {/* Status Discreto Analisando */}
           {!isDepositLocked && (
             <button
               onClick={onToggleAnalysis}
-              title={isAnalyzing ? 'Análise Ativa em Tempo Real (Clique para Pausar)' : 'Análise Pausada (Clique para Iniciar)'}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-bold border transition-all cursor-pointer select-none ${
+              title={isAnalyzing ? 'Scanner Ativo (Clique para Pausar)' : 'Scanner Pausado (Clique para Iniciar)'}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${
                 isAnalyzing
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/60 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                  : 'bg-amber-950/80 text-amber-300 border-amber-500/60 animate-pulse'
+                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50 shadow-[0_0_6px_rgba(16,185,129,0.3)]'
+                  : 'bg-amber-950/70 text-amber-300 border-amber-500/50'
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-              <span>{isAnalyzing ? 'ANALISANDO' : 'PAUSADO'}</span>
+              <span className="hidden sm:inline">{isAnalyzing ? 'ATIVO' : 'PAUSA'}</span>
             </button>
           )}
 
-          {/* Botão rápido para Voltar ao Login */}
+          {/* Botão Logout se depósito pendente */}
           {isDepositLocked && (
             <button
               onClick={handlePerformLogout}
@@ -1238,17 +1233,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             )}
           </button>
 
+          {/* BOTÃO MINIMIZAR (EM DESTAQUE, TOTALMENTE VISÍVEL) */}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
-            title={isMinimized ? 'Expandir' : 'Minimizar'}
-            className="w-6 h-6 flex items-center justify-center hover:text-white rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
+            title={isMinimized ? 'Expandir Painel' : 'Minimizar Painel'}
+            className="w-7 h-7 flex items-center justify-center text-neutral-200 hover:text-cyan-300 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 border border-neutral-700/80 transition-all cursor-pointer shrink-0 shadow-sm"
+            aria-label={isMinimized ? 'Expandir' : 'Minimizar'}
           >
-            <Minus className="w-3.5 h-3.5" />
+            {isMinimized ? (
+              <Maximize2 className="w-3.5 h-3.5 text-cyan-300" />
+            ) : (
+              <Minus className="w-3.5 h-3.5 text-neutral-200" />
+            )}
           </button>
+
+          {/* BOTÃO FECHAR */}
           <button
             onClick={() => setIsClosed(true)}
-            title="Fechar Painel"
-            className="w-6 h-6 flex items-center justify-center hover:text-rose-400 rounded hover:bg-neutral-800 transition-colors cursor-pointer shrink-0"
+            title="Fechar Painel (Restaurável a qualquer momento)"
+            className="w-7 h-7 flex items-center justify-center text-neutral-400 hover:text-rose-300 rounded-lg bg-neutral-800/90 hover:bg-rose-950/80 border border-neutral-700/80 hover:border-rose-500/50 transition-all cursor-pointer shrink-0 shadow-sm"
+            aria-label="Fechar"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1283,9 +1287,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             )}
             <button
               onClick={() => setIsMinimized(false)}
-              className="text-neutral-400 hover:text-white p-1 cursor-pointer"
+              className="px-2 py-1 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/50 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+              title="Expandir Painel ClandeX-IA"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Maximize2 className="w-3 h-3" />
+              <span>Expandir</span>
             </button>
           </div>
         </div>
