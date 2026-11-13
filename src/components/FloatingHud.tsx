@@ -78,6 +78,7 @@ import {
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { TradingViewWidget } from './TradingViewWidget';
+import { ExtensionModal } from './ExtensionModal';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
   getRelevantEconomicEvents,
@@ -474,6 +475,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   // HUD Tabs: 'sinal', 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'sinal' | 'indicadores' | 'grafico' | 'voz'>('sinal');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
+  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
+  const [isHioveFeed, setIsHioveFeed] = useState(() => marketDataManager.isUsingHioveFeed());
+
+  useEffect(() => {
+    const checkHiove = setInterval(() => {
+      setIsHioveFeed(marketDataManager.isUsingHioveFeed());
+    }, 1000);
+    return () => clearInterval(checkHiove);
+  }, []);
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
   const [currentBrasiliaClock, setCurrentBrasiliaClock] = useState(() => formatBrasiliaTime());
@@ -1335,6 +1345,20 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
         {/* Lado Direito: Controles de Janela e Notificações (Sempre visíveis, shrink-0, nunca cortados) */}
         <div className="flex items-center gap-1 shrink-0 ml-auto text-neutral-400">
+          {/* Indicador de Fonte de Cotação: TradingView vs Hiove Direto */}
+          <button
+            type="button"
+            onClick={() => setIsExtensionModalOpen(true)}
+            title={isHioveFeed ? "Conectado diretamente ao feed da Corretora Hiove (0ms)" : "Usando feed TradingView. Clique para sincronizar direto da Hiove!"}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${isHioveFeed
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                : 'bg-neutral-900 text-neutral-300 border-neutral-700 hover:border-cyan-500/60'
+              }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isHioveFeed ? 'bg-emerald-400 animate-ping' : 'bg-cyan-400'}`} />
+            <span>{isHioveFeed ? 'HIOVE 1:1' : 'TRADINGVIEW'}</span>
+          </button>
+
           {/* Status Discreto Analisando */}
           {!isDepositLocked && (
             <button
@@ -3452,6 +3476,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL DA EXTENSÃO PARA CONEXÃO DIRETA COM A CORRETORA HIOVE */}
+      <ExtensionModal
+        isOpen={isExtensionModalOpen}
+        onClose={() => setIsExtensionModalOpen(false)}
+      />
     </div>
   );
 };
