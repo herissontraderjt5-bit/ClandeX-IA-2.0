@@ -52,6 +52,10 @@ import {
   Smartphone,
   BellRing,
   Download,
+  Radar,
+  Crosshair,
+  Target,
+  Cpu,
 } from 'lucide-react';
 import { notificationService } from '../services/notificationService';
 import {
@@ -2184,141 +2188,250 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
                   </div>
                 ) : (
-                  /* ESTÁGIO 0: PAINEL TECNOLÓGICO DE MONITORAMENTO IA (FUTURISTA & ANIMADO) */
-                  <div className="relative p-4 rounded-2xl border-2 border-cyan-500/40 bg-gradient-to-b from-[#0b1324] via-[#070d18] to-black space-y-3.5 shadow-[0_0_30px_rgba(6,182,212,0.25)] overflow-hidden">
+                  /* ESTÁGIO 0: RADAR INSTITUCIONAL AVANÇADO (QUANTITATIVO & ALTA PRECISÃO) */
+                  <div className="relative p-4 rounded-2xl border border-cyan-500/30 bg-gradient-to-b from-[#09111e] via-[#060a14] to-[#03060b] space-y-3.5 shadow-[0_0_35px_rgba(6,182,212,0.2)] overflow-hidden">
                     {/* Efeito Cyber Laser Scanline em Loop Contínuo */}
                     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                      <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_rgba(6,182,212,1)] animate-scanline" />
+                      <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent shadow-[0_0_15px_rgba(6,182,212,0.8)] animate-scanline" />
                     </div>
 
-                    {/* Header do Scanner com Radar Neon */}
+                    {/* Header Institucional com Status de Latência & Modo */}
                     <div className="flex items-center justify-between pb-2 border-b border-cyan-500/20 relative z-10">
                       <div className="flex items-center gap-2">
-                        <div className="relative w-4 h-4 flex items-center justify-center">
-                          <span className="absolute inset-0 rounded-full border border-cyan-400 animate-ping opacity-60" />
-                          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        <div className="relative w-5 h-5 flex items-center justify-center">
+                          <Radar className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
+                          <span className="absolute inset-0 rounded-full border border-cyan-400/50 animate-ping opacity-40" />
                         </div>
                         <div>
-                          <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300 block">
-                            CLANDEX-IA • RADAR INSTITUCIONAL
-                          </span>
-                          <span className="text-[8.5px] text-cyan-400/80">
-                            VARREDURA MULTI-INDICADOR 1:1
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-cyan-200">
+                              RADAR INSTITUCIONAL
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded text-[7.5px] font-black bg-cyan-950/90 text-cyan-300 border border-cyan-500/30">
+                              IA 2.0
+                            </span>
+                          </div>
+                          <span className="text-[8.5px] text-neutral-400 font-mono flex items-center gap-1">
+                            <span>SCANNER QUANTITATIVO</span>
+                            <span className="text-cyan-500">•</span>
+                            <span className="text-emerald-400 font-bold">LIVE 0ms</span>
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 animate-pulse">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[9px] font-mono font-black px-2.5 py-1 rounded-full border shadow-sm ${activeSignalInfo.isSniper
+                            ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.25)]'
+                            : 'bg-amber-950/80 text-amber-300 border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                          }`}>
                           {activeSignalInfo.modeName}
                         </span>
                       </div>
                     </div>
 
-                    {/* O GRANDE PAINEL HOLOGRÁFICO DE TEMPO DA VELA */}
-                    <div className="p-3 rounded-xl bg-black/70 border border-cyan-500/30 text-center relative overflow-hidden group">
-                      <div className="flex items-center justify-between text-[9px] text-neutral-400 uppercase tracking-widest pb-1 border-b border-white/5">
-                        <span className="flex items-center gap-1 text-cyan-400 font-bold">
-                          <Clock className="w-3 h-3 animate-spin" />
-                          CONTAGEM DA VELA ({timeframe})
-                        </span>
-                        <span className="text-amber-300 font-bold">
-                          {remainingSeconds > 8 ? `PRÉ-ALERTA EM ${Math.max(0, remainingSeconds - 8)}s` : 'VALIDAÇÃO EM 00:08'}
-                        </span>
-                      </div>
+                    {/* SONAR SCOPE & PAINEL DE TEMPO DA VELA (LAYOUT PROFISSIONAL INTEGRADO) */}
+                    <div className="p-3.5 rounded-xl bg-black/80 border border-cyan-500/30 relative overflow-hidden group shadow-inner">
+                      {/* Grid de Fundo Sutil de Alta Precisão */}
+                      <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#06b6d4_1px,transparent_1px)] [background-size:12px_12px]" />
 
-                      {/* Relógio Digital Holográfico Gigante */}
-                      <div className="py-2.5 flex items-center justify-center gap-3">
-                        <div className="text-5xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_20px_rgba(6,182,212,0.85)]">
-                          {formattedCountdown}
+                      <div className="relative z-10 flex items-center gap-3.5">
+                        {/* Scope Sonar Circular SVG Autêntico */}
+                        <div className="relative w-24 h-24 shrink-0 rounded-full bg-[#040810] border border-cyan-500/40 flex items-center justify-center overflow-hidden shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+                          {/* Anéis Concêntricos Institucionais */}
+                          <div className="absolute inset-1 rounded-full border border-cyan-500/20" />
+                          <div className="absolute inset-3 rounded-full border border-dashed border-cyan-400/40" />
+                          <div className="absolute inset-6 rounded-full border border-cyan-500/20" />
+                          
+                          {/* Eixos Azimute / Crosshair */}
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-full h-[1px] bg-cyan-500/20" />
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="h-full w-[1px] bg-cyan-500/20" />
+                          </div>
+
+                          {/* Feixe Rotativo do Radar (Sonar Sweep) */}
+                          <div
+                            className="absolute inset-0 rounded-full animate-radar-sweep pointer-events-none"
+                            style={{
+                              background: 'conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(6,182,212,0.08) 315deg, rgba(6,182,212,0.5) 360deg)',
+                            }}
+                          />
+
+                          {/* Blips Institucionais de Liquidez e Indicadores */}
+                          <span
+                            className="absolute w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-75"
+                            style={{ top: '26%', right: '28%' }}
+                          />
+                          <span
+                            className="absolute w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,1)]"
+                            style={{ top: '26%', right: '28%' }}
+                          />
+                          <span
+                            className="absolute w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(6,182,212,1)]"
+                            style={{ bottom: '30%', left: '25%' }}
+                          />
+                          <span
+                            className="absolute w-1 h-1 rounded-full bg-rose-400 opacity-80"
+                            style={{ bottom: '22%', right: '35%' }}
+                          />
+
+                          {/* Retículo Central */}
+                          <div className="relative w-2.5 h-2.5 rounded-full bg-cyan-400/30 border border-cyan-400 flex items-center justify-center">
+                            <span className="w-1 h-1 rounded-full bg-cyan-300" />
+                          </div>
                         </div>
-                        <div className="text-left text-[9px] text-neutral-400 leading-tight border-l border-cyan-500/30 pl-2.5">
-                          <span className="text-white font-bold block">EXPIRAÇÃO</span>
-                          <span>{timeframe} Oficial</span>
-                          <span className="text-cyan-400 font-mono block">{(srLevels.curPrice).toFixed(srLevels.decimals)}</span>
-                        </div>
-                      </div>
 
-                      {/* Barra de Progresso Temporal da Vela com Laser */}
-                      <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden p-0.5 border border-cyan-500/30">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300"
-                          style={{ width: `${Math.max(3, Math.min(100, (remainingSeconds / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
-                        />
-                      </div>
+                        {/* Telemetria de Tempo & Validação de Vela */}
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className="flex items-center justify-between text-[8.5px] uppercase tracking-wider text-neutral-400 border-b border-white/5 pb-1">
+                            <span className="flex items-center gap-1 font-bold text-cyan-300">
+                              <Clock className="w-3 h-3 text-cyan-400" />
+                              VELA ({timeframe})
+                            </span>
+                            <span className="font-mono text-cyan-400/90 font-bold">
+                              {(srLevels.curPrice).toFixed(srLevels.decimals)}
+                            </span>
+                          </div>
 
-                      {/* Equalizador de Telemetria Animado */}
-                      <div className="flex items-center justify-center gap-1 pt-2 h-4">
-                        {[8, 14, 18, 10, 16, 22, 12, 20, 15, 9, 17, 21, 11, 19, 13].map((baseH, idx) => {
-                          const dynamicH = Math.max(3, Math.min(16, ((baseH + (remainingSeconds % 7) * 3) % 16) + 4));
-                          return (
-                            <span
-                              key={idx}
-                              className="w-1 rounded-full bg-gradient-to-t from-cyan-500 to-emerald-400 transition-all duration-150"
-                              style={{ height: `${dynamicH}px` }}
+                          {/* Relógio Digital de Alta Precisão */}
+                          <div className="flex items-baseline gap-2">
+                            <div className="text-3xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_15px_rgba(6,182,212,0.7)] leading-none">
+                              {formattedCountdown}
+                            </div>
+                            <span className="text-[9px] font-mono text-neutral-400 uppercase">
+                              Restante
+                            </span>
+                          </div>
+
+                          {/* Janela Crítica de Gatilho (00:08) */}
+                          <div className="text-[9px] font-mono flex items-center justify-between bg-cyan-950/40 border border-cyan-500/20 rounded-md px-2 py-0.5">
+                            <span className="text-neutral-400">GATILHO:</span>
+                            <span className={`font-bold ${remainingSeconds <= 8 ? 'text-emerald-400 animate-pulse' : 'text-amber-300'}`}>
+                              {remainingSeconds > 8
+                                ? `ANÁLISE AOS 00:08 (-${remainingSeconds - 8}s)`
+                                : 'VALIDAÇÃO EM CURSO'}
+                            </span>
+                          </div>
+
+                          {/* Barra de Progresso com Marcador de Latch */}
+                          <div className="relative w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden border border-cyan-500/20">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-cyan-300 transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.8)]"
+                              style={{ width: `${Math.max(3, Math.min(100, (remainingSeconds / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
                             />
-                          );
-                        })}
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Matriz Neural dos 10 Indicadores em Tempo Real */}
-                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800 space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-neutral-300 font-bold flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                          MATRIZ DE 10 INDICADORES
+                    {/* MEDIDOR DE FLUXO & ORDER FLOW INSTITUCIONAL (DOM IMBALANCE) */}
+                    <div className="p-3 rounded-xl bg-black/70 border border-neutral-800 space-y-2">
+                      <div className="flex items-center justify-between text-[9.5px]">
+                        <span className="text-emerald-400 font-bold font-mono flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          COMPRADORES: {technicalData.delta.buyerPercent}%
                         </span>
-                        <span className="text-cyan-400 font-bold">
-                          {indicatorConsensus.callCount} CALL vs {indicatorConsensus.putCount} PUT
+                        <span className="font-mono text-[9px] font-black px-1.5 py-0.2 rounded bg-neutral-900 border border-neutral-700 text-neutral-300">
+                          Δ {technicalData.delta.buyerPercent - technicalData.delta.sellerPercent >= 0 ? '+' : ''}
+                          {technicalData.delta.buyerPercent - technicalData.delta.sellerPercent}%
+                        </span>
+                        <span className="text-rose-400 font-bold font-mono flex items-center gap-1">
+                          VENDEDORES: {technicalData.delta.sellerPercent}%
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
                         </span>
                       </div>
-                      <div className="grid grid-cols-5 gap-1 pt-1">
+
+                      {/* Barra de Imbalance Dual com Linha de Threshold */}
+                      <div className="relative w-full bg-neutral-950 rounded-full h-2.5 overflow-hidden flex border border-neutral-800 p-0.5">
+                        <div
+                          className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full rounded-l-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
+                          style={{ width: `${technicalData.delta.buyerPercent}%` }}
+                        />
+                        <div
+                          className="bg-gradient-to-r from-rose-400 to-rose-600 h-full rounded-r-full transition-all duration-300 shadow-[0_0_8px_rgba(244,63,94,0.7)]"
+                          style={{ width: `${technicalData.delta.sellerPercent}%` }}
+                        />
+                      </div>
+
+                      {/* Status Institucional do Fluxo */}
+                      <div className="text-[8.5px] font-mono text-center pt-0.5">
+                        {technicalData.delta.buyerPercent >= activeSignalInfo.requiredOrderFlow ? (
+                          <span className="text-emerald-400 font-bold flex items-center justify-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                            FLUXO COMPRADOR NO ALVO INSTITUCIONAL (≥{activeSignalInfo.requiredOrderFlow}%)
+                          </span>
+                        ) : technicalData.delta.sellerPercent >= activeSignalInfo.requiredOrderFlow ? (
+                          <span className="text-rose-400 font-bold flex items-center justify-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                            FLUXO VENDEDOR NO ALVO INSTITUCIONAL (≥{activeSignalInfo.requiredOrderFlow}%)
+                          </span>
+                        ) : (
+                          <span className="text-neutral-400 flex items-center justify-center gap-1">
+                            EQUILÍBRIO DE FLUXO • REQUISITO NO MODO {activeSignalInfo.modeName}: &gt;{activeSignalInfo.requiredOrderFlow}% AOS 00:08
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* MATRIZ NEURAL QUANTITATIVA (10 INDICADORES TÉCNICOS) */}
+                    <div className="p-3 rounded-xl bg-black/70 border border-neutral-800 space-y-2">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-neutral-300 font-bold flex items-center gap-1.5">
+                          <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>MATRIZ QUANTITATIVA (10 INDICADORES)</span>
+                        </span>
+                        <div className="flex items-center gap-1.5 text-[8.5px] font-mono">
+                          <span className="text-emerald-400 font-bold">{indicatorConsensus.callCount} CALL</span>
+                          <span className="text-neutral-600">•</span>
+                          <span className="text-rose-400 font-bold">{indicatorConsensus.putCount} PUT</span>
+                          <span className="text-neutral-600">•</span>
+                          <span className="text-neutral-400">{indicatorConsensus.neutralCount} NEUTRO</span>
+                        </div>
+                      </div>
+
+                      {/* Grid de 10 Indicadores em Alta Densidade */}
+                      <div className="grid grid-cols-5 gap-1.5">
                         {indicatorConsensus.indicators.map((ind, i) => {
                           const isCall = ind.signal === 'ALTA' || ind.signal === 'COMPRA';
                           const isPut = ind.signal === 'BAIXA' || ind.signal === 'VENDA';
+                          const shortNames = ['TREND', 'RSI', 'MACD', 'EMA', 'SMA', 'BOLL', 'STOCH', 'ADX', 'VOL', 'DELTA'];
+                          const shortName = shortNames[i] || ind.name.split(' ')[0];
+
                           return (
                             <div
                               key={i}
-                              className={`p-1 rounded-lg text-center border text-[8.5px] font-mono font-bold transition-all ${isCall
+                              className={`py-1.5 px-1 rounded-lg text-center border font-mono transition-all ${isCall
                                   ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]'
                                   : isPut
                                     ? 'bg-rose-950/60 border-rose-500/50 text-rose-300 shadow-[0_0_6px_rgba(244,63,94,0.2)]'
-                                    : 'bg-black/50 border-neutral-800 text-neutral-400'
+                                    : 'bg-black/50 border-neutral-800/80 text-neutral-400'
                                 }`}
                             >
-                              <div className="truncate text-[8px] opacity-75">{ind.name.split(' ')[0]}</div>
-                              <div className="font-black text-[9px] mt-0.5">
-                                {isCall ? '▲ CALL' : isPut ? '▼ PUT' : '● SCAN'}
+                              <div className="text-[7.5px] uppercase tracking-wider opacity-70 truncate font-semibold">
+                                {shortName}
+                              </div>
+                              <div className="text-[8.5px] font-black mt-0.5 flex items-center justify-center gap-0.5">
+                                {isCall ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    <span>ALTA</span>
+                                  </>
+                                ) : isPut ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                                    <span>BAIXA</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-neutral-500" />
+                                    <span>NEUTRO</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
                         })}
                       </div>
-                    </div>
-
-                    {/* Medidor de Order Flow Delta */}
-                    <div className="p-2.5 rounded-xl bg-black/60 border border-neutral-800 space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-emerald-400 font-bold">
-                          ▲ Compradores: {technicalData.delta.buyerPercent}%
-                        </span>
-                        <span className="text-rose-400 font-bold">
-                          ▼ Vendedores: {technicalData.delta.sellerPercent}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-neutral-900 rounded-full h-2 overflow-hidden flex border border-neutral-800">
-                        <div
-                          className="bg-emerald-500 h-full transition-all duration-300 shadow-[0_0_8px_rgba(16,185,129,0.7)]"
-                          style={{ width: `${technicalData.delta.buyerPercent}%` }}
-                        />
-                        <div
-                          className="bg-rose-500 h-full transition-all duration-300 shadow-[0_0_8px_rgba(244,63,94,0.7)]"
-                          style={{ width: `${technicalData.delta.sellerPercent}%` }}
-                        />
-                      </div>
-                      <p className="text-[9px] text-neutral-400 text-center">
-                        Meta de Confirmação: Order Flow &gt; <strong className="text-cyan-300">{activeSignalInfo.requiredOrderFlow}%</strong> aos 00:08
-                      </p>
                     </div>
                   </div>
                 )}
