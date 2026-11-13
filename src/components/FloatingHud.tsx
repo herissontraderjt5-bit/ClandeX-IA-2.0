@@ -1309,12 +1309,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               <span className="truncate">DEPÓSITO</span>
             </span>
           ) : (
-            <div className="flex items-center gap-1 min-w-0 truncate">
-              <div className="relative inline-flex items-center min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="relative inline-flex items-center">
                 <select
                   value={asset.symbol}
                   onChange={(e) => onSelectAsset(e.target.value)}
-                  className="bg-cyan-950/80 hover:bg-cyan-900/90 text-[10px] text-cyan-300 font-mono font-bold px-1.5 py-0.5 rounded border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none pr-4 max-w-[95px] truncate"
+                  className="bg-cyan-950/90 hover:bg-cyan-900 text-[11px] text-cyan-300 font-mono font-black pl-2 pr-4 py-0.5 rounded-lg border border-cyan-500/50 cursor-pointer focus:outline-none appearance-none shadow-sm"
                   title="Clique para alternar o par oficial monitorado pela IA"
                 >
                   <optgroup label="Cripto 24/7 (Bybit)">
@@ -1334,9 +1334,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <option value="GBP/JPY">GBP/JPY</option>
                   </optgroup>
                 </select>
-                <span className="pointer-events-none absolute right-1 text-[8px] text-cyan-400">▼</span>
+                <span className="pointer-events-none absolute right-1 text-[7px] text-cyan-400">▼</span>
               </div>
-              <span className="text-[10px] text-cyan-300/90 font-mono font-bold bg-black/50 px-1 py-0.5 rounded border border-cyan-500/30 shrink-0">
+              <span className="text-[10px] text-cyan-300/90 font-mono font-bold bg-black/60 px-1.5 py-0.5 rounded border border-cyan-500/30 shrink-0">
                 {timeframe}
               </span>
             </div>
@@ -1344,33 +1344,19 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         </div>
 
         {/* Lado Direito: Controles de Janela e Notificações (Sempre visíveis, shrink-0, nunca cortados) */}
-        <div className="flex items-center gap-1 shrink-0 ml-auto text-neutral-400">
-          {/* Indicador de Fonte de Cotação: TradingView vs Hiove Direto */}
-          <button
-            type="button"
-            onClick={() => setIsExtensionModalOpen(true)}
-            title={isHioveFeed ? "Conectado diretamente ao feed da Corretora Hiove (0ms)" : "Usando feed TradingView. Clique para sincronizar direto da Hiove!"}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${isHioveFeed
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                : 'bg-neutral-900 text-neutral-300 border-neutral-700 hover:border-cyan-500/60'
-              }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${isHioveFeed ? 'bg-emerald-400 animate-ping' : 'bg-cyan-400'}`} />
-            <span>{isHioveFeed ? 'HIOVE 1:1' : 'TRADINGVIEW'}</span>
-          </button>
-
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto text-neutral-400">
           {/* Status Discreto Analisando */}
           {!isDepositLocked && (
             <button
               onClick={onToggleAnalysis}
               title={isAnalyzing ? 'Scanner Ativo (Clique para Pausar)' : 'Scanner Pausado (Clique para Iniciar)'}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-mono font-bold border transition-all cursor-pointer ${isAnalyzing
-                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50 shadow-[0_0_6px_rgba(16,185,129,0.3)]'
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-mono font-black border transition-all cursor-pointer ${isAnalyzing
+                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
                   : 'bg-amber-950/70 text-amber-300 border-amber-500/50'
                 }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${isAnalyzing ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-              <span className="hidden sm:inline">{isAnalyzing ? 'ATIVO' : 'PAUSA'}</span>
+              <span>{isAnalyzing ? 'ATIVO' : 'PAUSA'}</span>
             </button>
           )}
 
