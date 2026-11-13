@@ -820,7 +820,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   interface LiveTradeLifecycle {
     stage: 'IDLE' | 'PRE_ALERT' | 'CONFIRMED' | 'CANCELLED' | 'IN_PROGRESS' | 'RESULT';
     direction: 'CALL' | 'PUT';
-    candleTime: number; // timestamp da vela analisada
+    signalCandleTime: number;       // timestamp da vela onde o pré-alerta/sinal ocorreu
+    tradeCandleTime?: number;        // timestamp da vela DA OPERAÇÃO
     entryPrice?: number;
     entryTimeFormatted?: string;
     orderFlowAtLock?: number;
@@ -828,13 +829,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     result?: 'WIN' | 'LOSS' | 'EMPATE' | null;
     resolvedAt?: number;
     finalPrice?: number;
+    entryTimestamp?: number;         // Date.now() no momento exato em que a operação iniciou
+    tradeExpiryTimestamp?: number;   // Date.now() previsto para término da operação
   }
 
   // Ref síncrono para evitar condições de corrida em micro-ticks
   const tradeLifecycleRef = useRef<LiveTradeLifecycle>({
     stage: 'IDLE',
     direction: 'CALL',
-    candleTime: 0,
+    signalCandleTime: 0,
   });
   const [tradeLifecycle, setTradeLifecycle] = useState<LiveTradeLifecycle>(tradeLifecycleRef.current);
 
@@ -843,14 +846,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     setTradeLifecycle({ ...newState });
   }, []);
 
-  // Máquina de Estados Travada e Robusta (Sem oscilação nem falso cancelamento a cada tick)
+  // Resetar ao trocar de ativo para evitar misturar sinais entre pares
+  const prevAssetSymbolRef = useRef(asset.symbol);
+  useEffect(() => {
+    if (prevAssetSymbolRef.current !== asset.symbol) {
+      prevAssetSymbolRef.current = asset.symbol;
+      updateTradeLifecycle({
+        stage: 'IDLE',
+        direction: 'CALL',
+        signalCandleTime: 0,
+      });
+    }
+  }, [asset.symbol, updateTradeLifecycle]);
+
+  // Máquina de Estados Travada e Robusta com Ciclo Operacional Completo
   useEffect(() => {
     if (!isAnalyzing) {
       if (tradeLifecycleRef.current.stage !== 'IDLE' && tradeLifecycleRef.current.stage !== 'IN_PROGRESS') {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
-          candleTime: 0,
+          signalCandleTime: 0,
         });
       }
       return;
@@ -876,22 +892,29 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
-    // 1. ESTÁGIO: RESULT (Exibindo comemoração do resultado por 8 segundos)
+    // 1. ESTÁGIO: RESULT (Exibindo comemoração do resultado por 8 segundos após fechar a vela da operação)
     if (current.stage === 'RESULT') {
       if (Date.now() - (current.resolvedAt || 0) > 8000) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
-          candleTime: curCandleTime,
+          signalCandleTime: curCandleTime,
         });
       }
       return;
     }
 
-    // 2. ESTÁGIO: IN_PROGRESS (Operação em andamento durante a vela de entrada)
+    // 2. ESTÁGIO: IN_PROGRESS (Operação em andamento durante TODA a vela da operação)
     if (current.stage === 'IN_PROGRESS') {
-      // Quando a vela da operação fecha (curCandleTime > current.candleTime ou remainingSeconds <= 1)
-      if (curCandleTime > current.candleTime || (remainingSeconds <= 1 && curCandleTime === current.candleTime)) {
+      const now = Date.now();
+      const elapsedSeconds = Math.floor((now - (current.entryTimestamp || now)) / 1000);
+      // REGRA DE OURO: A operação NÃO PODE encerrar prematuramente!
+      // Para M1 (60s), precisa ter passado pelo menos 55s de operação real da vela!
+      const minRequiredDuration = Math.max(10, tfSec - 5);
+      const isTimeExpired = now >= (current.tradeExpiryTimestamp || (now + tfSec * 1000));
+      const isCandleClosing = elapsedSeconds >= minRequiredDuration && (remainingSeconds <= 1 || (current.tradeCandleTime && curCandleTime > current.tradeCandleTime));
+
+      if (isTimeExpired || isCandleClosing) {
         const entry = current.entryPrice || curPrice;
         const finalPrice = curPrice;
         let result: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
@@ -932,17 +955,22 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       return;
     }
 
-    // 3. ESTÁGIO: CONFIRMED (Travado aos 8s, aguardando a abertura da próxima vela)
+    // 3. ESTÁGIO: CONFIRMED (Travado aos 8s finais da vela de pré-alerta)
+    // Só vira IN_PROGRESS quando a vela do pré-alerta fecha e a nova vela abre!
     if (current.stage === 'CONFIRMED') {
-      if (curCandleTime > current.candleTime || remainingSeconds === 0) {
-        const entryPrice = currentCandle?.open || curPrice;
-        const entryTimeFormatted = formatBrasiliaTime();
+      const isCandleTurn = curCandleTime > current.signalCandleTime || remainingSeconds === 0;
+      if (isCandleTurn) {
+        const openPrice = currentCandle?.open || curPrice;
+        const now = Date.now();
         updateTradeLifecycle({
           stage: 'IN_PROGRESS',
           direction: current.direction,
-          candleTime: curCandleTime,
-          entryPrice,
-          entryTimeFormatted,
+          signalCandleTime: current.signalCandleTime,
+          tradeCandleTime: curCandleTime > current.signalCandleTime ? curCandleTime : current.signalCandleTime + tfSec,
+          entryPrice: openPrice,
+          entryTimeFormatted: formatBrasiliaTime(),
+          entryTimestamp: now,
+          tradeExpiryTimestamp: now + tfSec * 1000,
           score: current.score,
           orderFlowAtLock: current.orderFlowAtLock,
         });
@@ -950,21 +978,21 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       return;
     }
 
-    // 4. ESTÁGIO: CANCELLED (Travado aos 8s como rejeitado por Order Flow insuficiente)
+    // 4. ESTÁGIO: CANCELLED (Sinal rejeitado aos 8s por falta de fluxo)
     if (current.stage === 'CANCELLED') {
-      if (curCandleTime > current.candleTime || remainingSeconds === 0) {
+      if (curCandleTime > current.signalCandleTime || remainingSeconds === 0) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
-          candleTime: curCandleTime,
+          signalCandleTime: curCandleTime,
         });
       }
       return;
     }
 
-    // 5. ESTÁGIO: PRE_ALERT (Monitorando confluência antes dos 8s finais)
+    // 5. ESTÁGIO: PRE_ALERT (Monitorando confluência enquanto faltam mais de 8 segundos)
     if (current.stage === 'PRE_ALERT') {
-      // PONTO CRÍTICO: MARCAÇÃO DEFINITIVA DOS 8 SEGUNDOS FINAIS
+      // VALIDAÇÃO EXATA AOS 00:08: Latch decisório irreversível
       if (remainingSeconds <= 8 && remainingSeconds >= 0) {
         if (hasOrderFlow) {
           if (settings.confirmedSound) {
@@ -974,7 +1002,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           updateTradeLifecycle({
             stage: 'CONFIRMED',
             direction: current.direction,
-            candleTime: curCandleTime,
+            signalCandleTime: current.signalCandleTime || curCandleTime,
             score,
             orderFlowAtLock: currentOrderFlow,
             entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
@@ -986,7 +1014,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           updateTradeLifecycle({
             stage: 'CANCELLED',
             direction: current.direction,
-            candleTime: curCandleTime,
+            signalCandleTime: current.signalCandleTime || curCandleTime,
             score,
             orderFlowAtLock: currentOrderFlow,
             entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
@@ -995,26 +1023,28 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         return;
       }
 
-      if (curCandleTime > current.candleTime) {
+      // Se a vela mudou antes dos 8s sem confirmação
+      if (curCandleTime > current.signalCandleTime) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
-          candleTime: curCandleTime,
+          signalCandleTime: curCandleTime,
         });
         return;
       }
 
+      // Se os indicadores perderam confluência antes dos 8s
       if (dominantCount < minIndicatorCount - 1) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
-          candleTime: curCandleTime,
+          signalCandleTime: curCandleTime,
         });
         return;
       }
     }
 
-    // 6. ESTÁGIO: IDLE (Scanner buscando confluências nos indicadores)
+    // 6. ESTÁGIO: IDLE (Scanner buscando confluências)
     if (current.stage === 'IDLE') {
       if (remainingSeconds > 8 && hasIndicatorsDirection) {
         if (settings.confirmedSound) {
@@ -1023,7 +1053,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         updateTradeLifecycle({
           stage: 'PRE_ALERT',
           direction: dominantDirection,
-          candleTime: curCandleTime,
+          signalCandleTime: curCandleTime,
           score,
           orderFlowAtLock: currentOrderFlow,
           entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
@@ -1052,6 +1082,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
     const minIndicatorCount = isSniper ? 5 : 4;
     const requiredOrderFlow = isSniper ? 70 : 60;
+    const tfSec = timeframe === 'M2' ? 120 : timeframe === 'M1' ? 60 : 300;
 
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
     const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
@@ -1080,6 +1111,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       else liveStatus = 'EMPATE';
     }
 
+    // Contagem da operação em andamento
+    const now = Date.now();
+    const tradeSecondsLeft = tradeLifecycle.stage === 'IN_PROGRESS' && tradeLifecycle.tradeExpiryTimestamp
+      ? Math.max(0, Math.ceil((tradeLifecycle.tradeExpiryTimestamp - now) / 1000))
+      : remainingSeconds;
+    const tradeMins = Math.floor(tradeSecondsLeft / 60);
+    const tradeSecs = tradeSecondsLeft % 60;
+    const tradeFormattedCountdown = `${String(tradeMins).padStart(2, '0')}:${String(tradeSecs).padStart(2, '0')}`;
+
     return {
       isSniper,
       modeName: isSniper ? 'SNIPER' : 'ALAVANCAGEM',
@@ -1105,6 +1145,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       callCount: indicatorConsensus.callCount,
       putCount: indicatorConsensus.putCount,
       remainingSeconds,
+      tradeSecondsLeft,
+      tradeFormattedCountdown,
     };
   }, [
     settings.analysisProfile,
@@ -1114,6 +1156,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     tradeLifecycle,
     asset,
     remainingSeconds,
+    timeframe,
   ]);
 
   // Format candle countdown string MM:SS
@@ -1692,12 +1735,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         TEMPO RESTANTE DA OPERAÇÃO ({timeframe})
                       </span>
                       <div className="text-5xl font-mono font-black text-cyan-300 tracking-wider drop-shadow-[0_0_20px_rgba(6,182,212,0.9)]">
-                        {formattedCountdown}
+                        {activeSignalInfo.tradeFormattedCountdown}
                       </div>
                       <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300"
-                          style={{ width: `${Math.max(3, Math.min(100, (remainingSeconds / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
+                          style={{ width: `${Math.max(3, Math.min(100, (activeSignalInfo.tradeSecondsLeft / (timeframe === 'M1' ? 60 : timeframe === 'M2' ? 120 : 300)) * 100))}%` }}
                         />
                       </div>
                     </div>
