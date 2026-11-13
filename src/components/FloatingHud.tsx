@@ -803,6 +803,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // Placar Operacional Persistente (WIN / LOSS / EMPATE)
   const SCOREBOARD_KEY = 'clandex_ia_signal_scoreboard_v3';
+  const SCOREBOARD_MODE_KEY = 'clandex_ia_scoreboard_mode_v1';
+
   const getStoredScoreboard = (): { wins: number; losses: number; draws: number } => {
     try {
       const raw = localStorage.getItem(SCOREBOARD_KEY);
@@ -817,7 +819,40 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     } catch { }
   };
 
+  const getStoredScoreboardMode = (): boolean => {
+    try {
+      const raw = localStorage.getItem(SCOREBOARD_MODE_KEY);
+      // Padrão: MANUAL (true) conforme preferência do usuário
+      if (raw !== null) return raw === 'true';
+    } catch { }
+    return true; // Padrão: MANUAL
+  };
+
   const [scoreboard, setScoreboard] = useState(getStoredScoreboard);
+  const [isManualScoreboard, setIsManualScoreboard] = useState(getStoredScoreboardMode);
+  const isManualScoreboardRef = useRef(isManualScoreboard);
+
+  useEffect(() => {
+    isManualScoreboardRef.current = isManualScoreboard;
+  }, [isManualScoreboard]);
+
+  const handleToggleScoreboardMode = useCallback((manual: boolean) => {
+    setIsManualScoreboard(manual);
+    try {
+      localStorage.setItem(SCOREBOARD_MODE_KEY, String(manual));
+    } catch { }
+  }, []);
+
+  const handleAdjustScoreboard = useCallback((type: 'wins' | 'losses' | 'draws', delta: number) => {
+    setScoreboard((prev) => {
+      const next = {
+        ...prev,
+        [type]: Math.max(0, prev[type] + delta),
+      };
+      saveStoredScoreboard(next);
+      return next;
+    });
+  }, []);
 
   const handleResetScoreboard = useCallback(() => {
     const fresh = { wins: 0, losses: 0, draws: 0 };
@@ -990,15 +1025,19 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           else if (result === 'LOSS') audioAlerts.playLoss();
         }
 
-        setScoreboard((prev) => {
-          const next = {
-            wins: prev.wins + (result === 'WIN' ? 1 : 0),
-            losses: prev.losses + (result === 'LOSS' ? 1 : 0),
-            draws: prev.draws + (result === 'EMPATE' ? 1 : 0),
-          };
-          saveStoredScoreboard(next);
-          return next;
-        });
+        // Se estiver em modo automático, computa diretamente no placar.
+        // Se estiver em modo manual, o trader registra ou confirma o resultado da corretora livremente.
+        if (!isManualScoreboardRef.current) {
+          setScoreboard((prev) => {
+            const next = {
+              wins: prev.wins + (result === 'WIN' ? 1 : 0),
+              losses: prev.losses + (result === 'LOSS' ? 1 : 0),
+              draws: prev.draws + (result === 'EMPATE' ? 1 : 0),
+            };
+            saveStoredScoreboard(next);
+            return next;
+          });
+        }
 
         updateTradeLifecycle({
           ...current,
@@ -1698,11 +1737,38 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <div className="flex items-center gap-1.5 text-amber-400">
                       <Trophy className="w-4 h-4 text-amber-400" />
                       <span className="text-[10px] font-black uppercase tracking-wider text-neutral-200">
-                        PLACAR OPERACIONAL IA
+                        PLACAR OPERACIONAL
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-neutral-400">Total: <strong className="text-white">{totalTrades}</strong></span>
+                    <div className="flex items-center gap-1.5">
+                      {/* Seletor Manual / Automático */}
+                      <div className="flex items-center bg-black/70 p-0.5 rounded-lg border border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleScoreboardMode(true)}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all cursor-pointer ${
+                            isManualScoreboard
+                              ? 'bg-cyan-500 text-neutral-950 shadow-[0_0_6px_rgba(6,182,212,0.6)]'
+                              : 'text-neutral-500 hover:text-white'
+                          }`}
+                          title="Placar Manual: Você adiciona/remove e confirma resultados livremente"
+                        >
+                          MANUAL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleScoreboardMode(false)}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all cursor-pointer ${
+                            !isManualScoreboard
+                              ? 'bg-neutral-700 text-white'
+                              : 'text-neutral-500 hover:text-white'
+                          }`}
+                          title="Placar Automático: A IA computa automaticamente ao fechar a vela"
+                        >
+                          AUTO
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={handleResetScoreboard}
@@ -1716,32 +1782,92 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
                   <div className="grid grid-cols-4 gap-1.5 text-center">
                     {/* WINS */}
-                    <div className="p-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40">
-                      <span className="text-[8.5px] font-bold text-emerald-400 block uppercase">WIN</span>
-                      <span className="text-base font-black text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+                    <div className="p-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-center flex flex-col justify-between">
+                      <span className="text-[8.5px] font-bold text-emerald-400 block uppercase tracking-wider">WIN</span>
+                      <span className="text-lg font-black text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)] leading-tight my-0.5">
                         {scoreboard.wins}
                       </span>
+                      <div className="flex items-center justify-center gap-1 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('wins', -1)}
+                          className="w-4 h-4 rounded bg-black/60 hover:bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-[10px] font-bold border border-neutral-700/60 transition-colors cursor-pointer active:scale-90"
+                          title="Subtrair 1 WIN"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('wins', 1)}
+                          className="w-4 h-4 rounded bg-emerald-500/80 hover:bg-emerald-400 text-neutral-950 flex items-center justify-center text-[10px] font-black transition-colors cursor-pointer active:scale-90"
+                          title="Adicionar 1 WIN"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
+
                     {/* LOSS */}
-                    <div className="p-1.5 rounded-xl bg-rose-950/50 border border-rose-500/40">
-                      <span className="text-[8.5px] font-bold text-rose-400 block uppercase">LOSS</span>
-                      <span className="text-base font-black text-rose-300 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]">
+                    <div className="p-1.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-center flex flex-col justify-between">
+                      <span className="text-[8.5px] font-bold text-rose-400 block uppercase tracking-wider">LOSS</span>
+                      <span className="text-lg font-black text-rose-300 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)] leading-tight my-0.5">
                         {scoreboard.losses}
                       </span>
+                      <div className="flex items-center justify-center gap-1 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('losses', -1)}
+                          className="w-4 h-4 rounded bg-black/60 hover:bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-[10px] font-bold border border-neutral-700/60 transition-colors cursor-pointer active:scale-90"
+                          title="Subtrair 1 LOSS"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('losses', 1)}
+                          className="w-4 h-4 rounded bg-rose-500/80 hover:bg-rose-400 text-white flex items-center justify-center text-[10px] font-black transition-colors cursor-pointer active:scale-90"
+                          title="Adicionar 1 LOSS"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
+
                     {/* EMPATE */}
-                    <div className="p-1.5 rounded-xl bg-amber-950/50 border border-amber-500/40">
-                      <span className="text-[8.5px] font-bold text-amber-400 block uppercase">EMPATE</span>
-                      <span className="text-base font-black text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">
+                    <div className="p-1.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-center flex flex-col justify-between">
+                      <span className="text-[8.5px] font-bold text-amber-400 block uppercase tracking-wider">EMPATE</span>
+                      <span className="text-lg font-black text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)] leading-tight my-0.5">
                         {scoreboard.draws}
                       </span>
+                      <div className="flex items-center justify-center gap-1 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('draws', -1)}
+                          className="w-4 h-4 rounded bg-black/60 hover:bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-[10px] font-bold border border-neutral-700/60 transition-colors cursor-pointer active:scale-90"
+                          title="Subtrair 1 Empate"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('draws', 1)}
+                          className="w-4 h-4 rounded bg-amber-500/80 hover:bg-amber-400 text-neutral-950 flex items-center justify-center text-[10px] font-black transition-colors cursor-pointer active:scale-90"
+                          title="Adicionar 1 Empate"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
+
                     {/* TAXA DE ASSERTIVIDADE */}
-                    <div className="p-1.5 rounded-xl bg-cyan-950/50 border border-cyan-500/40">
-                      <span className="text-[8.5px] font-bold text-cyan-400 block uppercase">TAXA</span>
-                      <span className="text-base font-black text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
+                    <div className="p-1.5 rounded-xl bg-cyan-950/50 border border-cyan-500/40 text-center flex flex-col justify-between">
+                      <span className="text-[8.5px] font-bold text-cyan-400 block uppercase tracking-wider">TAXA</span>
+                      <span className="text-lg font-black text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)] leading-tight my-0.5">
                         {winRate}%
                       </span>
+                      <div className="text-[8px] text-neutral-400 font-mono py-0.5">
+                        Total: {totalTrades}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1930,11 +2056,13 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         {activeSignalInfo.result === 'WIN' ? '🏆 VITÓRIA (WIN)!' : activeSignalInfo.result === 'LOSS' ? '🛑 LOSS REGISTRADO' : '⚖️ EMPATE DEVOLVIDO'}
                       </span>
                       <p className="text-[10.5px] text-neutral-300">
-                        {activeSignalInfo.result === 'WIN'
-                          ? 'Operação vencedora! O resultado foi somado ao seu placar operacional.'
-                          : activeSignalInfo.result === 'LOSS'
-                            ? 'Gestão de banca mantida. A IA segue filtrando a melhor oportunidade.'
-                            : 'Capital restituído pela corretora sem variação de banca.'}
+                        {isManualScoreboard
+                          ? 'Placar manual ativo: confirme o resultado real da sua corretora nos botões abaixo ou ajuste diretamente no placar.'
+                          : activeSignalInfo.result === 'WIN'
+                            ? 'Operação vencedora! O resultado foi somado ao seu placar operacional.'
+                            : activeSignalInfo.result === 'LOSS'
+                              ? 'Gestão de banca mantida. A IA segue filtrando a melhor oportunidade.'
+                              : 'Capital restituído pela corretora sem variação de banca.'}
                       </p>
                     </div>
 
@@ -1981,6 +2109,39 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         <span className="font-mono font-bold text-cyan-300">
                           {activeSignalInfo.finalPrice?.toFixed(srLevels.decimals)}
                         </span>
+                      </div>
+                    </div>
+
+                    {/* BOTÕES DE REGISTRO MANUAL NO PLACAR */}
+                    <div className="pt-2 border-t border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between text-[9px] font-mono text-neutral-400">
+                        <span>CONFIRMAR NA SUA BANCA:</span>
+                        <span className="text-cyan-400 font-bold">
+                          {isManualScoreboard ? 'PLACAR MANUAL' : 'PLACAR AUTO'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('wins', 1)}
+                          className="py-2 px-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 border border-emerald-500/50 hover:text-neutral-950 text-emerald-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                        >
+                          +1 WIN 🏆
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('losses', 1)}
+                          className="py-2 px-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 border border-rose-500/50 hover:text-white text-rose-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                        >
+                          +1 LOSS 🛑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAdjustScoreboard('draws', 1)}
+                          className="py-2 px-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500 border border-amber-500/50 hover:text-neutral-950 text-amber-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+                        >
+                          +1 EMPATE ⚖️
+                        </button>
                       </div>
                     </div>
                   </div>
