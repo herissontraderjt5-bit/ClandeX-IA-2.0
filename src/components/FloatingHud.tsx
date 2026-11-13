@@ -927,12 +927,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       const now = Date.now();
       const elapsedSeconds = Math.floor((now - (current.entryTimestamp || now)) / 1000);
 
-      // Sincronização de abertura: se a nova vela oficial chegou ao feed nos primeiros 4 segundos da operação,
-      // ajusta o entryPrice para o open oficial dessa vela caso esteja coerente com o mercado.
-      if (elapsedSeconds <= 4 && curCandleTime > current.signalCandleTime && currentCandle?.open) {
+      // Sincronização da Abertura Oficial: se a nova vela oficial chegou ao feed nos primeiros 5 segundos da operação,
+      // atualizamos o entryPrice para o 'open' oficial emitido pela exchange/corretora através do estado React!
+      if (elapsedSeconds <= 5 && curCandleTime >= (current.tradeCandleTime || (current.signalCandleTime + tfSec)) && currentCandle?.open) {
+        const officialOpen = currentCandle.open;
         const currentEntry = current.entryPrice || 0;
-        if (Math.abs(currentEntry - currentCandle.open) > 0.000001 && Math.abs(currentEntry - currentCandle.open) < (currentCandle.open * 0.02)) {
-          current.entryPrice = currentCandle.open;
+        if (Math.abs(currentEntry - officialOpen) > 0.000001 && Math.abs(currentEntry - officialOpen) < (officialOpen * 0.02)) {
+          updateTradeLifecycle({
+            ...current,
+            entryPrice: officialOpen,
+          });
         }
       }
 
@@ -994,28 +998,43 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }
 
     // 3. ESTÁGIO: CONFIRMED (Travado aos 8s finais da vela de pré-alerta)
-    // Só vira IN_PROGRESS quando a vela do pré-alerta fecha e a nova vela abre!
+    // Vira IN_PROGRESS instantaneamente no segundo exato em que a vela de pré-alerta encerra e a nova vela abre!
     if (current.stage === 'CONFIRMED') {
-      const isCandleTurn = curCandleTime > current.signalCandleTime || remainingSeconds === 0;
+      const now = Date.now();
+      const nowSec = Math.floor(now / 1000);
+      const targetTradeCandleTime = (current.signalCandleTime && current.signalCandleTime > 0)
+        ? current.signalCandleTime + tfSec
+        : Math.floor(nowSec / tfSec) * tfSec;
+
+      // Disparo atômico de virada de vela (0ms de atraso):
+      // a) O relógio oficial atingiu ou passou o segundo exato de abertura da nova vela (nowSec >= targetTradeCandleTime)
+      // b) O cronômetro zerou (remainingSeconds === 0)
+      // c) O cronômetro virou para a nova vela (remainingSeconds > 8, ex: 59s, 58s em M1)
+      // d) O feed de candles já avançou para a nova vela (curCandleTime >= targetTradeCandleTime)
+      const isCandleTurn = (targetTradeCandleTime > 0 && nowSec >= targetTradeCandleTime)
+        || remainingSeconds === 0
+        || remainingSeconds > 8
+        || (curCandleTime > 0 && curCandleTime >= targetTradeCandleTime);
+
       if (isCandleTurn) {
-        // Se a nova vela já iniciou na API/feed (curCandleTime > signalCandleTime), usamos o open dela.
-        // Se ainda está no segundo 00:00 da virada, o preço exato de entrada é a cotação ao vivo (curPrice),
-        // JAMAIS o open da vela anterior que iniciou 60 segundos atrás!
-        const isNewCandle = curCandleTime > current.signalCandleTime;
-        const exactEntryPrice = (isNewCandle && currentCandle?.open)
+        // COTAÇÃO EXATA DE ABERTURA DA NOVA VELA:
+        // Se o feed oficial já emitiu a nova vela, usamos o open oficial dela.
+        // Se a virada acabou de acontecer no segundo :00, capturamos o curPrice instantâneo da abertura,
+        // garantindo que a entrada seja marcada no exato momento da abertura e NUNCA na confirmação!
+        const isNewCandle = curCandleTime >= targetTradeCandleTime;
+        const entryPriceAtOpen = (isNewCandle && currentCandle?.open && currentCandle.open > 0)
           ? currentCandle.open
           : (curPrice > 0 ? curPrice : (currentCandle?.close || currentCandle?.open || 0));
 
-        const now = Date.now();
         updateTradeLifecycle({
           stage: 'IN_PROGRESS',
           direction: current.direction,
           signalCandleTime: current.signalCandleTime,
-          tradeCandleTime: isNewCandle ? curCandleTime : current.signalCandleTime + tfSec,
-          entryPrice: exactEntryPrice,
-          entryTimeFormatted: formatBrasiliaTime(),
+          tradeCandleTime: targetTradeCandleTime,
+          entryPrice: entryPriceAtOpen,
+          entryTimeFormatted: formatBrasiliaTime(targetTradeCandleTime * 1000),
           entryTimestamp: now,
-          tradeExpiryTimestamp: now + tfSec * 1000,
+          tradeExpiryTimestamp: targetTradeCandleTime * 1000 + tfSec * 1000,
           score: current.score,
           orderFlowAtLock: current.orderFlowAtLock,
         });
@@ -1025,7 +1044,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
     // 4. ESTÁGIO: CANCELLED (Sinal rejeitado aos 8s por falta de fluxo)
     if (current.stage === 'CANCELLED') {
-      if (curCandleTime > current.signalCandleTime || remainingSeconds === 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const targetResetTime = (current.signalCandleTime && current.signalCandleTime > 0)
+        ? current.signalCandleTime + tfSec
+        : 0;
+      const isCandleTurn = (targetResetTime > 0 && nowSec >= targetResetTime)
+        || remainingSeconds === 0
+        || remainingSeconds > 8
+        || (curCandleTime > 0 && curCandleTime > current.signalCandleTime);
+
+      if (isCandleTurn) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
@@ -1164,19 +1192,22 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
-    const entryPrice = tradeLifecycle.entryPrice || curPrice;
+    const isTrading = tradeLifecycle.stage === 'IN_PROGRESS' || tradeLifecycle.stage === 'RESULT';
+    const entryPrice = tradeLifecycle.entryPrice || (isTrading ? curPrice : null);
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
-    const diffPips = Math.abs((curPrice - entryPrice) * pipMultiplier).toFixed(1);
+    const diffPips = (entryPrice !== null && isTrading) ? Math.abs((curPrice - entryPrice) * pipMultiplier).toFixed(1) : '0.0';
 
     let liveStatus: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
-    if (tradeLifecycle.direction === 'CALL') {
-      if (curPrice > entryPrice) liveStatus = 'WIN';
-      else if (curPrice < entryPrice) liveStatus = 'LOSS';
-      else liveStatus = 'EMPATE';
-    } else {
-      if (curPrice < entryPrice) liveStatus = 'WIN';
-      else if (curPrice > entryPrice) liveStatus = 'LOSS';
-      else liveStatus = 'EMPATE';
+    if (isTrading && entryPrice !== null) {
+      if (tradeLifecycle.direction === 'CALL') {
+        if (curPrice > entryPrice) liveStatus = 'WIN';
+        else if (curPrice < entryPrice) liveStatus = 'LOSS';
+        else liveStatus = 'EMPATE';
+      } else {
+        if (curPrice < entryPrice) liveStatus = 'WIN';
+        else if (curPrice > entryPrice) liveStatus = 'LOSS';
+        else liveStatus = 'EMPATE';
+      }
     }
 
     // Contagem da operação em andamento
@@ -1988,15 +2019,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
 
                     {/* CRONÔMETRO GIGANTE DE CONTAGEM REGRESSIVA DOS 8 SEGUNDOS */}
-                    <div className="p-3 rounded-xl bg-black/60 border border-white/10 text-center space-y-1">
+                    <div className="p-3 rounded-xl bg-black/60 border border-amber-500/30 text-center space-y-1">
                       <span className="text-[9.5px] uppercase tracking-widest text-amber-300 block font-black">
                         👉 ENTRAR NA ABERTURA DA PRÓXIMA VELA
                       </span>
                       <div className="text-5xl font-mono font-black text-amber-300 tracking-wider drop-shadow-[0_0_20px_rgba(245,158,11,0.9)] animate-pulse">
-                        00:0{activeSignalInfo.remainingSeconds}
+                        00:0{Math.max(0, Math.min(8, activeSignalInfo.remainingSeconds))}
                       </div>
                       <span className="text-[9px] text-neutral-400 block">
-                        Faltam {activeSignalInfo.remainingSeconds} segundos para a virada de vela
+                        Faltam <strong className="text-amber-300 font-bold">{Math.max(0, Math.min(8, activeSignalInfo.remainingSeconds))}s</strong> para a virada de vela e captura da taxa
                       </span>
                     </div>
 
@@ -2012,16 +2043,16 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
                     {/* Métricas Operacionais */}
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 text-center">
-                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
-                        <span className="text-[9px] text-neutral-400 block uppercase">Cotação Atual</span>
-                        <span className="text-xs font-black font-mono text-white">
-                          {srLevels.curPrice.toFixed(srLevels.decimals)}
+                      <div className="p-2 rounded-xl bg-black/50 border border-cyan-500/30">
+                        <span className="text-[9px] text-cyan-300 block uppercase font-bold">Taxa de Entrada</span>
+                        <span className="text-xs font-black font-mono text-cyan-300">
+                          Na Abertura (:00)
                         </span>
                       </div>
                       <div className="p-2 rounded-xl bg-black/50 border border-white/10">
-                        <span className="text-[9px] text-neutral-400 block uppercase">Expiração</span>
-                        <span className="text-xs font-black font-mono text-cyan-300">
-                          {timeframe} Oficial
+                        <span className="text-[9px] text-neutral-400 block uppercase">Cotação Atual (Vela Alerta)</span>
+                        <span className="text-xs font-black font-mono text-white">
+                          {srLevels.curPrice.toFixed(srLevels.decimals)}
                         </span>
                       </div>
                     </div>
@@ -2138,7 +2169,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         NOVA AVALIAÇÃO NA PRÓXIMA VELA EM
                       </span>
                       <div className="text-3xl font-mono font-black text-amber-300">
-                        00:0{activeSignalInfo.remainingSeconds}
+                        00:0{Math.max(0, Math.min(8, activeSignalInfo.remainingSeconds))}
                       </div>
                     </div>
                   </div>
