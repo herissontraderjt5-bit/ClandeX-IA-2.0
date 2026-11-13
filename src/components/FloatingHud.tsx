@@ -884,9 +884,27 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
     const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
 
-    const currentOrderFlow = dominantDirection === 'CALL'
-      ? technicalData.delta.buyerPercent
-      : technicalData.delta.sellerPercent;
+    // Cálculo Ponderado e Preciso de Order Flow da Vela Atual + Delta Institucional
+    const curCandleHigh = Math.max(currentCandle?.high || curPrice, curPrice);
+    const curCandleLow = Math.min(currentCandle?.low || curPrice, curPrice);
+    const candleRange = Math.max(0.00001, curCandleHigh - curCandleLow);
+
+    // Pressão em tempo real da vela atual (onde a cotação está entre a mínima e a máxima)
+    const candleBuyerPressure = Math.max(5, Math.min(95, Math.round(((curPrice - curCandleLow) / candleRange) * 100)));
+    const candleSellerPressure = 100 - candleBuyerPressure;
+
+    // Delta institucional acumulado de volume
+    const backgroundBuyerDelta = technicalData.delta.buyerPercent;
+    const backgroundSellerDelta = technicalData.delta.sellerPercent;
+
+    // Confluência de Order Flow (70% força da vela aos 8s + 30% histórico institucional)
+    const dynamicBuyerFlow = Math.max(5, Math.min(95, Math.round(candleBuyerPressure * 0.70 + backgroundBuyerDelta * 0.30)));
+    const dynamicSellerFlow = Math.max(5, Math.min(95, Math.round(candleSellerPressure * 0.70 + backgroundSellerDelta * 0.30)));
+
+    const effectiveDir = (current.stage === 'PRE_ALERT' || current.stage === 'CONFIRMED' || current.stage === 'CANCELLED')
+      ? current.direction
+      : dominantDirection;
+    const currentOrderFlow = effectiveDir === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
 
     const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
@@ -994,17 +1012,21 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     if (current.stage === 'PRE_ALERT') {
       // VALIDAÇÃO EXATA AOS 00:08: Latch decisório irreversível
       if (remainingSeconds <= 8 && remainingSeconds >= 0) {
-        if (hasOrderFlow) {
+        const signalDir = current.direction;
+        const targetOrderFlow = signalDir === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
+        const isFlowQualified = targetOrderFlow >= requiredOrderFlow;
+
+        if (isFlowQualified) {
           if (settings.confirmedSound) {
-            if (current.direction === 'CALL') audioAlerts.playCallSignal();
+            if (signalDir === 'CALL') audioAlerts.playCallSignal();
             else audioAlerts.playPutSignal();
           }
           updateTradeLifecycle({
             stage: 'CONFIRMED',
-            direction: current.direction,
+            direction: signalDir,
             signalCandleTime: current.signalCandleTime || curCandleTime,
             score,
-            orderFlowAtLock: currentOrderFlow,
+            orderFlowAtLock: targetOrderFlow,
             entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
           });
         } else {
@@ -1013,10 +1035,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           }
           updateTradeLifecycle({
             stage: 'CANCELLED',
-            direction: current.direction,
+            direction: signalDir,
             signalCandleTime: current.signalCandleTime || curCandleTime,
             score,
-            orderFlowAtLock: currentOrderFlow,
+            orderFlowAtLock: targetOrderFlow,
             entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
           });
         }
@@ -1033,8 +1055,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         return;
       }
 
-      // Se os indicadores perderam confluência antes dos 8s
-      if (dominantCount < minIndicatorCount - 1) {
+      // Se os indicadores inverteram de direção completamente
+      if (current.direction === 'CALL' && indicatorConsensus.putCount > indicatorConsensus.callCount + 1) {
+        updateTradeLifecycle({
+          stage: 'IDLE',
+          direction: 'CALL',
+          signalCandleTime: curCandleTime,
+        });
+        return;
+      } else if (current.direction === 'PUT' && indicatorConsensus.callCount > indicatorConsensus.putCount + 1) {
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
@@ -1047,6 +1076,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     // 6. ESTÁGIO: IDLE (Scanner buscando confluências)
     if (current.stage === 'IDLE') {
       if (remainingSeconds > 8 && hasIndicatorsDirection) {
+        const signalFlow = dominantDirection === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
         if (settings.confirmedSound) {
           audioAlerts.playPreAlert();
         }
@@ -1055,7 +1085,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           direction: dominantDirection,
           signalCandleTime: curCandleTime,
           score,
-          orderFlowAtLock: currentOrderFlow,
+          orderFlowAtLock: signalFlow,
           entryTimeFormatted: formatBrasiliaTime((curCandleTime + tfSec) * 1000),
         });
       }
@@ -1087,15 +1117,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
     const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
 
-    const currentOrderFlow = dominantDirection === 'CALL'
-      ? technicalData.delta.buyerPercent
-      : technicalData.delta.sellerPercent;
+    const curPrice = currentCandle?.close || technicalData.currentPrice;
+    const curCandleHigh = Math.max(currentCandle?.high || curPrice, curPrice);
+    const curCandleLow = Math.min(currentCandle?.low || curPrice, curPrice);
+    const candleRange = Math.max(0.00001, curCandleHigh - curCandleLow);
+
+    const candleBuyerPressure = Math.max(5, Math.min(95, Math.round(((curPrice - curCandleLow) / candleRange) * 100)));
+    const candleSellerPressure = 100 - candleBuyerPressure;
+
+    const dynamicBuyerFlow = Math.max(5, Math.min(95, Math.round(candleBuyerPressure * 0.70 + technicalData.delta.buyerPercent * 0.30)));
+    const dynamicSellerFlow = Math.max(5, Math.min(95, Math.round(candleSellerPressure * 0.70 + technicalData.delta.sellerPercent * 0.30)));
+
+    const effectiveDir = (tradeLifecycle.stage === 'PRE_ALERT' || tradeLifecycle.stage === 'CONFIRMED' || tradeLifecycle.stage === 'CANCELLED' || tradeLifecycle.stage === 'IN_PROGRESS')
+      ? tradeLifecycle.direction
+      : dominantDirection;
+    const currentOrderFlow = effectiveDir === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
 
     const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
-    const curPrice = currentCandle?.close || technicalData.currentPrice;
     const entryPrice = tradeLifecycle.entryPrice || curPrice;
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
     const diffPips = Math.abs((curPrice - entryPrice) * pipMultiplier).toFixed(1);
@@ -1634,29 +1675,56 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                   </div>
                 </div>
 
-                {/* 2. STATUS BAR DO SCANNER: ATIVO & MODO OPERACIONAL ATIVO */}
-                <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-2xl flex items-center justify-between shadow-lg">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-ping' : 'bg-amber-400'}`} />
-                    <div>
-                      <span className="text-[10px] font-black text-white block uppercase tracking-wider">
-                        {isAnalyzing ? 'IA SCANNER ATIVO • ' : 'IA PAUSADA • '}
-                        <span className="text-cyan-300">{asset.symbol}</span>
-                      </span>
-                      <span className="text-[9px] text-neutral-400">
-                        Modo: <strong className="text-white">{activeSignalInfo.isSniper ? '🎯 Sniper (>70% Flow)' : '⚡ Alavancagem (>60% Flow)'}</strong>
-                      </span>
+                {/* 2. STATUS BAR DO SCANNER: ATIVO & MODO OPERACIONAL ATIVO (COM SELETOR RÁPIDO) */}
+                <div className="p-2.5 bg-neutral-900/90 border border-neutral-800 rounded-2xl space-y-2 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${isAnalyzing ? 'bg-cyan-400 animate-ping' : 'bg-amber-400'}`} />
+                      <div>
+                        <span className="text-[10px] font-black text-white block uppercase tracking-wider">
+                          {isAnalyzing ? 'IA SCANNER ATIVO • ' : 'IA PAUSADA • '}
+                          <span className="text-cyan-300">{asset.symbol}</span>
+                        </span>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('indicadores')}
+                      className="px-2 py-0.5 rounded-lg bg-black/60 border border-neutral-700/80 hover:border-cyan-400 text-[9px] font-bold text-cyan-300 flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Acessar painel de 10 indicadores técnicos"
+                    >
+                      <span>10 Indicadores</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('indicadores')}
-                    className="px-2 py-1 rounded-lg bg-black/60 border border-neutral-700/80 hover:border-cyan-400 text-[9px] font-bold text-cyan-300 flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Acessar painel de 10 indicadores e alternar modo"
-                  >
-                    <span>Indicadores</span>
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
+
+                  {/* Seletor Rápido de Modo Operacional */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('CONSERVADORA')}
+                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${
+                        activeSignalInfo.isSniper
+                          ? 'bg-cyan-950/80 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)] font-black'
+                          : 'bg-black/50 border-neutral-800 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold">🎯 Sniper</div>
+                      <div className="text-[8px] opacity-80">Order Flow &gt; 70%</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectAnalysisProfile && onSelectAnalysisProfile('AGRESSIVA')}
+                      className={`py-1.5 px-2 rounded-xl text-center border font-mono transition-all cursor-pointer ${
+                        !activeSignalInfo.isSniper
+                          ? 'bg-amber-950/80 border-amber-400 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)] font-black'
+                          : 'bg-black/50 border-neutral-800 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold">⚡ Alavancagem</div>
+                      <div className="text-[8px] opacity-80">Order Flow &gt; 60%</div>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 3. HERO DISPLAY DO CICLO DE SINAL (OPERANDO, RESULTADO, CONFIRMADO, PRÉ-ALERTA, REJEITADO OU RADAR) */}
