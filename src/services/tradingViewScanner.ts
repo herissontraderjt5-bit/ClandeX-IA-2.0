@@ -146,7 +146,6 @@ class TradingViewScannerService {
     const scannerEndpoint = isCrypto
       ? 'https://scanner.tradingview.com/crypto/scan'
       : 'https://scanner.tradingview.com/forex/scan';
-    const proxyEndpoint = `/api/tradingview/scan?category=${isCrypto ? 'crypto' : 'forex'}`;
 
     const columns = this.buildColumns(timeframe);
     const bodyPayload = JSON.stringify({
@@ -156,11 +155,11 @@ class TradingViewScannerService {
 
     let rawData: any = null;
 
-    // 1. Tenta proxy local (/api/tradingview/scan) primeiro para evitar qualquer problema de CORS
+    // 1. Chamada direta ao scanner oficial da TradingView com text/plain (bypassa preflight OPTIONS no navegador)
     try {
-      const resp = await fetch(proxyEndpoint, {
+      const resp = await fetch(scannerEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
         body: bodyPayload,
         signal: AbortSignal.timeout(3000),
       });
@@ -169,14 +168,15 @@ class TradingViewScannerService {
       }
     } catch { }
 
-    // 2. Se falhar, chama o endpoint oficial da TradingView diretamente com text/plain (Bypassa preflight CORS no navegador!)
+    // 2. Fallback caso bloqueado por firewall local
     if (!rawData || !rawData.data || rawData.data.length === 0) {
       try {
-        const resp = await fetch(scannerEndpoint, {
+        const proxyEndpoint = `/api/tradingview/scan?category=${isCrypto ? 'crypto' : 'forex'}`;
+        const resp = await fetch(proxyEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          headers: { 'Content-Type': 'application/json' },
           body: bodyPayload,
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(2000),
         });
         if (resp.ok) {
           rawData = await resp.json();
@@ -268,7 +268,6 @@ class TradingViewScannerService {
       const endpoint = cat === 'crypto'
         ? 'https://scanner.tradingview.com/crypto/scan'
         : 'https://scanner.tradingview.com/forex/scan';
-      const proxy = `/api/tradingview/scan?category=${cat}`;
 
       const payload = JSON.stringify({
         symbols: { tickers },
@@ -277,26 +276,14 @@ class TradingViewScannerService {
 
       let rawData: any = null;
       try {
-        const resp = await fetch(proxy, {
+        const resp = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: payload,
           signal: AbortSignal.timeout(3000),
         });
         if (resp.ok) rawData = await resp.json();
       } catch { }
-
-      if (!rawData || !rawData.data) {
-        try {
-          const resp = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-            body: payload,
-            signal: AbortSignal.timeout(4000),
-          });
-          if (resp.ok) rawData = await resp.json();
-        } catch { }
-      }
 
       if (rawData && Array.isArray(rawData.data)) {
         for (const row of rawData.data) {
@@ -407,7 +394,7 @@ class TradingViewScannerService {
 
     // Executa imediatamente o primeiro ciclo
     runCycle();
-    this.pollInterval = window.setInterval(runCycle, 1500);
+    this.pollInterval = window.setInterval(runCycle, 1000);
   }
 
   public stopBackgroundPolling() {

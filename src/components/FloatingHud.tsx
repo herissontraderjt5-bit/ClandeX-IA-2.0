@@ -78,7 +78,6 @@ import {
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { TradingViewWidget } from './TradingViewWidget';
-import { LiveLevelChart } from './LiveLevelChart';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
   getRelevantEconomicEvents,
@@ -474,7 +473,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'sinal', 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'sinal' | 'indicadores' | 'grafico' | 'voz'>('sinal');
-  const [chartMode, setChartMode] = useState<'NATIVE_SR' | 'TRADINGVIEW'>('TRADINGVIEW');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // Relógio Oficial de Brasília ao Vivo (BRT - UTC-3)
@@ -2921,96 +2919,55 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {/* TAB 2: PÁGINA DE GRÁFICO EM TEMPO REAL COM SUPORTE E RESISTÊNCIA DESTACADOS */}
+            {/* TAB 2: PÁGINA DE GRÁFICO OFICIAL TRADINGVIEW EM TEMPO REAL COM SUPORTE E RESISTÊNCIA */}
             {activeTab === 'grafico' && (
               <div className="space-y-3 font-mono">
-                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo + Seletor de Modo de Gráfico */}
-                <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl space-y-2.5 shadow-xl">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-                        <BarChart3 className="w-4 h-4 animate-pulse" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-white tracking-wider">{asset.symbol}</span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                            {timeframe}
-                          </span>
-                        </div>
-                        <span className="text-[9.5px] text-neutral-400">
-                          {asset.category === 'CRYPTO' ? '⚡ Bybit Spot (24/7)' : '🌐 OANDA / Forex'}
-                        </span>
-                      </div>
+                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo Oficial TradingView */}
+                <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl flex items-center justify-between shadow-xl">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+                      <BarChart3 className="w-4 h-4 animate-pulse" />
                     </div>
-
-                    <div className="text-right">
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                        <span className="text-[14px] font-black font-mono text-cyan-300 tracking-wider">
-                          {srLevels.curPrice.toFixed(srLevels.decimals)}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-white tracking-wider">{asset.symbol}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                          {timeframe}
                         </span>
                       </div>
-                      <span className="text-[9px] text-neutral-400 uppercase">Cotação Atual</span>
+                      <span className="text-[9.5px] text-cyan-400 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                        TradingView Oficial • {asset.tvSymbol}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Botões para alternar o modo do gráfico */}
-                  <div className="flex items-center gap-1.5 p-1 bg-black/70 rounded-xl border border-neutral-800">
-                    <button
-                      onClick={() => setChartMode('TRADINGVIEW')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'TRADINGVIEW'
-                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30 font-black'
-                        : 'text-neutral-400 hover:text-white'
-                        }`}
-                    >
-                      <span>🌐 TradingView Oficial (Velas Reais)</span>
-                    </button>
-                    <button
-                      onClick={() => setChartMode('NATIVE_SR')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'NATIVE_SR'
-                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30 font-black'
-                        : 'text-neutral-400 hover:text-white'
-                        }`}
-                    >
-                      <span>🎯 Linhas S/R (Simplificado)</span>
-                    </button>
+                  <div className="text-right">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-[14px] font-black font-mono text-cyan-300 tracking-wider">
+                        {srLevels.curPrice.toFixed(srLevels.decimals)}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-neutral-400 uppercase">Cotação TradingView</span>
                   </div>
                 </div>
 
-                {/* 2. Container do Gráfico */}
-                {chartMode === 'TRADINGVIEW' ? (
-                  <div className="w-full h-[380px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
-                    <TradingViewWidget
-                      key={`tv-${asset.symbol}-${timeframe}`}
-                      symbol={asset.tvSymbol}
-                      timeframe={timeframe}
-                      mode="CHART"
-                      className="w-full h-full"
-                    />
-                    <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
-                      <span className="text-rose-400 font-bold">TOPO: {srLevels.topo.toFixed(srLevels.decimals)}</span>
-                      <span className="text-neutral-600">|</span>
-                      <span className="text-emerald-400 font-bold">FUNDO: {srLevels.fundo.toFixed(srLevels.decimals)}</span>
-                    </div>
+                {/* 2. Container do Gráfico 100% TradingView Oficial com Overlay S/R */}
+                <div className="w-full h-[430px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
+                  <TradingViewWidget
+                    key={`tv-${asset.symbol}-${timeframe}`}
+                    symbol={asset.tvSymbol}
+                    timeframe={timeframe}
+                    mode="CHART"
+                    className="w-full h-full"
+                  />
+                  <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
+                    <span className="text-rose-400 font-bold">TOPO: {srLevels.topo.toFixed(srLevels.decimals)}</span>
+                    <span className="text-neutral-600">|</span>
+                    <span className="text-emerald-400 font-bold">FUNDO: {srLevels.fundo.toFixed(srLevels.decimals)}</span>
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/40 text-[9.5px] text-amber-300 text-center">
-                      💡 Exibindo modo simplificado em linhas SVG. Para ver o gráfico oficial com as mesmas velas e pavios da sua corretora, clique em <strong>TradingView Oficial</strong> acima.
-                    </div>
-                    <LiveLevelChart
-                      key={`sr-${asset.symbol}-${timeframe}`}
-                      candles={activeCandles}
-                      asset={asset}
-                      timeframe={timeframe}
-                      currentPrice={srLevels.curPrice}
-                      resistance={srLevels.topo}
-                      support={srLevels.fundo}
-                      height={380}
-                    />
-                  </div>
-                )}
+                </div>
 
                 {/* 3. Região de Suporte e Resistência com Cotações Reais de Topos e Fundos */}
                 <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-xl">
