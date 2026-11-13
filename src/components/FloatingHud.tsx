@@ -754,7 +754,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   const srLevels = useMemo(() => {
     const candleList = activeCandles && activeCandles.length > 0 ? activeCandles.slice(-45) : [];
     const latestCandle = candleList.length > 0 ? candleList[candleList.length - 1] : null;
-    const curPrice = latestCandle?.close || asset.currentPrice || (asset.category === 'CRYPTO' ? 50000 : 1.1000);
+    const curPrice = (asset.currentPrice && asset.currentPrice > 0)
+      ? asset.currentPrice
+      : (latestCandle?.close || (asset.category === 'CRYPTO' ? 50000 : 1.1000));
     const pipMultiplier = asset.category === 'CRYPTO' ? 1 : (asset.symbol.includes('JPY') ? 100 : 10000);
     const decimals = asset.pipDecimals || (asset.category === 'CRYPTO' ? (curPrice > 1000 ? 2 : 4) : (asset.symbol.includes('JPY') ? 3 : 5));
 
@@ -2958,20 +2960,20 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     <button
                       onClick={() => setChartMode('TRADINGVIEW')}
                       className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'TRADINGVIEW'
-                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
+                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30 font-black'
                         : 'text-neutral-400 hover:text-white'
                         }`}
                     >
-                      <span>🌐 TradingView (Topos & Fundos S/R)</span>
+                      <span>🌐 TradingView Oficial (Velas Reais)</span>
                     </button>
                     <button
                       onClick={() => setChartMode('NATIVE_SR')}
                       className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${chartMode === 'NATIVE_SR'
-                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30'
+                        ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/30 font-black'
                         : 'text-neutral-400 hover:text-white'
                         }`}
                     >
-                      <span>🎯 Gráfico Linhas S/R</span>
+                      <span>🎯 Linhas S/R (Simplificado)</span>
                     </button>
                   </div>
                 </div>
@@ -2993,16 +2995,21 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <LiveLevelChart
-                    key={`sr-${asset.symbol}-${timeframe}`}
-                    candles={activeCandles}
-                    asset={asset}
-                    timeframe={timeframe}
-                    currentPrice={srLevels.curPrice}
-                    resistance={srLevels.topo}
-                    support={srLevels.fundo}
-                    height={380}
-                  />
+                  <div className="space-y-2">
+                    <div className="p-2 rounded-xl bg-amber-950/40 border border-amber-500/40 text-[9.5px] text-amber-300 text-center">
+                      💡 Exibindo modo simplificado em linhas SVG. Para ver o gráfico oficial com as mesmas velas e pavios da sua corretora, clique em <strong>TradingView Oficial</strong> acima.
+                    </div>
+                    <LiveLevelChart
+                      key={`sr-${asset.symbol}-${timeframe}`}
+                      candles={activeCandles}
+                      asset={asset}
+                      timeframe={timeframe}
+                      currentPrice={srLevels.curPrice}
+                      resistance={srLevels.topo}
+                      support={srLevels.fundo}
+                      height={380}
+                    />
+                  </div>
                 )}
 
                 {/* 3. Região de Suporte e Resistência com Cotações Reais de Topos e Fundos */}

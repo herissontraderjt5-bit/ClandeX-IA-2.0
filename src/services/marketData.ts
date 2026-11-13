@@ -733,6 +733,7 @@ export class MarketDataManager {
                   c: k.close,
                   x: k.confirm,
                 });
+                this.notifyTickImmediately();
               }
             }
           } catch { }
