@@ -889,6 +889,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     signalCandleTime: 0,
   });
   const [tradeLifecycle, setTradeLifecycle] = useState<LiveTradeLifecycle>(tradeLifecycleRef.current);
+  // Cooldown inteligente para evitar overtrading / sinais em velas consecutivas
+  const cooldownUntilCandleTimeRef = useRef<number>(0);
 
   const updateTradeLifecycle = useCallback((newState: LiveTradeLifecycle) => {
     tradeLifecycleRef.current = newState;
@@ -900,6 +902,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   useEffect(() => {
     if (prevAssetSymbolRef.current !== asset.symbol) {
       prevAssetSymbolRef.current = asset.symbol;
+      cooldownUntilCandleTimeRef.current = 0;
       updateTradeLifecycle({
         stage: 'IDLE',
         direction: 'CALL',
@@ -911,6 +914,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   // Máquina de Estados Travada e Robusta com Ciclo Operacional Completo
   useEffect(() => {
     if (!isAnalyzing) {
+      cooldownUntilCandleTimeRef.current = 0;
       if (tradeLifecycleRef.current.stage !== 'IDLE' && tradeLifecycleRef.current.stage !== 'IN_PROGRESS') {
         updateTradeLifecycle({
           stage: 'IDLE',
@@ -927,11 +931,17 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const tfSec = timeframe === 'M2' ? 120 : timeframe === 'M1' ? 60 : 300;
 
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
-    const minIndicatorCount = isSniper ? 5 : 4;
+    // Confluência institucional real (Filtro anti-overtrading e sinais falsos)
+    // Sniper: exige pelo menos 7 de 10 indicadores (70%) e margem de 4 sobre a ponta oposta
+    // Alavancagem: exige pelo menos 6 de 10 indicadores (60%) e margem de 2
+    const minIndicatorCount = isSniper ? 7 : 6;
+    const minMargin = isSniper ? 4 : 2;
     const requiredOrderFlow = isSniper ? 70 : 60;
+    const minOrderFlowForPreAlert = isSniper ? 60 : 50;
 
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
     const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
+    const oppositeCount = dominantDirection === 'CALL' ? indicatorConsensus.putCount : indicatorConsensus.callCount;
 
     // Cálculo Ponderado e Preciso de Order Flow da Vela Atual + Delta Institucional
     const curCandleHigh = Math.max(currentCandle?.high || curPrice, curPrice);
@@ -955,13 +965,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       : dominantDirection;
     const currentOrderFlow = effectiveDir === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
 
-    const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
+    const hasIndicatorsDirection = dominantCount >= minIndicatorCount && (dominantCount - oppositeCount) >= minMargin;
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
     // 1. ESTÁGIO: RESULT (Exibindo comemoração do resultado por 8 segundos após fechar a vela da operação)
     if (current.stage === 'RESULT') {
       if (Date.now() - (current.resolvedAt || 0) > 8000) {
+        // Pausa pós-operação (1 vela de respiro) para evitar overtrading e operar em velas seguidas
+        cooldownUntilCandleTimeRef.current = curCandleTime + tfSec;
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
@@ -1107,6 +1119,8 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         || (curCandleTime > 0 && curCandleTime > current.signalCandleTime);
 
       if (isCandleTurn) {
+        // Pausa de 1 vela de respiro após cancelamento para evitar overtrading e falso rompimento
+        cooldownUntilCandleTimeRef.current = curCandleTime + tfSec;
         updateTradeLifecycle({
           stage: 'IDLE',
           direction: 'CALL',
@@ -1181,10 +1195,17 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       }
     }
 
-    // 6. ESTÁGIO: IDLE (Scanner buscando confluências)
+    // 6. ESTÁGIO: IDLE (Scanner buscando confluências com filtro anti-overtrading)
     if (current.stage === 'IDLE') {
-      if (remainingSeconds > 8 && hasIndicatorsDirection) {
-        const signalFlow = dominantDirection === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
+      const isPastCooldown = curCandleTime >= cooldownUntilCandleTimeRef.current;
+      // Janela analítica de alta precisão: avalia entre 45s e 10s para a vela ter corpo e volume formado
+      const isOptimalPreAlertWindow = remainingSeconds <= 45 && remainingSeconds >= 10;
+      const signalFlow = dominantDirection === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
+      const hasPreAlertOrderFlow = signalFlow >= minOrderFlowForPreAlert;
+      // Não reabre pré-alerta na mesma vela onde já houve sinal avaliado
+      const isNewCandleForSignal = !current.signalCandleTime || curCandleTime > current.signalCandleTime;
+
+      if (isPastCooldown && isNewCandleForSignal && isOptimalPreAlertWindow && hasIndicatorsDirection && hasPreAlertOrderFlow) {
         if (settings.confirmedSound) {
           audioAlerts.playPreAlert();
         }
@@ -1218,12 +1239,14 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   // Consolidado activeSignalInfo para consumo seguro da UI
   const activeSignalInfo = useMemo(() => {
     const isSniper = (settings.analysisProfile || 'CONSERVADORA') !== 'AGRESSIVA';
-    const minIndicatorCount = isSniper ? 5 : 4;
+    const minIndicatorCount = isSniper ? 7 : 6;
+    const minMargin = isSniper ? 4 : 2;
     const requiredOrderFlow = isSniper ? 70 : 60;
     const tfSec = timeframe === 'M2' ? 120 : timeframe === 'M1' ? 60 : 300;
 
     const dominantDirection: 'CALL' | 'PUT' = indicatorConsensus.callCount >= indicatorConsensus.putCount ? 'CALL' : 'PUT';
     const dominantCount = dominantDirection === 'CALL' ? indicatorConsensus.callCount : indicatorConsensus.putCount;
+    const oppositeCount = dominantDirection === 'CALL' ? indicatorConsensus.putCount : indicatorConsensus.callCount;
 
     const curPrice = currentCandle?.close || technicalData.currentPrice;
     const curCandleHigh = Math.max(currentCandle?.high || curPrice, curPrice);
@@ -1241,7 +1264,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       : dominantDirection;
     const currentOrderFlow = effectiveDir === 'CALL' ? dynamicBuyerFlow : dynamicSellerFlow;
 
-    const hasIndicatorsDirection = dominantCount >= minIndicatorCount;
+    const hasIndicatorsDirection = dominantCount >= minIndicatorCount && (dominantCount - oppositeCount) >= minMargin;
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
@@ -1271,6 +1294,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const tradeMins = Math.floor(tradeSecondsLeft / 60);
     const tradeSecs = tradeSecondsLeft % 60;
     const tradeFormattedCountdown = `${String(tradeMins).padStart(2, '0')}:${String(tradeSecs).padStart(2, '0')}`;
+    const isInCooldown = (currentCandle?.time || 0) < cooldownUntilCandleTimeRef.current;
 
     return {
       isSniper,
@@ -1299,6 +1323,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       remainingSeconds,
       tradeSecondsLeft,
       tradeFormattedCountdown,
+      isInCooldown,
     };
   }, [
     settings.analysisProfile,
@@ -1906,7 +1931,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         }`}
                     >
                       <div className="text-[10px] font-bold">🎯 Sniper</div>
-                      <div className="text-[8px] opacity-80">Order Flow &gt; 70%</div>
+                      <div className="text-[8px] opacity-80">7/10 Ind • Flow &gt; 70%</div>
                     </button>
                     <button
                       type="button"
@@ -1917,7 +1942,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         }`}
                     >
                       <div className="text-[10px] font-bold">⚡ Alavancagem</div>
-                      <div className="text-[8px] opacity-80">Order Flow &gt; 60%</div>
+                      <div className="text-[8px] opacity-80">6/10 Ind • Flow &gt; 60%</div>
                     </button>
                   </div>
                 </div>
@@ -2466,12 +2491,20 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
                           {/* Janela Crítica de Gatilho (00:08) */}
                           <div className="text-[9px] font-mono flex items-center justify-between bg-cyan-950/40 border border-cyan-500/20 rounded-md px-2 py-0.5">
-                            <span className="text-neutral-400">GATILHO:</span>
-                            <span className={`font-bold ${remainingSeconds <= 8 ? 'text-emerald-400 animate-pulse' : 'text-amber-300'}`}>
-                              {remainingSeconds > 8
-                                ? `ANÁLISE AOS 00:08 (-${remainingSeconds - 8}s)`
-                                : 'VALIDAÇÃO EM CURSO'}
-                            </span>
+                            {activeSignalInfo.isInCooldown ? (
+                              <span className="text-amber-300 font-bold flex items-center gap-1 w-full justify-center text-[8.5px]">
+                                <span>🛡️ FILTRO ANTI-OVERTRADING ATIVO (1 VELA)</span>
+                              </span>
+                            ) : (
+                              <>
+                                <span className="text-neutral-400">GATILHO:</span>
+                                <span className={`font-bold ${remainingSeconds <= 8 ? 'text-emerald-400 animate-pulse' : 'text-amber-300'}`}>
+                                  {remainingSeconds > 8
+                                    ? `ANÁLISE AOS 00:08 (-${remainingSeconds - 8}s)`
+                                    : 'VALIDAÇÃO EM CURSO'}
+                                </span>
+                              </>
+                            )}
                           </div>
 
                           {/* Barra de Progresso com Marcador de Latch */}
