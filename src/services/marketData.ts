@@ -796,9 +796,12 @@ export class MarketDataManager {
         }
       }
 
-      // Nos momentos críticos de fechamento/abertura de vela (0s e 59s), força leitura imediata
+      // Nos momentos críticos de fechamento/abertura de vela (0s e 59s), força sincronização imediata com Bybit e TradingView
       if (remainingSec === 0 || remainingSec === tfSeconds - 1) {
         tradingViewScanner.fetchAssetData(this.currentAsset, this.currentTimeframe);
+        if (this.currentAsset.category === 'CRYPTO') {
+          this.loadCandlesForCurrentSelection();
+        }
       }
 
       const activeCandle = this.candles[this.candles.length - 1];
