@@ -1,6 +1,18 @@
 import React, { useMemo } from 'react';
 import { Asset, Candle, TimeFrame } from '../types/trading';
 
+/**
+ * Calcula o Ponto de Controle (POC) de uma vela individual.
+ * Na análise de fluxo / Footprint, o POC é o preço onde ocorreu a maior
+ * concentração de volume e liquidez no intervalo daquela vela.
+ */
+export function getCandlePoc(c: Candle): number {
+  if (c.poc && Number.isFinite(c.poc)) return c.poc;
+  // Ponderação clássica institucional: zona de maior densidade negociada
+  const typical = (c.high + c.low + 2 * c.close) / 4;
+  return Math.max(c.low, Math.min(c.high, typical));
+}
+
 interface LiveLevelChartProps {
   candles: Candle[];
   asset: Asset;
@@ -99,6 +111,10 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-amber-300 font-bold">
+            <span className="w-2.5 h-1 bg-amber-400 inline-block rounded-full shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+            <span>POC (PONTO DE CONTROLE)</span>
+          </div>
           <div className="flex items-center gap-1.5 text-rose-400 font-bold">
             <span className="w-2.5 h-1 bg-rose-500 inline-block rounded-full" />
             <span>TOPO: {resistance.toFixed(decimals)}</span>
@@ -229,7 +245,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             </g>
           )}
 
-          {/* Renderização das Velas Japonesas Reais */}
+          {/* Renderização das Velas Japonesas Reais com POC em cada uma */}
           {visibleCandles.map((c, i) => {
             const xCenter = paddingLeft + i * candleSpacing + candleSpacing / 2;
             const yOpen = getY(c.open);
@@ -242,6 +258,10 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 
             const candleColor = isBullish ? '#10b981' : '#f43f5e';
             const wickColor = isBullish ? '#34d399' : '#fb7185';
+
+            // Ponto de Controle (POC) individual desta vela
+            const pocPrice = getCandlePoc(c);
+            const yPoc = getY(pocPrice);
 
             return (
               <g key={c.time || i}>
@@ -265,9 +285,75 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                   strokeWidth="0.5"
                   rx="1"
                 />
+
+                {/* 🟡 POC (POINT OF CONTROL) DESENHADO NA VELA */}
+                {Number.isFinite(yPoc) && (
+                  <g>
+                    {/* Linha horizontal destacada da POC atravessando a vela */}
+                    <line
+                      x1={xCenter - (candleBodyWidth * 1.35) / 2}
+                      y1={yPoc}
+                      x2={xCenter + (candleBodyWidth * 1.35) / 2}
+                      y2={yPoc}
+                      stroke="#fbbf24"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                    {/* Ponto central da POC */}
+                    <circle
+                      cx={xCenter}
+                      cy={yPoc}
+                      r="1.2"
+                      fill="#ffffff"
+                    />
+                  </g>
+                )}
               </g>
             );
           })}
+
+          {/* 🟡 PROJEÇÃO DA POC DA VELA ATUAL / MAIS RECENTE NA RÉGUA */}
+          {visibleCandles.length > 0 && (() => {
+            const lastCandle = visibleCandles[visibleCandles.length - 1];
+            const lastPoc = getCandlePoc(lastCandle);
+            const lastPocY = getY(lastPoc);
+            const lastX = paddingLeft + (visibleCandles.length - 1) * candleSpacing + candleSpacing / 2;
+
+            return Number.isFinite(lastPocY) ? (
+              <g className="transition-all duration-150">
+                <line
+                  x1={lastX}
+                  y1={lastPocY}
+                  x2={chartWidth - paddingRight}
+                  y2={lastPocY}
+                  stroke="#fbbf24"
+                  strokeWidth="1.2"
+                  strokeDasharray="3 3"
+                  opacity="0.85"
+                />
+                <rect
+                  x={chartWidth - paddingRight + 2}
+                  y={lastPocY - 9}
+                  width={paddingRight - 4}
+                  height={18}
+                  fill="#78350f"
+                  stroke="#fbbf24"
+                  strokeWidth="1.2"
+                  rx="4"
+                />
+                <text
+                  x={chartWidth - paddingRight + 6}
+                  y={lastPocY + 3.5}
+                  fill="#fef08a"
+                  fontSize="8.5"
+                  fontWeight="900"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  POC {lastPoc.toFixed(decimals)}
+                </text>
+              </g>
+            ) : null;
+          })()}
 
           {/* ⚡ LINHA DE COTAÇÃO ATUAL (AO VIVO) */}
           {Number.isFinite(currentY) && (

@@ -24,6 +24,7 @@ export interface Candle {
   close: number;
   volume: number;
   isClosed: boolean;
+  poc?: number; // Point of Control (preço com maior volume/densidade negociada da vela)
 }
 
 export interface SupportResistanceLevel {

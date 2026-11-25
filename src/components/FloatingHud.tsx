@@ -82,6 +82,7 @@ import {
 } from '../services/strategyEngine';
 import { CyberAiAvatar3D } from './CyberAiAvatar3D';
 import { TradingViewWidget } from './TradingViewWidget';
+import { LiveLevelChart } from './LiveLevelChart';
 import { ExtensionModal } from './ExtensionModal';
 import { LiveVoiceStatus, VoiceEngine, LiveTurnMessage, AssistantUiState } from '../hooks/useLiveVoice';
 import {
@@ -478,6 +479,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
 
   // HUD Tabs: 'sinal', 'indicadores', 'grafico' e 'voz'
   const [activeTab, setActiveTab] = useState<'sinal' | 'indicadores' | 'grafico' | 'voz'>('sinal');
+  const [chartViewMode, setChartViewMode] = useState<'POC_CHART' | 'TRADINGVIEW'>('POC_CHART');
   const [newsImpactFilter, setNewsImpactFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [isHioveFeed, setIsHioveFeed] = useState(() => marketDataManager.isUsingHioveFeed());
@@ -897,6 +899,39 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     setTradeLifecycle({ ...newState });
   }, []);
 
+  // Confirmação Manual do Resultado da Operação (WIN / LOSS / EMPATE)
+  // Só depois de clicar nesta confirmação a IA volta a analisar (retorna para IDLE)
+  const handleConfirmTradeResult = useCallback((userResult: 'WIN' | 'LOSS' | 'EMPATE') => {
+    // 1. Atualiza placar operacional
+    setScoreboard((prev) => {
+      const next = {
+        wins: prev.wins + (userResult === 'WIN' ? 1 : 0),
+        losses: prev.losses + (userResult === 'LOSS' ? 1 : 0),
+        draws: prev.draws + (userResult === 'EMPATE' ? 1 : 0),
+      };
+      saveStoredScoreboard(next);
+      return next;
+    });
+
+    // 2. Alerta sonoro correspondente
+    if (settings.confirmedSound) {
+      if (userResult === 'WIN') audioAlerts.playWin();
+      else if (userResult === 'LOSS') audioAlerts.playLoss();
+    }
+
+    // 3. Aplica 1 vela de respiro anti-overtrading e retorna a IA ao modo IDLE para voltar a analisar
+    const tfSec = timeframe === 'M2' ? 120 : timeframe === 'M1' ? 60 : 300;
+    const curTime = currentCandle?.time || Math.floor(Date.now() / 60000) * 60;
+    cooldownUntilCandleTimeRef.current = curTime + tfSec;
+
+    updateTradeLifecycle({
+      stage: 'IDLE',
+      direction: 'CALL',
+      signalCandleTime: curTime,
+      result: userResult,
+    });
+  }, [settings.confirmedSound, timeframe, currentCandle?.time, updateTradeLifecycle]);
+
   // Resetar ao trocar de ativo para evitar misturar sinais entre pares
   const prevAssetSymbolRef = useRef(asset.symbol);
   useEffect(() => {
@@ -969,17 +1004,9 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     const hasOrderFlow = currentOrderFlow >= requiredOrderFlow;
     const score = Math.max(70, Math.min(98, Math.round(currentOrderFlow * 0.6 + dominantCount * 4.2)));
 
-    // 1. ESTÁGIO: RESULT (Exibindo comemoração do resultado por 8 segundos após fechar a vela da operação)
+    // 1. ESTÁGIO: RESULT (Aguardando marcação manual do usuário: WIN, LOSS ou EMPATE)
+    // A IA NÃO volta a analisar automaticamente até que o usuário clique em uma das 3 opções!
     if (current.stage === 'RESULT') {
-      if (Date.now() - (current.resolvedAt || 0) > 8000) {
-        // Pausa pós-operação (1 vela de respiro) para evitar overtrading e operar em velas seguidas
-        cooldownUntilCandleTimeRef.current = curCandleTime + tfSec;
-        updateTradeLifecycle({
-          stage: 'IDLE',
-          direction: 'CALL',
-          signalCandleTime: curCandleTime,
-        });
-      }
       return;
     }
 
@@ -1008,7 +1035,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       const isCandleClosing = elapsedSeconds >= minRequiredDuration && (remainingSeconds <= 1 || (current.tradeCandleTime && curCandleTime > current.tradeCandleTime));
 
       if (isTimeExpired || isCandleClosing) {
-        const entry = current.entryPrice || curPrice;
         let finalPrice = curPrice;
 
         // Se a vela da operação acabou de fechar e o feed avançou para a seguinte,
@@ -1020,41 +1046,12 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
           finalPrice = curPrice > 0 ? curPrice : currentCandle.close;
         }
 
-        let result: 'WIN' | 'LOSS' | 'EMPATE' = 'EMPATE';
-        const pipDiff = Math.abs(finalPrice - entry);
-        const threshold = asset.category === 'CRYPTO' ? 0.0001 : 0.00001;
-
-        if (pipDiff < threshold) {
-          result = 'EMPATE';
-        } else if (current.direction === 'CALL') {
-          result = finalPrice > entry ? 'WIN' : 'LOSS';
-        } else {
-          result = finalPrice < entry ? 'WIN' : 'LOSS';
-        }
-
-        if (settings.confirmedSound) {
-          if (result === 'WIN') audioAlerts.playWin();
-          else if (result === 'LOSS') audioAlerts.playLoss();
-        }
-
-        // Se estiver em modo automático, computa diretamente no placar.
-        // Se estiver em modo manual, o trader registra ou confirma o resultado da corretora livremente.
-        if (!isManualScoreboardRef.current) {
-          setScoreboard((prev) => {
-            const next = {
-              wins: prev.wins + (result === 'WIN' ? 1 : 0),
-              losses: prev.losses + (result === 'LOSS' ? 1 : 0),
-              draws: prev.draws + (result === 'EMPATE' ? 1 : 0),
-            };
-            saveStoredScoreboard(next);
-            return next;
-          });
-        }
-
+        // Quando o sinal zerar, pausa e exibe as 3 opções manuais (WIN, LOSS, EMPATE).
+        // A IA só volta a analisar após a escolha manual do usuário.
         updateTradeLifecycle({
           ...current,
           stage: 'RESULT',
-          result,
+          result: null, // Pendente de marcação manual pelo usuário
           finalPrice,
           resolvedAt: Date.now(),
         });
@@ -2048,46 +2045,26 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                     </div>
                   </div>
                 ) : activeSignalInfo.stage === 'RESULT' ? (
-                  /* ESTÁGIO 2: RESULTADO FINAL COMPUTADO (WIN / LOSS / EMPATE) */
-                  <div
-                    className={`p-4 rounded-2xl border-2 transition-all shadow-2xl relative overflow-hidden ${activeSignalInfo.result === 'WIN'
-                        ? 'bg-gradient-to-br from-emerald-950/95 via-[#062419] to-black border-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.5)]'
-                        : activeSignalInfo.result === 'LOSS'
-                          ? 'bg-gradient-to-br from-rose-950/95 via-[#2b0811] to-black border-rose-500 shadow-[0_0_40px_rgba(244,63,94,0.5)]'
-                          : 'bg-gradient-to-br from-amber-950/95 via-[#231706] to-black border-amber-400 shadow-[0_0_40px_rgba(245,158,11,0.5)]'
-                      }`}
-                  >
+                  /* ESTÁGIO 2: RESULTADO FINAL DA OPERAÇÃO - MARCAÇÃO MANUAL OBRIGATÓRIA */
+                  <div className="p-4 rounded-2xl border-2 border-cyan-500/80 bg-gradient-to-br from-[#0c162c] via-[#091122] to-black space-y-3.5 shadow-[0_0_35px_rgba(6,182,212,0.35)] relative overflow-hidden">
                     <div className="flex items-center justify-between pb-2 border-b border-white/10">
                       <div className="flex items-center gap-2">
-                        <Trophy className={`w-4 h-4 ${activeSignalInfo.result === 'WIN' ? 'text-emerald-400 animate-bounce' : activeSignalInfo.result === 'LOSS' ? 'text-rose-400' : 'text-amber-400'
-                          }`} />
+                        <Trophy className="w-4 h-4 text-amber-400 animate-pulse" />
                         <span className="text-[11px] font-black uppercase tracking-wider text-white">
                           OPERAÇÃO FINALIZADA
                         </span>
                       </div>
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${activeSignalInfo.result === 'WIN'
-                          ? 'bg-emerald-500 text-neutral-950 shadow-[0_0_10px_rgba(16,185,129,0.8)]'
-                          : activeSignalInfo.result === 'LOSS'
-                            ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.8)]'
-                            : 'bg-amber-500 text-neutral-950'
-                        }`}>
-                        {activeSignalInfo.result}
+                      <span className="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-cyan-500 text-neutral-950 shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse">
+                        MARCAÇÃO MANUAL
                       </span>
                     </div>
 
-                    <div className="py-3 text-center space-y-1.5">
-                      <span className={`text-4xl font-black block tracking-tight ${activeSignalInfo.result === 'WIN' ? 'text-emerald-300 drop-shadow-[0_0_18px_rgba(16,185,129,0.9)]' : activeSignalInfo.result === 'LOSS' ? 'text-rose-300 drop-shadow-[0_0_18px_rgba(244,63,94,0.9)]' : 'text-amber-300'
-                        }`}>
-                        {activeSignalInfo.result === 'WIN' ? '🏆 VITÓRIA (WIN)!' : activeSignalInfo.result === 'LOSS' ? '🛑 LOSS REGISTRADO' : '⚖️ EMPATE DEVOLVIDO'}
+                    <div className="py-1.5 text-center space-y-1">
+                      <span className="text-xl font-black block tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]">
+                        QUAL FOI O RESULTADO?
                       </span>
-                      <p className="text-[10.5px] text-neutral-300">
-                        {isManualScoreboard
-                          ? 'Placar manual ativo: confirme o resultado real da sua corretora nos botões abaixo ou ajuste diretamente no placar.'
-                          : activeSignalInfo.result === 'WIN'
-                            ? 'Operação vencedora! O resultado foi somado ao seu placar operacional.'
-                            : activeSignalInfo.result === 'LOSS'
-                              ? 'Gestão de banca mantida. A IA segue filtrando a melhor oportunidade.'
-                              : 'Capital restituído pela corretora sem variação de banca.'}
+                      <p className="text-[10px] text-cyan-300">
+                        O tempo da vela zerou. Marque abaixo se o sinal foi Win, Loss ou Empate para somar ao placar e a IA voltar a analisar:
                       </p>
                     </div>
 
@@ -2110,62 +2087,57 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         )}
                       </span>
                       {activeSignalInfo.entryPrice && activeSignalInfo.finalPrice && (
-                        <span className={`text-[10px] font-mono font-bold px-2 py-1 rounded-lg border ${activeSignalInfo.result === 'WIN'
-                            ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
-                            : activeSignalInfo.result === 'LOSS'
-                              ? 'bg-rose-950/70 text-rose-300 border-rose-500/40'
-                              : 'bg-neutral-900 text-neutral-300 border-neutral-700'
-                          }`}>
+                        <span className="text-[10px] font-mono font-bold px-2 py-1 rounded-lg border bg-neutral-900 text-neutral-300 border-neutral-700">
                           Δ {(activeSignalInfo.finalPrice - activeSignalInfo.entryPrice) >= 0 ? '+' : ''}
                           {(activeSignalInfo.finalPrice - activeSignalInfo.entryPrice).toFixed(srLevels.decimals)}
                         </span>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-center text-[10px] pt-1">
-                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
                         <span className="text-neutral-400 block uppercase">Taxa Entrada</span>
-                        <span className="font-mono font-bold text-white">
+                        <span className="font-mono font-bold text-white text-xs">
                           {activeSignalInfo.entryPrice?.toFixed(srLevels.decimals)}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+                      <div className="p-2 rounded-xl bg-black/50 border border-white/10">
                         <span className="text-neutral-400 block uppercase">Taxa Fechamento</span>
-                        <span className="font-mono font-bold text-cyan-300">
+                        <span className="font-mono font-bold text-cyan-300 text-xs">
                           {activeSignalInfo.finalPrice?.toFixed(srLevels.decimals)}
                         </span>
                       </div>
                     </div>
 
-                    {/* BOTÕES DE REGISTRO MANUAL NO PLACAR */}
-                    <div className="pt-2 border-t border-white/10 space-y-1.5">
-                      <div className="flex items-center justify-between text-[9px] font-mono text-neutral-400">
-                        <span>CONFIRMAR NA SUA BANCA:</span>
-                        <span className="text-cyan-400 font-bold">
-                          {isManualScoreboard ? 'PLACAR MANUAL' : 'PLACAR AUTO'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
+                    {/* AS 3 OPÇÕES PARA MARCAR MANUALMENTE - SÓ APÓS MARCAR A IA VOLTA A ANALISAR */}
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <span className="text-[9px] uppercase font-bold text-neutral-400 block text-center">
+                        SELECIONE O RESULTADO NA SUA CORRETORA:
+                      </span>
+                      <div className="grid grid-cols-3 gap-2">
                         <button
                           type="button"
-                          onClick={() => handleAdjustScoreboard('wins', 1)}
-                          className="py-2 px-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 border border-emerald-500/50 hover:text-neutral-950 text-emerald-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                          onClick={() => handleConfirmTradeResult('WIN')}
+                          className="py-3 px-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 text-neutral-950 font-black text-xs transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.5)] border border-emerald-300"
                         >
-                          +1 WIN 🏆
+                          <span className="text-base">🏆</span>
+                          <span>WIN</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleAdjustScoreboard('losses', 1)}
-                          className="py-2 px-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 border border-rose-500/50 hover:text-white text-rose-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                          onClick={() => handleConfirmTradeResult('LOSS')}
+                          className="py-3 px-2 rounded-xl bg-gradient-to-b from-rose-600 to-rose-800 hover:from-rose-500 hover:to-rose-700 text-white font-black text-xs transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_15px_rgba(244,63,94,0.5)] border border-rose-400"
                         >
-                          +1 LOSS 🛑
+                          <span className="text-base">🛑</span>
+                          <span>LOSS</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleAdjustScoreboard('draws', 1)}
-                          className="py-2 px-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500 border border-amber-500/50 hover:text-neutral-950 text-amber-300 font-black text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+                          onClick={() => handleConfirmTradeResult('EMPATE')}
+                          className="py-3 px-2 rounded-xl bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 text-neutral-950 font-black text-xs transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.5)] border border-amber-300"
                         >
-                          +1 EMPATE ⚖️
+                          <span className="text-base">⚖️</span>
+                          <span>EMPATE</span>
                         </button>
                       </div>
                     </div>
@@ -3236,10 +3208,10 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
               </div>
             )}
 
-            {/* TAB 2: PÁGINA DE GRÁFICO OFICIAL TRADINGVIEW EM TEMPO REAL COM SUPORTE E RESISTÊNCIA */}
+            {/* TAB 2: PÁGINA DE GRÁFICO OFICIAL COM VELAS + POC E TRADINGVIEW */}
             {activeTab === 'grafico' && (
               <div className="space-y-3 font-mono">
-                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo Oficial TradingView */}
+                {/* 1. Header do Gráfico: Ativo, Timeframe e Cotação ao Vivo */}
                 <div className="p-3 bg-gradient-to-r from-[#0c1322] via-[#09101f] to-neutral-950 border border-cyan-500/40 rounded-2xl flex items-center justify-between shadow-xl">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
@@ -3254,7 +3226,7 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       </div>
                       <span className="text-[9.5px] text-cyan-400 font-bold flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
-                        TradingView Oficial • {asset.tvSymbol}
+                        {chartViewMode === 'POC_CHART' ? 'Gráfico Footprint • Velas com POC' : `TradingView Oficial • ${asset.tvSymbol}`}
                       </span>
                     </div>
                   </div>
@@ -3266,25 +3238,66 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                         {srLevels.curPrice.toFixed(srLevels.decimals)}
                       </span>
                     </div>
-                    <span className="text-[9px] text-neutral-400 uppercase">Cotação TradingView</span>
+                    <span className="text-[9px] text-neutral-400 uppercase">Cotação Atual</span>
                   </div>
                 </div>
 
-                {/* 2. Container do Gráfico 100% TradingView Oficial com Overlay S/R */}
-                <div className="w-full h-[430px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
-                  <TradingViewWidget
-                    key={`tv-${asset.symbol}-${timeframe}`}
-                    symbol={asset.tvSymbol}
-                    timeframe={timeframe}
-                    mode="CHART"
-                    className="w-full h-full"
-                  />
-                  <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
-                    <span className="text-rose-400 font-bold">TOPO: {srLevels.topo.toFixed(srLevels.decimals)}</span>
-                    <span className="text-neutral-600">|</span>
-                    <span className="text-emerald-400 font-bold">FUNDO: {srLevels.fundo.toFixed(srLevels.decimals)}</span>
-                  </div>
+                {/* Seletor de Modo do Gráfico: Velas + POC vs TradingView */}
+                <div className="flex items-center gap-1.5 bg-black/70 p-1 rounded-xl border border-neutral-800 shadow-md">
+                  <button
+                    type="button"
+                    onClick={() => setChartViewMode('POC_CHART')}
+                    className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer ${chartViewMode === 'POC_CHART'
+                        ? 'bg-amber-500 text-neutral-950 font-black shadow-[0_0_12px_rgba(245,158,11,0.5)] border border-amber-300'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 font-bold'
+                      }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${chartViewMode === 'POC_CHART' ? 'bg-neutral-950' : 'bg-amber-400 animate-pulse'}`} />
+                    <span>🎯 Velas com POC (Footprint)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartViewMode('TRADINGVIEW')}
+                    className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer ${chartViewMode === 'TRADINGVIEW'
+                        ? 'bg-cyan-500 text-neutral-950 font-black shadow-[0_0_12px_rgba(6,182,212,0.5)] border border-cyan-300'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 font-bold'
+                      }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${chartViewMode === 'TRADINGVIEW' ? 'bg-neutral-950' : 'bg-cyan-400 animate-pulse'}`} />
+                    <span>🌐 TradingView Oficial</span>
+                  </button>
                 </div>
+
+                {/* 2. Container do Gráfico: Velas com POC ou TradingView */}
+                {chartViewMode === 'POC_CHART' ? (
+                  <div className="w-full rounded-2xl overflow-hidden shadow-2xl relative">
+                    <LiveLevelChart
+                      key={`poc-${asset.symbol}-${timeframe}`}
+                      candles={activeCandles}
+                      asset={asset}
+                      timeframe={timeframe}
+                      currentPrice={srLevels.curPrice}
+                      resistance={srLevels.topo}
+                      support={srLevels.fundo}
+                      height={430}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-[430px] rounded-2xl overflow-hidden border-2 border-neutral-800 bg-neutral-950 shadow-2xl relative">
+                    <TradingViewWidget
+                      key={`tv-${asset.symbol}-${timeframe}`}
+                      symbol={asset.tvSymbol}
+                      timeframe={timeframe}
+                      mode="CHART"
+                      className="w-full h-full"
+                    />
+                    <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-2 bg-black/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-neutral-700/80 text-[10px] font-mono shadow-xl">
+                      <span className="text-rose-400 font-bold">TOPO: {srLevels.topo.toFixed(srLevels.decimals)}</span>
+                      <span className="text-neutral-600">|</span>
+                      <span className="text-emerald-400 font-bold">FUNDO: {srLevels.fundo.toFixed(srLevels.decimals)}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* 3. Região de Suporte e Resistência com Cotações Reais de Topos e Fundos */}
                 <div className="p-3.5 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-2.5 shadow-xl">
