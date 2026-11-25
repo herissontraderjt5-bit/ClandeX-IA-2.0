@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Asset, Candle, TimeFrame } from '../types/trading';
 
 /**
@@ -34,14 +34,17 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 }) => {
   const chartWidth = 900;
   const paddingRight = 95;
-  const paddingLeft = 10;
-  const paddingTop = 25;
-  const paddingBottom = 25;
+  const paddingLeft = 12;
+  const paddingTop = 20;
+  const paddingBottom = 20;
 
-  // Usa as últimas 45 velas para visualização nítida
+  // Nível de Zoom: padrão super ampliado (10 velas) para visualização máxima Footprint/POC
+  const [zoomLevel, setZoomLevel] = useState<number>(10);
+
+  // Velas visíveis com zoom aplicado (exibe de 6 a 30 velas)
   const visibleCandles = useMemo(() => {
-    return candles && candles.length > 0 ? candles.slice(-45) : [];
-  }, [candles]);
+    return candles && candles.length > 0 ? candles.slice(-zoomLevel) : [];
+  }, [candles, zoomLevel]);
 
   const { minPrice, maxPrice, priceRange } = useMemo(() => {
     let min = Infinity;
@@ -58,15 +61,24 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
       max = base * 1.002;
     }
 
-    if (Number.isFinite(resistance) && resistance > 0) max = Math.max(max, resistance);
-    if (Number.isFinite(support) && support > 0) min = Math.min(min, support);
+    // Zoom Vertical Otimizado: Foca nas velas visíveis.
+    // Expande a escala caso o suporte ou resistência estejam no campo de visão próximo (até 40% da amplitude),
+    // garantindo que as velas fiquem altas e não comprimidas.
+    const visibleSpan = Math.max(0.0001, max - min);
+    if (Number.isFinite(resistance) && resistance > 0 && resistance <= max + visibleSpan * 0.4) {
+      max = Math.max(max, resistance);
+    }
+    if (Number.isFinite(support) && support > 0 && support >= min - visibleSpan * 0.4) {
+      min = Math.min(min, support);
+    }
     if (Number.isFinite(currentPrice) && currentPrice > 0) {
       max = Math.max(max, currentPrice);
       min = Math.min(min, currentPrice);
     }
 
     const diff = max > min ? max - min : 0.001;
-    const buffer = diff * 0.08;
+    // Buffer vertical reduzido (4%) para maximizar a altura das velas no canvas
+    const buffer = diff * 0.04;
     const safeMin = min - buffer;
     const safeMax = max + buffer;
     const safeRange = safeMax > safeMin ? safeMax - safeMin : 0.001;
@@ -84,11 +96,12 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
     if (priceRange <= 0) return height / 2;
     const ratio = (price - minPrice) / priceRange;
     const val = height - paddingBottom - ratio * usableHeight;
-    return Math.max(paddingTop - 5, Math.min(height - paddingBottom + 5, val));
+    return Math.max(paddingTop - 6, Math.min(height - paddingBottom + 6, val));
   };
 
   const candleSpacing = (chartWidth - paddingLeft - paddingRight) / Math.max(visibleCandles.length, 1);
-  const candleBodyWidth = Math.max(4, candleSpacing * 0.65);
+  // Largura do corpo da vela ampliada proporcionalmente ao zoom
+  const candleBodyWidth = Math.max(16, candleSpacing * 0.76);
 
   const decimals = asset.pipDecimals || (asset.category === 'CRYPTO' ? 2 : 5);
 
@@ -98,21 +111,88 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 
   return (
     <div className="w-full bg-[#070a12] border-2 border-neutral-800 rounded-2xl overflow-hidden shadow-2xl relative select-none font-mono">
-      {/* Top Banner do Gráfico */}
-      <div className="flex items-center justify-between px-3.5 py-2 bg-neutral-950/90 border-b border-neutral-800/80 text-[10px]">
+      {/* Top Banner do Gráfico com Controles de Zoom Interativo */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-neutral-950/90 border-b border-neutral-800/80 text-[10px]">
+        {/* Ativo e Timeframe */}
         <div className="flex items-center gap-2">
-          <span className="font-black text-white">{asset.symbol}</span>
+          <span className="font-black text-white text-xs">{asset.symbol}</span>
           <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
             {timeframe}
           </span>
-          <span className="text-neutral-400 hidden sm:inline">
-            • Marcações Exclusivas de Topo e Fundo
+          <span className="text-neutral-400 hidden sm:inline text-[9px]">
+            • Marcações de Topo e Fundo
           </span>
         </div>
 
+        {/* Controles de Zoom das Velas (Botões + / - e Presets rápidos) */}
+        <div className="flex items-center gap-1.5 bg-black/60 px-2 py-0.5 rounded-lg border border-neutral-800">
+          <span className="text-neutral-400 font-bold text-[9px]">ZOOM:</span>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((prev) => Math.max(6, prev - 2))}
+            disabled={zoomLevel <= 6}
+            className={`w-5 h-5 rounded flex items-center justify-center font-black cursor-pointer transition-all active:scale-90 ${
+              zoomLevel <= 6
+                ? 'bg-neutral-900 text-neutral-600'
+                : 'bg-neutral-800 hover:bg-neutral-700 text-cyan-300 border border-neutral-700'
+            }`}
+            title="Mais Zoom (Velas Maiores)"
+          >
+            +
+          </button>
+          <span className="text-amber-300 font-bold px-1 min-w-[28px] text-center">
+            {zoomLevel}V
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoomLevel((prev) => Math.min(28, prev + 2))}
+            disabled={zoomLevel >= 28}
+            className={`w-5 h-5 rounded flex items-center justify-center font-black cursor-pointer transition-all active:scale-90 ${
+              zoomLevel >= 28
+                ? 'bg-neutral-900 text-neutral-600'
+                : 'bg-neutral-800 hover:bg-neutral-700 text-cyan-300 border border-neutral-700'
+            }`}
+            title="Menos Zoom (Mais Velas)"
+          >
+            -
+          </button>
+
+          {/* Presets Rápidos */}
+          <div className="hidden md:flex items-center gap-1 ml-1 pl-1 border-l border-neutral-800 text-[8px]">
+            <button
+              type="button"
+              onClick={() => setZoomLevel(6)}
+              className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                zoomLevel === 6 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              6V (Max)
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomLevel(10)}
+              className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                zoomLevel === 10 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              10V
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomLevel(18)}
+              className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                zoomLevel === 18 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              18V
+            </button>
+          </div>
+        </div>
+
+        {/* Legenda dos Níveis */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-amber-300 font-bold">
-            <span className="w-2.5 h-1 bg-amber-400 inline-block rounded-full shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+            <span className="w-2.5 h-1.5 bg-amber-400 inline-block rounded-full shadow-[0_0_8px_rgba(251,191,36,0.9)]" />
             <span>POC (PONTO DE CONTROLE)</span>
           </div>
           <div className="flex items-center gap-1.5 text-rose-400 font-bold">
@@ -126,7 +206,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
         </div>
       </div>
 
-      {/* SVG Canvas com Velas e Linhas de Suporte e Resistência */}
+      {/* SVG Canvas com Velas e Linhas de Suporte, Resistência e POC */}
       <div className="relative w-full">
         <svg
           viewBox={`0 0 ${chartWidth} ${height}`}
@@ -135,7 +215,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
           preserveAspectRatio="none"
         >
           {/* Linhas de Grade Sutis */}
-          {[0.25, 0.5, 0.75].map((ratio, idx) => {
+          {[0.2, 0.4, 0.6, 0.8].map((ratio, idx) => {
             const y = paddingTop + ratio * (height - paddingTop - paddingBottom);
             return (
               <line
@@ -144,7 +224,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                 y1={y}
                 x2={chartWidth - paddingRight}
                 y2={y}
-                stroke="#171923"
+                stroke="#151824"
                 strokeDasharray="4 4"
                 strokeWidth="1"
               />
@@ -245,7 +325,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             </g>
           )}
 
-          {/* Renderização das Velas Japonesas Reais com POC em cada uma */}
+          {/* Renderização das Velas Japonesas Grandes e Nítidas com POC */}
           {visibleCandles.map((c, i) => {
             const xCenter = paddingLeft + i * candleSpacing + candleSpacing / 2;
             const yOpen = getY(c.open);
@@ -254,7 +334,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             const yLow = getY(c.low);
             const isBullish = c.close >= c.open;
             const topBody = Math.min(yOpen, yClose);
-            const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
+            const bodyHeight = Math.max(3, Math.abs(yClose - yOpen));
 
             const candleColor = isBullish ? '#10b981' : '#f43f5e';
             const wickColor = isBullish ? '#34d399' : '#fb7185';
@@ -265,16 +345,29 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 
             return (
               <g key={c.time || i}>
-                {/* Pavio (Wick) */}
+                {/* Pavio (Wick) Grosso e Definido */}
                 <line
                   x1={xCenter}
                   y1={yHigh}
                   x2={xCenter}
                   y2={yLow}
                   stroke={wickColor}
-                  strokeWidth="1.5"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
                 />
-                {/* Corpo (Body) */}
+
+                {/* Sombra / Glow do Corpo da Vela */}
+                <rect
+                  x={xCenter - candleBodyWidth / 2}
+                  y={topBody}
+                  width={candleBodyWidth}
+                  height={bodyHeight}
+                  fill={candleColor}
+                  opacity="0.2"
+                  rx="3"
+                />
+
+                {/* Corpo (Body) Sólido com Bordas Arredondadas */}
                 <rect
                   x={xCenter - candleBodyWidth / 2}
                   y={topBody}
@@ -282,37 +375,69 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                   height={bodyHeight}
                   fill={candleColor}
                   stroke={wickColor}
-                  strokeWidth="0.5"
-                  rx="1"
+                  strokeWidth="0.8"
+                  rx="2.5"
                 />
 
-                {/* 🟡 POC (POINT OF CONTROL) DESENHADO NA VELA */}
+                {/* 🟡 POC (POINT OF CONTROL) DESTACADO NA VELA */}
                 {Number.isFinite(yPoc) && (
                   <g>
-                    {/* Linha horizontal destacada da POC atravessando a vela */}
-                    <line
-                      x1={xCenter - (candleBodyWidth * 1.35) / 2}
-                      y1={yPoc}
-                      x2={xCenter + (candleBodyWidth * 1.35) / 2}
-                      y2={yPoc}
-                      stroke="#fbbf24"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
+                    {/* Barra Dourada da POC com Efeito Neon */}
+                    <rect
+                      x={xCenter - (candleBodyWidth * 1.25) / 2}
+                      y={yPoc - 3}
+                      width={candleBodyWidth * 1.25}
+                      height={6}
+                      fill="#fbbf24"
+                      stroke="#d97706"
+                      strokeWidth="1"
+                      rx="2.5"
+                      className="drop-shadow-[0_0_10px_rgba(251,191,36,0.95)]"
                     />
-                    {/* Ponto central da POC */}
+
+                    {/* Ponto Central Branco da POC */}
                     <circle
                       cx={xCenter}
                       cy={yPoc}
-                      r="1.2"
+                      r="2.2"
                       fill="#ffffff"
+                      stroke="#b45309"
+                      strokeWidth="0.8"
                     />
+
+                    {/* Tag de Identificação "POC" quando a vela está ampliada */}
+                    {candleBodyWidth >= 28 && (
+                      <g>
+                        <rect
+                          x={xCenter - 14}
+                          y={yPoc - 14}
+                          width={28}
+                          height={10}
+                          fill="#451a03"
+                          stroke="#fbbf24"
+                          strokeWidth="0.8"
+                          rx="3"
+                        />
+                        <text
+                          x={xCenter}
+                          y={yPoc - 6.5}
+                          fill="#fef08a"
+                          fontSize="7.5"
+                          fontWeight="900"
+                          textAnchor="middle"
+                          fontFamily="JetBrains Mono, monospace"
+                        >
+                          POC
+                        </text>
+                      </g>
+                    )}
                   </g>
                 )}
               </g>
             );
           })}
 
-          {/* 🟡 PROJEÇÃO DA POC DA VELA ATUAL / MAIS RECENTE NA RÉGUA */}
+          {/* 🟡 PROJEÇÃO DA POC DA VELA ATUAL NA RÉGUA LATERAL */}
           {visibleCandles.length > 0 && (() => {
             const lastCandle = visibleCandles[visibleCandles.length - 1];
             const lastPoc = getCandlePoc(lastCandle);
@@ -327,9 +452,9 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                   x2={chartWidth - paddingRight}
                   y2={lastPocY}
                   stroke="#fbbf24"
-                  strokeWidth="1.2"
-                  strokeDasharray="3 3"
-                  opacity="0.85"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  opacity="0.9"
                 />
                 <rect
                   x={chartWidth - paddingRight + 2}
@@ -364,7 +489,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
                 x2={chartWidth - paddingRight}
                 y2={currentY}
                 stroke="#06b6d4"
-                strokeWidth="1.2"
+                strokeWidth="1.4"
                 strokeDasharray="2 2"
               />
               <circle
