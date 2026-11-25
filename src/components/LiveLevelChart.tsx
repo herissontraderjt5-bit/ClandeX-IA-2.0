@@ -13,6 +13,12 @@ export function getCandlePoc(c: Candle): number {
   return Math.max(c.low, Math.min(c.high, typical));
 }
 
+export interface ProjectedSignalInfo {
+  direction: 'CALL' | 'PUT' | 'NEUTRO';
+  confidence?: number;
+  strategyName?: string;
+}
+
 interface LiveLevelChartProps {
   candles: Candle[];
   asset: Asset;
@@ -21,6 +27,7 @@ interface LiveLevelChartProps {
   resistance: number; // Topo
   support: number;    // Fundo
   height?: number;
+  projectedSignal?: ProjectedSignalInfo | null;
 }
 
 export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
@@ -31,6 +38,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
   resistance,
   support,
   height = 360,
+  projectedSignal,
 }) => {
   const chartWidth = 900;
   const paddingRight = 95;
@@ -41,14 +49,85 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
   // Nível de Zoom: padrão em 10 velas para que fiquem grandes e nítidas
   const [zoomLevel, setZoomLevel] = useState<number>(10);
   const [hoveredCandleIdx, setHoveredCandleIdx] = useState<number | null>(null);
+  // Alternador para exibir ou ocultar a Projeção da Próxima Vela da IA
+  const [showProjection, setShowProjection] = useState<boolean>(true);
 
   // Velas visíveis com base no nível de zoom escolhido
   const visibleCandles = useMemo(() => {
     return candles && candles.length > 0 ? candles.slice(-zoomLevel) : [];
   }, [candles, zoomLevel]);
 
+  // Cálculo da Próxima Vela Prevista pela IA (Ghost Candle / Vela Preditiva)
+  const { projectedCandle, projDirection, projConfidence } = useMemo(() => {
+    if (!visibleCandles || visibleCandles.length === 0) {
+      return { projectedCandle: null, projDirection: 'NEUTRO' as const, projConfidence: 50 };
+    }
+
+    const lastCandle = visibleCandles[visibleCandles.length - 1];
+    const open = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : lastCandle.close;
+
+    // Volatilidade real com base na média das últimas 5 velas
+    const recent = visibleCandles.slice(-5);
+    const avgBody = Math.max(
+      0.0001,
+      recent.reduce((acc, c) => acc + Math.abs(c.close - c.open), 0) / recent.length
+    );
+    const avgRange = Math.max(
+      avgBody * 1.35,
+      recent.reduce((acc, c) => acc + (c.high - c.low), 0) / recent.length
+    );
+    const avgWick = (avgRange - avgBody) / 2;
+
+    // Determina a direção prevista (prioriza sinal de IA ou confluência dos indicadores)
+    let dir: 'CALL' | 'PUT' | 'NEUTRO' = projectedSignal?.direction || 'NEUTRO';
+    let conf = projectedSignal?.confidence || 65;
+
+    if (dir === 'NEUTRO') {
+      const bullCount = recent.filter((c) => c.close >= c.open).length;
+      if (bullCount >= 3) {
+        dir = 'CALL';
+        conf = 62 + bullCount * 5;
+      } else if (bullCount <= 1) {
+        dir = 'PUT';
+        conf = 62 + (5 - bullCount) * 5;
+      } else {
+        dir = lastCandle.close >= lastCandle.open ? 'CALL' : 'PUT';
+        conf = 60;
+      }
+    }
+
+    let close: number;
+    let high: number;
+    let low: number;
+
+    if (dir === 'CALL') {
+      close = open + avgBody;
+      high = close + avgWick;
+      low = open - avgWick * 0.4;
+    } else {
+      close = open - avgBody;
+      low = close - avgWick;
+      high = open + avgWick * 0.4;
+    }
+
+    const poc = Math.max(low, Math.min(high, (high + low + 2 * close) / 4));
+
+    return {
+      projectedCandle: {
+        time: (lastCandle.time || 0) + 60,
+        open,
+        high,
+        low,
+        close,
+        poc,
+      },
+      projDirection: dir,
+      projConfidence: Math.min(95, Math.max(55, conf)),
+    };
+  }, [visibleCandles, currentPrice, projectedSignal]);
+
   // Escala Vertical idêntica ao TradingView:
-  // Foca estritamente nas velas visíveis para não achatar os corpos
+  // Foca estritamente nas velas visíveis (e na projeção) para não achatar os corpos
   const { minPrice, maxPrice, priceRange } = useMemo(() => {
     let min = Infinity;
     let max = -Infinity;
@@ -62,6 +141,12 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
       const base = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : 1.0;
       min = base * 0.998;
       max = base * 1.002;
+    }
+
+    // Inclui a vela projetada se estiver ativada
+    if (showProjection && projectedCandle) {
+      if (projectedCandle.low < min) min = projectedCandle.low;
+      if (projectedCandle.high > max) max = projectedCandle.high;
     }
 
     if (Number.isFinite(currentPrice) && currentPrice > 0) {
@@ -81,7 +166,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
       maxPrice: safeMax,
       priceRange: safeRange,
     };
-  }, [visibleCandles, currentPrice]);
+  }, [visibleCandles, currentPrice, showProjection, projectedCandle]);
 
   // Transforma preço em coordenada Y no SVG
   const getY = (price: number): number => {
@@ -92,7 +177,9 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
     return Math.max(paddingTop - 10, Math.min(height - paddingBottom + 10, val));
   };
 
-  const candleSpacing = (chartWidth - paddingLeft - paddingRight) / Math.max(visibleCandles.length, 1);
+  // Espaçamento com coluna reservada para a próxima vela prevista
+  const totalSlots = showProjection && projectedCandle ? visibleCandles.length + 1 : visibleCandles.length;
+  const candleSpacing = (chartWidth - paddingLeft - paddingRight) / Math.max(totalSlots, 1);
   // Largura proporcional do corpo (72% do espaçamento para manter espaço entre velas)
   const candleBodyWidth = Math.max(12, candleSpacing * 0.72);
 
@@ -113,7 +200,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
 
   return (
     <div className="w-full bg-[#070a12] border-2 border-neutral-800 rounded-2xl overflow-hidden shadow-2xl relative select-none font-mono">
-      {/* Top Banner com Ativo, Timeframe, Zoom e Legenda */}
+      {/* Top Banner com Ativo, Timeframe, Projeção IA, Zoom e Legenda */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-neutral-950/90 border-b border-neutral-800/80 text-[10px]">
         {/* Ativo e Timeframe */}
         <div className="flex items-center gap-2">
@@ -125,6 +212,23 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             • Gráfico Footprint POC
           </span>
         </div>
+
+        {/* Botão Alternador da Próxima Vela Prevista pela IA */}
+        <button
+          type="button"
+          onClick={() => setShowProjection((prev) => !prev)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer ${
+            showProjection
+              ? projDirection === 'CALL'
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/70 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                : 'bg-rose-950/80 text-rose-300 border-rose-500/70 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
+              : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+          }`}
+          title="Ativar/Desativar desenho preditivo da próxima vela da IA"
+        >
+          <span className={`w-2 h-2 rounded-full ${showProjection ? (projDirection === 'CALL' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400 animate-pulse') : 'bg-neutral-600'}`} />
+          <span>🔮 Próxima Vela IA: {showProjection ? `${projDirection} (${projConfidence}%)` : 'DESATIVADA'}</span>
+        </button>
 
         {/* Controles de Zoom */}
         <div className="flex items-center gap-1.5 bg-black/60 px-2 py-0.5 rounded-lg border border-neutral-800">
@@ -158,37 +262,6 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
           >
             -
           </button>
-
-          {/* Presets de 1 clique */}
-          <div className="hidden sm:flex items-center gap-1 ml-1 pl-1 border-l border-neutral-800 text-[8px]">
-            <button
-              type="button"
-              onClick={() => setZoomLevel(6)}
-              className={`px-1.5 py-0.5 rounded cursor-pointer ${
-                zoomLevel === 6 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              6V (Max)
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoomLevel(10)}
-              className={`px-1.5 py-0.5 rounded cursor-pointer ${
-                zoomLevel === 10 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              10V
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoomLevel(16)}
-              className={`px-1.5 py-0.5 rounded cursor-pointer ${
-                zoomLevel === 16 ? 'bg-amber-500 text-black font-black' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              16V
-            </button>
-          </div>
         </div>
 
         {/* Legenda de Níveis */}
@@ -229,7 +302,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
         </div>
       )}
 
-      {/* SVG Canvas com Velas Japonesas e POC Oficial */}
+      {/* SVG Canvas com Velas Japonesas, POC Oficial e Vela Prevista pela IA */}
       <div className="relative w-full">
         <svg
           viewBox={`0 0 ${chartWidth} ${height}`}
@@ -377,7 +450,7 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             </g>
           )}
 
-          {/* Velas Japonesas com Coloração Oficial TradingView e POC Alinhado */}
+          {/* Velas Japonesas Históricas com Coloração Oficial TradingView e POC Alinhado */}
           {visibleCandles.map((c, i) => {
             const xCenter = paddingLeft + i * candleSpacing + candleSpacing / 2;
             const yOpen = getY(c.open);
@@ -388,8 +461,6 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
             const topBody = Math.min(yOpen, yClose);
             const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
 
-            // Paleta Oficial idêntica ao TradingView:
-            // Verde: #089981 / Vermelho: #f23645
             const candleColor = isBullish ? '#089981' : '#f23645';
 
             // POC da vela
@@ -457,6 +528,160 @@ export const LiveLevelChart: React.FC<LiveLevelChartProps> = ({
               </g>
             );
           })}
+
+          {/* 🔮 DESENHO DA PRÓXIMA VELA PREVISTA PELA IA (GHOST CANDLE HOLOGRÁFICA) */}
+          {showProjection && projectedCandle && (() => {
+            const xProj = paddingLeft + visibleCandles.length * candleSpacing + candleSpacing / 2;
+            const yProjOpen = getY(projectedCandle.open);
+            const yProjClose = getY(projectedCandle.close);
+            const yProjHigh = getY(projectedCandle.high);
+            const yProjLow = getY(projectedCandle.low);
+            const yProjPoc = getY(projectedCandle.poc);
+            const isBullish = projDirection === 'CALL';
+            const topProjBody = Math.min(yProjOpen, yProjClose);
+            const projBodyHeight = Math.max(3, Math.abs(yProjClose - yProjOpen));
+
+            const projColor = isBullish ? '#10b981' : '#f43f5e';
+            const projFill = isBullish ? '#089981' : '#f23645';
+
+            return (
+              <g className="transition-all duration-300">
+                {/* Linha Divisória Temporal (Presente vs Futuro) */}
+                <line
+                  x1={xProj - candleSpacing / 2}
+                  y1={paddingTop}
+                  x2={xProj - candleSpacing / 2}
+                  y2={height - paddingBottom}
+                  stroke="#38bdf8"
+                  strokeWidth="1.2"
+                  strokeDasharray="4 3"
+                  opacity="0.5"
+                />
+
+                {/* Coluna de Foco da Próxima Vela */}
+                <rect
+                  x={xProj - candleSpacing / 2}
+                  y={paddingTop}
+                  width={candleSpacing}
+                  height={height - paddingTop - paddingBottom}
+                  fill={isBullish ? '#10b981' : '#f43f5e'}
+                  opacity="0.04"
+                />
+
+                {/* Badge de Próxima Vela IA no Topo */}
+                <g>
+                  <rect
+                    x={xProj - 34}
+                    y={paddingTop - 1}
+                    width={68}
+                    height={15}
+                    fill={isBullish ? '#064e3b' : '#881337'}
+                    stroke={projColor}
+                    strokeWidth="1"
+                    rx="3.5"
+                    className="drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]"
+                  />
+                  <text
+                    x={xProj}
+                    y={paddingTop + 10}
+                    fill={isBullish ? '#6ee7b7' : '#fda4af'}
+                    fontSize="7.5"
+                    fontWeight="900"
+                    textAnchor="middle"
+                    fontFamily="JetBrains Mono, monospace"
+                  >
+                    {isBullish ? `▲ CALL ${projConfidence}%` : `▼ PUT ${projConfidence}%`}
+                  </text>
+                </g>
+
+                {/* Pavio Tracejado Holográfico */}
+                <line
+                  x1={xProj}
+                  y1={yProjHigh}
+                  x2={xProj}
+                  y2={yProjLow}
+                  stroke={projColor}
+                  strokeWidth="1.8"
+                  strokeDasharray="3 2"
+                  opacity="0.85"
+                />
+
+                {/* Corpo da Vela Prevista (Translúcido com Borda Tracejada e Efeito Neon) */}
+                <rect
+                  x={xProj - candleBodyWidth / 2}
+                  y={topProjBody}
+                  width={candleBodyWidth}
+                  height={projBodyHeight}
+                  fill={projFill}
+                  fillOpacity="0.25"
+                  stroke={projColor}
+                  strokeWidth="1.8"
+                  strokeDasharray="4 2"
+                  rx="2"
+                  className={isBullish ? 'drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]' : 'drop-shadow-[0_0_12px_rgba(244,63,94,0.5)]'}
+                />
+
+                {/* Seta Holográfica de Direção no Centro da Vela */}
+                <text
+                  x={xProj}
+                  y={topProjBody + projBodyHeight / 2 + 3.5}
+                  fill={isBullish ? '#a7f3d0' : '#fecdd3'}
+                  fontSize="10"
+                  fontWeight="900"
+                  textAnchor="middle"
+                  opacity="0.9"
+                >
+                  {isBullish ? '▲' : '▼'}
+                </text>
+
+                {/* 🟡 POC Previsto na Vela Futura */}
+                {Number.isFinite(yProjPoc) && (
+                  <g>
+                    <line
+                      x1={xProj - (candleBodyWidth * 1.1) / 2}
+                      y1={yProjPoc}
+                      x2={xProj + (candleBodyWidth * 1.1) / 2}
+                      y2={yProjPoc}
+                      stroke="#fbbf24"
+                      strokeWidth="2.5"
+                      strokeDasharray="3 2"
+                      opacity="0.9"
+                    />
+                    <circle
+                      cx={xProj}
+                      cy={yProjPoc}
+                      r="2"
+                      fill="#fbbf24"
+                      stroke="#78350f"
+                      strokeWidth="0.8"
+                    />
+                    {/* Tag "POC IA" ao lado da vela projetada */}
+                    <rect
+                      x={xProj + candleBodyWidth / 2 + 3}
+                      y={yProjPoc - 6.5}
+                      width={38}
+                      height={13}
+                      fill="#78350f"
+                      stroke="#fbbf24"
+                      strokeWidth="0.8"
+                      rx="2"
+                    />
+                    <text
+                      x={xProj + candleBodyWidth / 2 + 22}
+                      y={yProjPoc + 2.5}
+                      fill="#fef08a"
+                      fontSize="7"
+                      fontWeight="900"
+                      textAnchor="middle"
+                      fontFamily="JetBrains Mono, monospace"
+                    >
+                      POC IA
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })()}
 
           {/* 🟡 PROJEÇÃO DA POC DA VELA ATUAL NA RÉGUA LATERAL */}
           {visibleCandles.length > 0 && (() => {

@@ -3280,6 +3280,11 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
                       resistance={srLevels.topo}
                       support={srLevels.fundo}
                       height={430}
+                      projectedSignal={{
+                        direction: activePreAlert?.direction || (indicatorConsensus.bias === 'NEUTRO' ? (technicalData.majorTrend.status === 'ALTA' ? 'CALL' : 'PUT') : indicatorConsensus.bias),
+                        confidence: activePreAlert?.confidence || (indicatorConsensus.bias === 'CALL' ? indicatorConsensus.callPercent : indicatorConsensus.bias === 'PUT' ? indicatorConsensus.putPercent : 68),
+                        strategyName: activePreAlert?.strategyName || 'Consenso IA',
+                      }}
                     />
                   </div>
                 ) : (
